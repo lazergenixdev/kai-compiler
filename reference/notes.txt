@@ -1,0 +1,197 @@
+=================== LEXER ===================
+
+used:
+!%&()*+,-.:;<=>?^[]{}|
+
+not used:
+$'@\`~
+
+//comment
+/*ml comment*/
+
+#directive
+
+"string"
+
+
+&& || == >= <= != .. ---
+>> << ->
++= -= *= /= ^= &= |= %=
+
+
+=================== PARSER ===================
+
+TOPLEVEL
+
+Decl Procedure
+IDENTIFIER ":" ":" "(" IDENTIFER ":" TYPE "," ... ")" ["->" TYPE] STATEMENT
+
+Global Variable
+IDENTIFIER ":" [TYPE] (":","=") EXPRESSION ";"
+
+Import Statement
+#import STRING
+
+
+STATEMENT
+
+Compound Statement
+"{" [STATEMENT ...] "}"
+
+Decl Variable
+IDENTIFIER ":" [TYPE] (":","=") EXPRESSION ";"
+
+Modify Variable
+IDENTIFIER "=" EXPRESSION ";"
+
+If Statement
+"if" EXPRESSION ["then"] STATEMENT
+
+Return Statement
+"ret" EXPRESSION ";"
+
+Null Statement
+';'
+
+
+EXPRESSION
+
+"(" EXPRESSION ")"
+EXPRESSION "(" EXPRESSION "," ... ")"
+EXPRESSION BINARY_OPERATOR EXPRESSION
+UNARY_OPERATOR EXPRESSION
+
+
+TYPE
+
+"*" TYPE
+IDENTIFIER
+IDENTIFER . TYPE
+
+
+
+=================== ERROR MESSAGES ===================
+
+file:line_number -> error_type: what
+    |
+ ln | source code
+    |        ^~~~ context
+    |
+scripts/main.kai:4 -> Syntax Error: Unexpected ";"
+   |
+ 4 | what *;
+   |       ^ expected an expression here
+
+
+scripts/main.kai:12 -> Type Cast Error: Cannot implicitly cast from "u64" to "What"
+    |
+ 12 | var : What = filesize;
+    |              ^~~~~~~~ consider using a cast() here
+scripts/main.kai:432 -> Info: "What" is defined here
+     |
+ 432 | What :: struct {
+     | ^~~~
+
+
+=================== NUMBER PARSER ===================
+
+basic integer:    19845
+binary:           0b0110110101
+hexidecimal:      0xfe42
+with separators:  12_000_000
+basic float:      3.1415
+float with exp:   1.0e-10
+
+#infinity
+#nan
+
+number : u16 = 100_000; // Type Cast Error: 100000 cannot be represented in data format "u16"
+
+scripts/main.kai:12 -> Type Cast Error: Cannot implicitly cast from "number" to "What"
+
+
+
+loop {  }
+while x < 3 {  }
+for 0..n-1 {  }
+
+コールバックを
+さまざまなプログラミング言語へのDyncallバインディングは、パブリックにアクセス可能な水銀リポジトリでホストされます。チェックアウトするには、
+HGクローン https://dyncall.org/pub/dyncall/bindings/
+以下は、リポジトリ内のdyncallバインディングに関するクイック情報のリストです。ショーケース/ユーザーでFFIの実装にdyncallを使用するその他のプロジェクトを参照してください。
+
+// circular dependency
+A :: B;
+B :: A;
+
+=================== NUMBER INFO -> FLOATING POINT ===================
+
+// @TODO: there is some rounding error, pls fix (try std::fma)
+// @NOTE: check https://github.com/odin-lang/Odin/blob/master/src/gb/gb.h
+double to_float(kai_Number_Info& i) {
+
+	// https://github.com/ochafik/LibCL/blob/master/src/main/resources/LibCL/strtof.c
+	const double _strtof_powersOf10_[] = {	// Table giving binary powers of 10.  Entry 
+						10.0,			// is 10^2^i.  Used to convert decimal 
+						100.0,			// exponents into floating-point numbers. 
+						1.0e4,
+						1.0e8,
+						1.0e16,
+						1.0e32,
+						1.0e64,
+						1.0e128,
+						1.0e256,
+	};
+
+	double fraction, den;
+	auto exp = i.Exp_Part;
+
+	if (i.Frac_Denom == 0) {
+		fraction = (double)i.Whole_Part;
+		goto do_exponent;
+	}
+
+	{
+		int exp = i.Frac_Denom;
+		den = 1.0;
+		double const* d;
+		for (d = _strtof_powersOf10_; exp != 0; exp >>= 1, d += 1) {
+			if (exp & 01) {
+				den *= *d;
+			}
+		}
+	}
+	
+	fraction = (double)i.Whole_Part + ((double)i.Frac_Part/den);
+
+do_exponent:
+	bool neg = false;
+
+	if (exp < 0) {
+		neg = true;
+		exp = -exp;
+	}
+
+	if (exp > DBL_MAX_10_EXP) {
+		exp = DBL_MAX_10_EXP;
+	}
+		
+	double dblExp = 1.0;
+	double const* d;
+	for (d = _strtof_powersOf10_; exp != 0; exp >>= 1, d += 1) {
+		if (exp & 01) {
+			dblExp *= *d;
+		}
+	}
+	if (neg) {
+		return fraction / dblExp;
+	}
+	return fraction * dblExp;
+}
+
+void print_float_bits(double d) {
+	auto _d = std::bit_cast<kai_u64>(d);
+	std::cout << (_d >> 63) << ' ';
+	std::cout << std::bitset<11>(_d>>52) << ' ';
+	std::cout << std::bitset<52>(_d);
+}
