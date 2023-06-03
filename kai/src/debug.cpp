@@ -1,3 +1,4 @@
+#include "config.hpp"
 #include <kai/parser.h>
 #include <iostream>
 #include <vector>
@@ -253,4 +254,9 @@ void kai_Lib_print_syntax_tree(kai_Module* mod) {
     tree_context ctx;
     print_tree(ctx, (kai_Expr)mod->AST_Root);
     std::cout << RESET;
+}
+
+void panic() {
+	std::cout << "\nPanic triggered.\nNow exiting...\n";
+	std::exit(1);
 }
