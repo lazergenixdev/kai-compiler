@@ -2,6 +2,7 @@
 #include <vector>
 #include <cassert>
 
+// TODO: Memory allocater kinda trash, there is a fixed upper bound on the max allocation size, which is trash
 // TODO: Error handling would be kinda good?
 
 // Windows Garbage:

@@ -20,8 +20,8 @@ typedef struct {
 } kai_Number_Info;
 
 typedef struct {
-	kai_ptr AST_Root;
-	kai_int toplevel_count;
+	kai_Stmt* toplevel_stmts;
+	kai_int   toplevel_count;
 	kai_Memory memory;
 } kai_Module;
 
@@ -53,8 +53,6 @@ typedef enum: kai_u32 {
 	kai_Stmt_ID_Declaration,
 	kai_Stmt_ID_Compound,
 
-	// Not Recursive (you will never get a pointer to this)
-	kai_Expr_ID_Procedure_Parameter,
 } kai_Node_ID;
 
 typedef struct {
@@ -119,7 +117,7 @@ typedef struct {
 typedef struct {
 	kai_str  name;
 	kai_Expr type;
-	kai_u32  _flags; // for keyword using
+//	kai_u32  flags; // for keyword using
 } kai_Expr_Procedure_Parameter;
 
 typedef struct {
@@ -128,6 +126,8 @@ typedef struct {
 	kai_u32 param_count;
 	kai_u32 ret_count; // If this is 0, then the return defaults to "void"
 	kai_Stmt body;
+
+	kai_u32 _scope;
 } kai_Expr_Procedure;
 
 typedef struct {
@@ -135,16 +135,24 @@ typedef struct {
 	kai_Expr expr;
 } kai_Stmt_Return;
 
+enum: kai_u32 {
+	kai_Decl_Flag_Const = KAI_BIT(0), // compile-time constant, not like C const
+	kai_Decl_Flag_Using = KAI_BIT(1),
+};
+
 typedef struct {
 	KAI_BASE_MEMBERS;
 	kai_Expr expr;
 	kai_str name;
+	kai_u32 flags;
 } kai_Stmt_Declaration;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
 	kai_Stmt* statements;
 	kai_int   count;
+
+	kai_u32 _scope;
 } kai_Stmt_Compound;
 
 //////////////////////////////////////////////////

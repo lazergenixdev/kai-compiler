@@ -163,11 +163,13 @@ Token Lexer_Context::generate_token()
 				if( source.data[cursor] == 'b' ) {
 					++cursor;
 					parse_number_bin(token.number.Whole_Part);
+					token.string.count = (source.data + cursor) - token.string.data;
 					return token;
 				}
 				if( source.data[cursor] == 'x' ) {
 					++cursor;
 					parse_number_hex( token.number.Whole_Part );
+					token.string.count = (source.data + cursor) - token.string.data;
 					return token;
 				}
 			}
@@ -296,7 +298,7 @@ void Lexer_Context::parse_number_hex(kai_u64& n) {
 	for(; cursor < source.count; ++cursor) {
 		kai_u8 ch = source.data[cursor];
 
-		if( ch < '0' ) break;
+		if( ch < '0' || ch > 'f' ) break;
 
 		auto what = lookup_table[ch - '0'];
 

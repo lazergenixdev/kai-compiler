@@ -1,19 +1,41 @@
-// TODO: Implement Casting "cast(int) num"
-// TODO: Long jump on errors ?
-
 #include "parser.hpp"
 #include <cassert>
 #define DEFAULT_PREC -6942069
 
 //#define DEBUG_LEXER
-#define DEBUG_PARSER
+//#define DEBUG_PARSER
 
-// stack for parser
-// TODO: test this:
-#define check_temp_stack_overflow(CTX) if (CTX.stack >= (kai_u8*)CTX.memory.temperary + CTX.memory.temperary_size) \
-                               { return ctx.error("ran out of temperary memory!"); } else
+#define check_temp_stack_overflow(END_WRITE, CTX) if ((kai_u8*)(END_WRITE) > (kai_u8*)CTX.memory.temperary + CTX.memory.temperary_size) \
+                               { return ctx.error_internal("ran out of temperary memory!"); } else
+
+#define __check_temp_stack_overflow(END_WRITE, CTX) if ((kai_u8*)(END_WRITE) > (kai_u8*)CTX.memory.temperary + CTX.memory.temperary_size) \
+                               { ctx.error_internal("ran out of temperary memory!"); goto error; } else
+
+// requires current token to be '('
+bool is_procedure_next(Parser_Context& ctx) {
+    auto& peek = ctx.lexer.peek_token();
+    if (peek.type == ')') return true;
+
+    auto lexer_state = ctx.lexer;
+
+    Token& cur = ctx.lexer.next_token();
+    bool found = false;
+
+    // go until we hit ')' or END, searching for ':'
+    while (cur.type != token_end && cur.type != ')') {
+        if (cur.type == ':') {
+            found = true;
+            break;
+        }
+        ctx.lexer.next_token();
+    }
+
+    ctx.lexer = lexer_state;
+    return found;
+}
 
 kai_Expr Parse_Expression(Parser_Context& ctx, int prec = DEFAULT_PREC);
+kai_Expr Parse_Procedure(Parser_Context& ctx);
 
 kai_Expr Parse_Type(Parser_Context& ctx) {
     auto& tok = ctx.lexer.currentToken;
@@ -28,11 +50,11 @@ kai_Expr Parse_Type(Parser_Context& ctx) {
         // Parse Procedure input types
         while (tok.type != ')') {
             ctx.stack = types + count;
-            check_temp_stack_overflow(ctx);
 
             auto type = Parse_Type(ctx);
             if (!type) return nullptr;
 
+            check_temp_stack_overflow(types + count, ctx);
             types[count++] = type;
 
             ctx.lexer.next_token(); // get ',' token or ')'
@@ -63,7 +85,6 @@ kai_Expr Parse_Type(Parser_Context& ctx) {
 
             while (1) {
                 ctx.stack = types + count;
-                check_temp_stack_overflow(ctx);
                 
                 auto type = Parse_Type(ctx);
                 if (!type) {
@@ -72,6 +93,7 @@ kai_Expr Parse_Type(Parser_Context& ctx) {
                     break;
                 }
 
+                check_temp_stack_overflow(types + count, ctx);
                 types[count++] = type;
 
                 ctx.lexer.peek_token(); // get ',' token or something else
@@ -155,20 +177,20 @@ kai_Expr Parse_Simple_Expression(Parser_Context& ctx) {
     {
     case token_identifier: {
         auto ident = ctx.alloc_expr<kai_Expr_Identifier>();
-        ident->line_number;
+        ident->line_number = tok.line_number;
         ident->source_code = tok.string;
         return(kai_Expr) ident;
     }
     case token_number: {
         auto num = ctx.alloc_expr<kai_Expr_Number>();
         num->info = tok.number;
-        num->line_number;
+        num->line_number = tok.line_number;
         num->source_code = tok.string;
         return(kai_Expr) num;
     }
     case token_string: {
         auto str = ctx.alloc_expr<kai_Expr_String>();
-        str->line_number;
+        str->line_number = tok.line_number;
         str->source_code = tok.string;
         return(kai_Expr) str;
     }
@@ -183,17 +205,25 @@ kai_Expr Parse_Expression(Parser_Context& ctx, int prec) {
     // @TODO: turn this else if chain into a switch statement
 
     ////////////////////////////////////////////////////////////
-    // Handle Parenthesis around an expression
+    // Handle Parenthesis
     if (tok.type == '(') {
-        ctx.lexer.next_token(); // see whats after paren
-        left = Parse_Expression(ctx); // parse whatever the hell we get
+        /*if (is_procedure_next(ctx)) {
+            left = Parse_Procedure(ctx);
+            if (!left) return ctx.error_expected("a procedure");
+        }
+        else*/ {
+            ctx.lexer.next_token(); // see whats after paren
 
-        // advance to closing parenthesis hopefully
-        ctx.lexer.next_token();
+            left = Parse_Expression(ctx); // parse whatever the hell we get
+            if (!left) return ctx.error_expected("an expression with paranthesis");
 
-        // when opening a paranthesis, you kinda need to close it
-        if (tok.type != ')') {
-            return ctx.error_expected("an operator or ')' in expression");
+            // advance to closing parenthesis hopefully
+            ctx.lexer.next_token();
+
+            // when opening a paranthesis, you kinda need to close it
+            if (tok.type != ')') {
+                return ctx.error_expected("an operator or ')' in expression");
+            }
         }
     }
     ////////////////////////////////////////////////////////////
@@ -307,11 +337,11 @@ loopBack:
         {
         parseArgument:
             ctx.stack = expressions + count;
-            check_temp_stack_overflow(ctx);
             auto expr = Parse_Expression(ctx);
 
             if (!expr) {return ctx.error_expected("an expression in procedure call"); }
 
+            check_temp_stack_overflow(expressions + count, ctx);
             expressions[count++] = expr;
 
             ctx.lexer.next_token(); // get ',' token or ')'
@@ -350,7 +380,7 @@ loopBack:
     goto loopBack;
 }
 
-kai_Stmt Parse_Statement(Parser_Context& ctx) {
+kai_Stmt Parse_Statement(Parser_Context& ctx, bool is_top_level = false) {
     auto& tok = ctx.lexer.currentToken;
 
     switch (tok.type)
@@ -358,6 +388,8 @@ kai_Stmt Parse_Statement(Parser_Context& ctx) {
     // This is probably just an expression
     default: {
     parseExpression:
+        if (is_top_level) return ctx.error_expected("a top level statement");
+
         auto expr = Parse_Expression(ctx);
         if (!expr) return ctx.error_expected("an expression");
     
@@ -384,11 +416,11 @@ kai_Stmt Parse_Statement(Parser_Context& ctx) {
         {
         parseStatement:
             ctx.stack = statements + count;
-            check_temp_stack_overflow(ctx);
 
             auto stmt = Parse_Statement(ctx);
             if (!stmt) return nullptr;
             
+            check_temp_stack_overflow(statements + count, ctx);
             statements[count++] = stmt;
             ctx.lexer.next_token(); // eat ';' (get token after)
 
@@ -413,6 +445,8 @@ kai_Stmt Parse_Statement(Parser_Context& ctx) {
     }
 
     case token_kw_ret: {
+        if (is_top_level) return ctx.error_unexpected("in top level statement", "");
+
         ctx.lexer.next_token(); // whats after ret?
 
         auto expr = Parse_Expression(ctx);
@@ -438,55 +472,62 @@ kai_Stmt Parse_Statement(Parser_Context& ctx) {
         if (peek.type != ':') goto parseExpression;
 
         auto name = tok.string;
+        auto ln   = tok.line_number;
         ctx.lexer.next_token(); // eat ':'
         ctx.lexer.next_token();
 
-        if (tok.type != '=') {
-            return ctx.error_expected("'=' in variable declaration");
+        kai_u32 flags = 0;
+
+        switch (tok.type)
+        {
+        case ':': flags |= kai_Decl_Flag_Const; break;
+        default: return ctx.error_expected("'=' or ':' in declaration");
+        case '=': break;
         }
 
         ctx.lexer.next_token();
 
-        auto expr = Parse_Expression(ctx);
-        if (!expr) return ctx.error_expected("expression");
+        bool require_semicolon = false;
 
-        ctx.lexer.next_token(); // what is after?
+        kai_Expr expr;
+        if (tok.type == '(' && is_procedure_next(ctx)) {
+            expr = Parse_Procedure(ctx);
+            if (!expr) return ctx.error_expected("a procedure");
+        }
+        else {
+            expr = Parse_Expression(ctx);
+            if (!expr) return ctx.error_expected("an expression");
+            require_semicolon = true;
+        }
 
-        if (tok.type != ';') {
-            return ctx.error_unexpected("after statement", "there should be a ';' before this");
+        if (require_semicolon) {
+            ctx.lexer.next_token(); // what is after?
+            if (tok.type != ';') {
+                return ctx.error_unexpected("after statement", "there should be a ';' before this");
+            }
         }
 
         auto decl = ctx.alloc_expr<kai_Stmt_Declaration>();
         decl->expr = expr;
         decl->name = name;
-        decl->line_number;
+        decl->flags = flags;
+        decl->line_number = ln;
 
         return(kai_Stmt) decl;
-        break;
     }
 
     }
 }
 
-// @TODO: (Parse_Function) remove this garbage that is hard-coded
-void* Parse_Function(Parser_Context& ctx) {
+
+kai_Expr Parse_Procedure(Parser_Context& ctx) {
     auto& tok = ctx.lexer.currentToken;
 
-    if (tok.type != token_identifier) return ctx.error_unexpected("", "");
-
-    auto name = tok.string;
-
-    ctx.lexer.next_token();
-    if (tok.type != ':') return ctx.error_unexpected("", "");
-    ctx.lexer.next_token();
-    if (tok.type != ':') return ctx.error_unexpected("", "");
-
-    ctx.lexer.next_token();
-    if (tok.type != '(') return ctx.error_unexpected("", "");
-    
+    // sanity check
+    if (tok.type != '(') return ctx.error_expected("'(' (compiler bug)");
     ctx.lexer.next_token();
 
-    // use temperary memory to store the statements we parse.
+    // use temperary memory to store the parameters we parse.
     auto params = reinterpret_cast<kai_Expr_Procedure_Parameter*>(ctx.stack);
     kai_u32 count = 0, ret_count = 0;
 
@@ -494,7 +535,6 @@ void* Parse_Function(Parser_Context& ctx) {
     {
     parseParam:
         ctx.stack = params + count;
-        check_temp_stack_overflow(ctx);
 
         if (tok.type != token_identifier) return ctx.error_expected("identifier");
         auto name = tok.string;
@@ -509,8 +549,8 @@ void* Parse_Function(Parser_Context& ctx) {
         kai_Expr_Procedure_Parameter p;
         p.name = name;
         p.type = ty;
-        p._flags = 0;
 
+        check_temp_stack_overflow(params + count, ctx);
         params[count++] = p;
 
         ctx.lexer.next_token(); // get token after type
@@ -531,7 +571,6 @@ void* Parse_Function(Parser_Context& ctx) {
         ctx.lexer.next_token(); // eat ')'
 
         ctx.stack = params + count;
-        check_temp_stack_overflow(ctx);
 
         auto ty = Parse_Type(ctx);
         if (!ty) return ctx.error_expected("Type");
@@ -539,7 +578,10 @@ void* Parse_Function(Parser_Context& ctx) {
         kai_Expr_Procedure_Parameter p;
         p.name = {0,nullptr};
         p.type = ty;
+
+        check_temp_stack_overflow(params + count, ctx);
         params[count++] = p;
+        
         ++ret_count;
 
         ctx.lexer.next_token();
@@ -556,13 +598,11 @@ void* Parse_Function(Parser_Context& ctx) {
     // reset stack
     ctx.stack = params;
 
-    proc->body = Parse_Statement(ctx);
-    if (!proc->body) return ctx.error_expected("function body");
+    auto body = Parse_Statement(ctx);
+    if (!body) return ctx.error_expected("function body");
 
-    auto decl = ctx.alloc_expr<kai_Stmt_Declaration>();
-    decl->expr = (kai_Expr)proc;
-    decl->name = name;
-    return decl;
+    proc->body = body;
+    return(kai_Expr) proc;
 }
 
 #if   defined(DEBUG_LEXER)
@@ -572,7 +612,7 @@ void print_token(Token const& t) {
     auto& os = std::cout;
 
     if( is_token_keyword(t.type) ) {
-        os << "keyword:" << token_type_string(t.type);
+        os << "keyword:" << token_type_string(t.type).data;
     }
     else switch( t.type )
     {
@@ -622,8 +662,8 @@ kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
 {
     Lexer_Context lexer{info->source};
 
-    info->module->toplevel = nullptr;
- 
+    info->module->toplevel_count = 0;
+
     while (1) {
         auto tok = lexer.next_token();
 
@@ -634,10 +674,9 @@ kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
         }
     }
 
-    return kai_Success;
+    return kai_Result_Success;
 }
 #elif defined(DEBUG_PARSER)
-
 kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
 {
     Parser_Context ctx{
@@ -673,7 +712,46 @@ kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
         Lexer_Context{info->source},
         info->module->memory
     };
+    ctx.stack = ctx.memory.temperary;
+    ctx.stack_size = ctx.memory.temperary_size;
 
-    return kai_Success;
+    // setup first token
+    auto& cur = ctx.lexer.next_token();
+
+    // use temperary memory to store the statements we parse.
+    auto statements = reinterpret_cast<kai_Stmt*>(ctx.stack);
+    kai_u32 count = 0;
+
+    while (cur.type != token_end)
+    {
+        ctx.stack = statements + count;
+        auto stmt = Parse_Statement(ctx, true);
+
+        if (!stmt) { ctx.error_expected("a top level statement [from top]"); goto error; }
+
+        __check_temp_stack_overflow(statements + count, ctx);
+        statements[count++] = stmt;
+
+        ctx.lexer.next_token(); // get first token of next statement
+    }
+
+    // allocate the space we need for how many statements we have:
+    info->module->toplevel_stmts = (kai_Stmt*)ctx.memory.alloc(ctx.memory.user, count * sizeof(kai_Stmt));
+    info->module->toplevel_count = count;
+
+    // copy expressions from temperary storage:
+    memcpy(info->module->toplevel_stmts, statements, count * sizeof(kai_Stmt));
+
+error:
+    if (ctx.error_info.value) {
+        if (info->error_info) {
+            *info->error_info = ctx.error_info;
+            info->error_info->file = info->filename;
+            info->error_info->loc.source = info->source.data;
+        }
+        return ctx.error_info.value;
+    }
+
+    return kai_Result_Success;
 }
 #endif

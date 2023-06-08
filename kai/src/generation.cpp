@@ -2,72 +2,489 @@
 #include "program.hpp"
 #include <iomanip>
 #include <cassert>
+#define view(S) std::string_view( (char*)S.data, S.count )
+#define catch_and_throw(a) if(a) return true
 
-//VirtualReg Generate_Instruction(Type_Checker_Context& ctx, kai_Expr root) {
-//	switch (root->id)
-//	{
-//	case kai_Expr_ID_Identifier: {
-//		auto ident = (kai_Expr_Identifier*)root;
-//		auto it = ctx.ident_index_table.find(view(ident->source_code));
-//		if (it == ctx.ident_index_table.end()) {
-//			return {-1};
-//		}
-//		return {it->second, 0};
-//	}
-//	case kai_Expr_ID_Number: {
-//		auto num = (kai_Expr_Number*)root;
-//		return {VirtualReg_Immediate, num->info.Whole_Part};
-//	}
-//	case kai_Expr_ID_Binary: {
-//		auto binary = (kai_Expr_Binary*)root;
-//
-//		ByteCodeInstruction instr;
-//		instr.intruction = translate_instruction(binary->op);
-//		instr.left       = Generate_Instruction(ctx, binary->left);
-//		instr.right      = Generate_Instruction(ctx, binary->right);
-//		auto index = (int)ctx.intruction_stream.size();
-//		ctx.intruction_stream.emplace_back(instr);
-//
-//		return {index};
-//	}
-//
-//	default:return {-1};
-//	}
-//}
-//
-//void Generate_Statement_Instruction(Type_Checker_Context& ctx, kai_Stmt root) {
-//	switch (root->id)
-//	{
-//	case kai_Stmt_ID_Return: {
-//		auto ret = (kai_Stmt_Return*)root;
-//
-//		ByteCodeInstruction instr;
-//		instr.intruction = Instr_Return;
-//		instr.left = Generate_Instruction(ctx, ret->expr);
-//		ctx.intruction_stream.emplace_back(instr);
-//		break;
-//	}
-//	case kai_Stmt_ID_Declaration: {
-//		auto decl = (kai_Stmt_Declaration*)root;
-//
-//		auto instr = Generate_Instruction(ctx, decl->expr);
-//		ctx.ident_index_table.emplace(view(decl->name), instr.index);
-//		break;
-//	}
-//	case kai_Stmt_ID_Compound: {
-//		auto comp = (kai_Stmt_Compound*)root;
-//		for range(comp->count) {
-//			Generate_Statement_Instruction(ctx, comp->statements[i]);
-//		}
-//		break;
-//	}
-//
-//	default:break;
-//	}
-//}
+bool Bytecode_Generation_Context::insert_value_dependencies(Value_Dependency_Node& node, kai_u32 scope, kai_Expr expr) {
+	if (expr == nullptr) { panic_with_message("null expression\n"); return true; }
+
+    switch (expr->id)
+    {
+    case kai_Expr_ID_Identifier: {
+        auto name = view(expr->source_code);
+		auto result = resolve_dependency_node(name, scope);
+        
+		if (!result)
+			return error_not_declared(expr->source_code, expr->line_number);
+
+		node.dependencies.emplace_back(Dependency::VALUE, *result);
+        break;
+    }
+
+    case kai_Expr_ID_Number: break;
+    case kai_Expr_ID_String: break;
+
+    case kai_Expr_ID_Unary: {
+        auto unary = (kai_Expr_Unary*)expr;
+		return insert_value_dependencies(node, scope, unary->expr);
+        break;
+    }
+
+    case kai_Expr_ID_Binary: {
+        auto binary = (kai_Expr_Binary*)expr;
+		if (insert_value_dependencies(node, scope, binary->left)) return true;
+        return insert_value_dependencies(node, scope, binary->right);
+        break;
+    }
+
+    case kai_Expr_ID_Procedure_Call: {
+        auto call = (kai_Expr_Procedure_Call*)expr;
+
+        panic_with_message("procedure call\n");
+
+        //print_tree(ctx, call->proc);
+        //for (kai_u32 i = 0; i < call->arg_count; ++i) {
+        //    print_tree(ctx, call->arguments[i]);
+        //}
+        break;
+    }
+
+    case kai_Expr_ID_Procedure_Type: {
+        auto proc = (kai_Expr_Procedure_Type*)expr;
+
+		panic_with_message("procedure type\n");
+        //kai_int total = proc->parameter_count + proc->ret_count;
+        //for (int i = 0; i < total; ++i) {
+        //    print_tree(ctx, proc->types[i]);
+        //}
+        break;
+    }
+
+    case kai_Expr_ID_Procedure: {
+        auto proc = (kai_Expr_Procedure*)expr;
+
+		Scope& local_scope = dg.scopes[proc->_scope];
+
+		// Insert procedure input names to local scope
+		auto const n = proc->param_count;
+        for (int i = 0; i < n; ++i) {
+			auto const& parameter = proc->input_output[i];
+			auto name = view(parameter.name);
+
+			auto it = local_scope.map.find(name);
+			if (it != local_scope.map.end())
+				return error_redefinition(parameter.name, proc->line_number);
+
+			local_scope.map.emplace(name, LOCAL_VARIABLE_INDEX);
+        }
+
+		if (insert_value_dependencies_proc(node, &local_scope, proc->body))
+			return true;
+		
+		for (auto it = local_scope.map.begin(); it != local_scope.map.end();)
+		{
+			if (it->second == LOCAL_VARIABLE_INDEX)
+				it = local_scope.map.erase(it);
+			else ++it;
+		}
+		break;
+    }
+
+    case kai_Stmt_ID_Declaration: {
+        break;
+    }
+
+    case kai_Stmt_ID_Return: {
+		panic_with_message("return\n");
+        break;
+    }
+
+    case kai_Stmt_ID_Compound: {
+        auto comp = (kai_Stmt_Compound*)expr;
+
+		panic_with_message("compound statement\n");
+        //auto const n = comp->count;
+        //for (int i = 0; i < n; ++i) {
+        //    print_tree(ctx, comp->statements[i]);
+        //}
+        break;
+    }
+
+    default: panic_with_message("undefined expression\n");
+    }
+
+	return false;
+}
+
+bool Bytecode_Generation_Context::insert_value_dependencies_proc(Value_Dependency_Node& node, Scope* scope, kai_Expr expr)
+{
+	if (expr == nullptr) { panic_with_message("null expression\n"); return true; }
+
+	switch (expr->id)
+	{
+	case kai_Expr_ID_Identifier: {
+		auto name = view(expr->source_code);
+
+		{ 
+			auto it = scope->map.find(name);
+			if (it != scope->map.end()) {
+				if (it->second != LOCAL_VARIABLE_INDEX) // DO NOT depend on local variables
+					node.dependencies.emplace_back(Dependency::VALUE, it->second);
+				return false;
+			}
+		}
+
+		if (scope->parent == -1) panic_with_message("what?");
+
+		scope = &dg.scopes[scope->parent];
+		auto result = resolve_dependency_node_outside_procedure(name, scope);
+
+		if (!result)
+			return error_not_declared(expr->source_code, expr->line_number);
+
+		if(*result != LOCAL_VARIABLE_INDEX) // DO NOT depend on local variables
+			node.dependencies.emplace_back(Dependency::VALUE, *result);
+		break;
+	}
+
+	case kai_Expr_ID_Unary: {
+		auto unary = (kai_Expr_Unary*)expr;
+		return insert_value_dependencies_proc(node, scope, unary->expr);
+	}
+
+	case kai_Expr_ID_Binary: {
+		auto binary = (kai_Expr_Binary*)expr;
+		catch_and_throw(insert_value_dependencies_proc(node, scope, binary->left));
+		return insert_value_dependencies_proc(node, scope, binary->right);
+	}
+
+	case kai_Expr_ID_Procedure_Call: {
+		auto call = (kai_Expr_Procedure_Call*)expr;
+
+		panic_with_message("procedure call\n");
+
+		//print_tree(ctx, call->proc);
+		//for (kai_u32 i = 0; i < call->arg_count; ++i) {
+		//    print_tree(ctx, call->arguments[i]);
+		//}
+		break;
+	}
+
+	case kai_Expr_ID_Procedure_Type: {
+		auto proc = (kai_Expr_Procedure_Type*)expr;
+		panic_with_message("procedure type\n");
+		//kai_int total = proc->parameter_count + proc->ret_count;
+		//for (int i = 0; i < total; ++i) {
+		//    print_tree(ctx, proc->types[i]);
+		//}
+		break;
+	}
+
+	case kai_Expr_ID_Procedure: {
+		auto proc = (kai_Expr_Procedure*)expr;
+
+		Scope& local_scope = dg.scopes[proc->_scope];
+
+		// Insert procedure input names to local scope
+		auto const n = proc->param_count;
+		for (int i = 0; i < n; ++i) {
+			auto const& parameter = proc->input_output[i];
+			auto name = view(parameter.name);
+
+			auto it = local_scope.map.find(name);
+			if (it != local_scope.map.end())
+				return error_redefinition(parameter.name, proc->line_number);
+
+			local_scope.map.emplace(name, LOCAL_VARIABLE_INDEX);
+		}
+
+		if (insert_value_dependencies_proc(node, &local_scope, proc->body))
+			return true;
+		
+		for (auto it = local_scope.map.begin(); it != local_scope.map.end();)
+		{
+			if (it->second == LOCAL_VARIABLE_INDEX)
+				it = local_scope.map.erase(it);
+			else ++it;
+		}
+		break;
+	}
+
+	case kai_Stmt_ID_Declaration: {
+		auto decl = (kai_Stmt_Declaration*)expr;
+
+		// Already has a dependency node
+		if (decl->flags & kai_Decl_Flag_Const) return false;
+
+		auto name = view(decl->name);
+
+		// Insert into local scope (if not already defined)
+		auto it = scope->map.find(name);
+		if (it != scope->map.end())
+			return error_redefinition(decl->name, decl->line_number);
+		scope->map.emplace(name, LOCAL_VARIABLE_INDEX);
+
+		// Look into it's definition to find possible dependencies
+		return insert_value_dependencies_proc(node, scope, decl->expr);
+	}
+
+	case kai_Stmt_ID_Return: {
+		auto ret = (kai_Stmt_Return*)expr;
+		return insert_value_dependencies_proc(node, scope, ret->expr);
+	}
+
+	case kai_Stmt_ID_Compound: {
+		auto comp = (kai_Stmt_Compound*)expr;
+
+		Scope& s = dg.scopes[comp->_scope];
+
+		auto const n = comp->count;
+		for range(n) {
+			catch_and_throw(insert_value_dependencies_proc(node, &s, comp->statements[i]));
+		}
+		break;
+	}
+
+	default: break;
+	}
+
+	return false;
+}
+
+kai_Type_Info_Integer _s64_info = {
+	.type = kai_Type_Integer,
+	.bits = 64,
+	.is_signed = true,
+};
+
+kai_Type_Info _Type_info = {kai_Type_Type};
+
+bool Bytecode_Generation_Context::generate_dependency_graph()//-> failed: bool
+{
+	dg.value_nodes.reserve(128);
+	dg.type_nodes.reserve(128);
+	dg.node_infos.reserve(128);
+	dg.scopes.reserve(64);
+	dg.scopes.emplace_back();
+
+	auto& global_scope = dg.scopes[0];
+	{
+		auto index = (kai_u32)dg.value_nodes.size();
+
+		Value_Dependency_Node vnode;
+		vnode.flags = Evaluated;
+		vnode.value.ptrvalue = &_s64_info;
+
+		Type_Dependency_Node tnode;
+		tnode.flags = Evaluated;
+		tnode.type = &_Type_info;
+
+		Dependency_Node_Info info;
+		info.name = "s64";
+		info.scope = GLOBAL_SCOPE;
+		info.expr = nullptr;
+
+		global_scope.map.emplace(info.name, index);
+
+		dg.value_nodes.emplace_back(vnode);
+		dg.type_nodes.emplace_back(tnode);
+		dg.node_infos.emplace_back(info);
+	}
+
+	// Make nodes for every statement
+	for range(mod->toplevel_count) {
+		auto tl = mod->toplevel_stmts[i];
+		if (insert_node_for_statement(tl, false)) return true;
+	}
+
+	// Insert dependencies for each node
+	for range(dg.node_infos.size()) {
+		auto& vnode = dg.value_nodes[i];
+		auto& tnode = dg.type_nodes[i];
+		auto& info = dg.node_infos[i];
+
+		if (!(vnode.flags&Evaluated) && insert_value_dependencies(vnode, info.scope, info.expr))
+			return true;
+		
+	//	if (tnode.flags & Evaluated);
+	//	else insert_type_dependencies(tnode, info.scope, info.expr);
+	}
+
+	return false;
+}
+
+bool Bytecode_Generation_Context::insert_node_for_statement(kai_Stmt stmt, bool in_proc, kai_u32 scope) {
+	switch (stmt->id)
+	{
+	case kai_Stmt_ID_Declaration: {
+		auto decl = (kai_Stmt_Declaration*)stmt;
+		if (insert_node_for_declaration(decl, in_proc, scope))
+			return true;
+		break;
+	}
+	case kai_Stmt_ID_Compound: {
+		auto comp = (kai_Stmt_Compound*)stmt;
+		auto new_scope_index = (kai_u32)dg.scopes.size();
+		Scope new_scope;
+		new_scope.parent = scope;
+		dg.scopes.emplace_back(new_scope);
+		comp->_scope = new_scope_index;
+		for range(comp->count) {
+			if (insert_node_for_statement(comp->statements[i], in_proc, new_scope_index))
+				return true;
+		}
+		break;
+	}
+	default:break;
+	}
+	return false;
+}
+
+bool Bytecode_Generation_Context::insert_node_for_declaration(kai_Stmt_Declaration* decl, bool in_proc, kai_u32 scope)
+{
+	if (in_proc && !(decl->flags & kai_Decl_Flag_Const))
+		return false;
+
+	auto name = view(decl->name);
+
+	Scope* s = &dg.scopes[scope];
+
+	// Does this declaration already exist for this Scope?
+	auto it = s->map.find(name);
+	if (it != s->map.end()) {
+		return error_redefinition(decl->name, decl->line_number);
+	}
+
+	// Add node to dependency graph
+	{
+		auto index = (kai_u32)dg.value_nodes.size();
+
+		Value_Dependency_Node vnode = {};
+		{
+			Dependency dep;
+			dep.node_index = index;
+			dep.type = Dependency::TYPE;
+			vnode.dependencies.emplace_back(dep);
+		}
+
+		Type_Dependency_Node tnode = {};
+
+		Dependency_Node_Info info;
+		info.name = name;
+		info.scope = scope;
+		info.expr = decl->expr;
+
+		s->map.emplace(info.name, index);
+
+		dg.value_nodes.emplace_back(vnode);
+		dg.type_nodes.emplace_back(tnode);
+		dg.node_infos.emplace_back(info);
+	}
+
+	switch (decl->expr->id)
+	{
+	// rabbit hole goes deeper...
+	case kai_Expr_ID_Procedure: {
+		auto proc = (kai_Expr_Procedure*)decl->expr;
+
+		auto new_scope_index = (kai_u32)dg.scopes.size();
+		Scope new_scope;
+		new_scope.parent = scope;
+		dg.scopes.emplace_back(new_scope);
+
+		proc->_scope = new_scope_index;
+
+		return insert_node_for_statement(proc->body, true, new_scope_index);
+	}
+
+	default:break;
+	}
+
+	return false;
+}
+
+void print_dependecies(HL_Dependency_Graph& dg) {
+	for range(dg.value_nodes.size()) {
+		auto const& info = dg.node_infos[i];
+		auto const& node = dg.value_nodes[i];
+		auto const& name = info.name;
+
+		std::cout << name;
+
+		std::cout << ':' << info.scope << ' ';
+
+		if (node.flags & Dependency_Flag::Evaluated) {
+			std::cout << "is already evaluated\n";
+			continue;
+		}
+
+		std::cout << "depends on {";
+		int k = 0;
+		for (auto const& dep : node.dependencies) {
+			auto const& info = dg.node_infos[dep.node_index];
+			if (dep.type == Dependency::TYPE)
+				std::cout << "type_of(";
+			std::cout << info.name << ':' << info.scope;
+			if (dep.type == Dependency::TYPE)
+				std::cout << ")";
+			if (++k < node.dependencies.size()) std::cout << ", ";
+		}
+		std::cout << "}\n";
+	}
+	return;
+	for range(dg.type_nodes.size()) {
+		auto const& info = dg.node_infos[i];
+		auto const& node = dg.type_nodes[i];
+		auto const& name = info.name;
+
+		std::cout << "type_of(" << name;
+
+		std::cout << ':' << info.scope << ") ";
+
+		if (node.flags & Dependency_Flag::Evaluated) {
+			std::cout << "is already evaluated\n";
+			continue;
+		}
+
+		std::cout << "depends on {";
+		int k = 0;
+		for (auto const& dep : node.dependencies) {
+			auto const& info = dg.node_infos[dep.node_index];
+			if (dep.type == Dependency::TYPE)
+				std::cout << "type_of(";
+			std::cout << info.name << ':' << info.scope;
+			if (dep.type == Dependency::TYPE)
+				std::cout << ")";
+			if (++k < node.dependencies.size()) std::cout << ", ";
+		}
+		std::cout << "}\n";
+	}
+}
+
+void print_scopes();
 
 kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* program)
 {
+	Bytecode_Generation_Context ctx{};
+	ctx.mod        = info->module;
+	ctx.memory     = info->module->memory;
+
+	std::cout << '\n';
+	if (ctx.generate_dependency_graph()) {
+		goto error;
+	}
+
+	print_dependecies(ctx.dg);
+
+	if (ctx.error_info.value) {
+	error:
+		ctx.error_info.file = kai_static_string("placeholder.kai"); // RIP
+		*info->error_info = ctx.error_info;
+		return ctx.error_info.value;
+	}
+
+	return kai_Result_Error_Fatal;
+
 	Bytecode_Instruction_Stream stream;
 	
 	// main :: (x: s32) -> s32 {
@@ -120,6 +537,10 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 
 	//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 	// DEBUG
+	std::cout << '\n';
+	stream.debug_print();
+
+	std::cout << '\n';
 	std::cout << std::hex << std::setfill('0');
 	for range(stream.stream.size()) {
 		std::cout << std::setw(2) << (int)stream.stream[i];

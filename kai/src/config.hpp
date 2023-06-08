@@ -14,7 +14,8 @@ extern void panic();
 #endif
 
 // how is something like this not built into C++ already?
-#define range(N) (decltype(N) i = 0; i < N; ++i)
+#define range(N) (std::remove_const_t<decltype(N)> i = 0; i < N; ++i)
+#define loop while(1)
 
 #define XPRIMITIVE_TYPES \
 X( u8, kai_u8 ) X(u16, kai_u16) X(u32, kai_u32) X(u64, kai_u64) \

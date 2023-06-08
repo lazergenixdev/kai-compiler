@@ -58,7 +58,8 @@ typedef enum {
 	kai_Type_Float     = 1,
 	kai_Type_Pointer   = 2,
 	kai_Type_Procedure = 3,
-	kai_Type_Struct    = 4,
+	kai_Type_Type      = 4, // No Type_Info struct for this
+	kai_Type_Struct    = 5,
 } kai_Type_Enum;
 
 typedef struct kai_Type_Info {
@@ -140,12 +141,13 @@ typedef enum {
 	kai_Result_Success = 0,
 
 	kai_Result_Error_Syntax,
+	kai_Result_Error_Semantic,
 	kai_Result_Error_Type_Cast,
 	kai_Result_Error_Type_Check,
 
 	// 'Meta' Errors
 	kai_Result_Error_Fatal, // compiler bug probably
-	kai_Result_Error_Input_Error_Null = -1, // 'error' cannot be null
+	kai_Result_Error_Internal, // compiler error unrelated to source code
 	
 	kai_Result_Error_Info, // to be implemented...
 } kai_result;

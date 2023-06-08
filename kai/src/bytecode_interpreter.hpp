@@ -28,8 +28,6 @@ struct Bytecode_Interpreter {
 
 	void debug_output_registers();
 
-	Register& register_at(u32 index, base_index b);
-
 	void call_native_procedure(u64 address);
 
 	// step() -> 0 (DONE)
@@ -52,4 +50,7 @@ struct Bytecode_Interpreter {
 		cursor += sizeof(T);
 		return value;
 	}
+
+	Register& register_at(u32 index, base_index b);
+	void make_registers(u32 max);
 };

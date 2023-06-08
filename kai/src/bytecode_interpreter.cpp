@@ -16,19 +16,9 @@ Register& Bytecode_Interpreter::register_at(u32 index, base_index b) {
 
 	u64 reg_index = index + b.reg;
 
-	if (reg_index < (u64)registers.size())
-		return registers[reg_index];
-
-	u64 insert_count = (u64)reg_index - (u64)registers.size() + 1;
-
-	if (insert_count > 0x100) {
-		panic_with_message("Insert count too large!");
-	}
-
-	Register r{};
-	for (u64 i = 0; i < insert_count; ++i)
-		registers.emplace_back(r);
-
+	if (reg_index >= (u64)registers.size())
+		panic_with_message("register not allocated");
+	
 	return registers[reg_index];
 }
 
@@ -168,22 +158,20 @@ void primitive_div(u8 type, Register& dst, Register const& op1, Register const& 
 
 void Bytecode_Interpreter::primitive_operation(u8 op) {
 	auto type = bytecode[cursor++];
-	auto ptr = (u32*)&bytecode[cursor];
-	auto dst = *(ptr++);
-	auto op1 = *(ptr++);
-	auto op2 = *(ptr++);
-	cursor += 3 * sizeof(u32);
+	auto dst = load<u32>();
+	auto op1 = load<u32>();
+	auto is_imm = bytecode[cursor++];
 
-	auto& r0 = register_at(dst, base.back());
-	auto& r1 = register_at(op1, base.back());
+	make_registers(dst);
+
 	Register r2;
-	if (op2 == IMMEDIATE) {
-		// load immediate value
-		r2 = load_immediate(type, ptr);
-	}
-	else {
-		r2 = register_at(op2, base.back());
-	}
+	if (is_imm)
+		r2 = load_immediate(type, bytecode+cursor);
+	else
+		r2 = register_at(load<u32>(), base.back());
+
+	auto& r1 = register_at(op1, base.back());
+	auto& r0 = register_at(dst, base.back());
 
 	switch (op) {
 	case Operation_Add: primitive_add(type, r0, r1, r2); break;
@@ -192,4 +180,18 @@ void Bytecode_Interpreter::primitive_operation(u8 op) {
 	case Operation_Div: primitive_div(type, r0, r1, r2); break;
 	default: panic();
 	}
+}
+
+void Bytecode_Interpreter::make_registers(u32 max)
+{
+	u64 reg_index = max + base.back().reg;
+	u64 insert_count = (u64)reg_index - (u64)registers.size() + 1;
+
+	if (insert_count > 0x100) {
+		panic_with_message("Insert count too large!");
+	}
+
+	Register r{};
+	for (u64 i = 0; i < insert_count; ++i)
+		registers.emplace_back(r);
 }

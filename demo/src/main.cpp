@@ -38,6 +38,7 @@ void print_error(kai_Error_Info& err) {
 	switch (err.value)
 	{
 	case kai_Result_Error_Syntax:     std::cout << "Syntax Error"; break;
+	case kai_Result_Error_Semantic:   std::cout << "Semantic Error"; break;
 	case kai_Result_Error_Type_Check: std::cout << "Type Check Error"; break;
 	default:break;
 	}
@@ -119,10 +120,27 @@ int main() {
 
 	static kai_str source_code = kai_static_string(
 		u8R"KAICODE(
-function_that_does_stuff :: (a: int, b: int) -> int {
-	n := a + b + 1;
-	k := a * b;
-	ret (n + k) / 2;
+A :: B * 2;
+B :: 1;
+C := A + B; // global variable
+
+main :: () {
+	A := 2;
+	B := A + 2;
+	var := 2;
+
+	{
+		//var2 := var; // This is an error, should not be
+	}
+
+	h :: thing;
+
+	thing :: (x: s64) -> s64 
+		ret h * A + x; // uses A from global scope
+}
+
+foo :: () {
+//	bar := thing; // "thing" is not visible to this scope
 }
 )KAICODE");
 
@@ -156,6 +174,12 @@ function_that_does_stuff :: (a: int, b: int) -> int {
 		info.module     = &mod;
 		info.error_info = &error;
 		result = kai_create_program(&info, &program);
+	}
+
+	if KAI_FAILED(result) {
+		error.loc.source = source_code.data;
+		if(result != kai_Result_Error_Fatal)
+		print_error(error);
 	}
 
 	std::cout << "\nCompiling took: " << time_took_ms << " ms\n";

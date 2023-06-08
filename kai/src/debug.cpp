@@ -203,7 +203,9 @@ void print_tree(tree_context& ctx, kai_Expr expr) {
         std::cout << INFO;
         std::cout.write((char*)decl->name.data, decl->name.count);
         std::cout << NODE;
-        std::cout << "\")\n";
+        std::cout << "\") ";
+        if (decl->flags & kai_Decl_Flag_Const) std::cout << "CONST ";
+        std::cout << '\n';
 
         ctx.stack.push_back(last_element);
         print_tree(ctx, decl->expr);
@@ -252,7 +254,14 @@ void print_tree(tree_context& ctx, kai_Expr expr) {
 
 void kai_Lib_print_syntax_tree(kai_Module* mod) {
     tree_context ctx;
-    print_tree(ctx, (kai_Expr)mod->AST_Root);
+    std::cout << "Top Level\n";
+    ctx.stack.emplace_back(element);
+
+    auto const n = mod->toplevel_count;
+    for range(mod->toplevel_count) {
+        if (i == n - 1) ctx.stack.back() = last_element;
+        print_tree(ctx, mod->toplevel_stmts[i]);
+    }
     std::cout << RESET;
 }
 

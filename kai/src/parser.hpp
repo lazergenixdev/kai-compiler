@@ -37,7 +37,23 @@ struct Parser_Context {
     }
 
     template <typename T>
-    nullptr_t error(T) { return nullptr; }
+    nullptr_t error(T) { static_assert(std::_Always_false<T>, "Do not use this."); }
+
+    template <size_t Size>
+    nullptr_t error_internal(char const (&what)[Size]) {
+        if (error_info.value != kai_Result_Success) return nullptr; // already have error value
+
+        error_info.value = kai_Result_Error_Internal;
+        error_info.what = {0, (kai_u8*)memory.temperary}; // uses temperary memory
+        error_info.context.count = 0; // static memory
+
+        // fill what buffer
+        auto& w = error_info.what;
+        memcpy(w.data + w.count, what, Size - 1);
+        w.count += Size - 1;
+
+        return nullptr;
+    }
 
     template <size_t Size>
     nullptr_t error_expected(char const (&what)[Size]) {
@@ -55,9 +71,7 @@ struct Parser_Context {
         error_info.what       = { 0, (kai_u8*)memory.temperary }; // uses temperary memory
         error_info.context.count = 0; // static memory
         
-        if (token.type == token_string) {
-            error_info.loc.string.data -= 1; // we know there will at least be one " to open the string
-        }
+        adjust_source_location(error_info.loc.string, token.type);
 
         // fill what buffer
         auto& w = error_info.what;
@@ -85,11 +99,9 @@ struct Parser_Context {
         error_info.loc.line = token.line_number;
         error_info.file; // copied from source
         error_info.what = { 0, (kai_u8*)memory.temperary }; // uses temperary memory
-        error_info.context = { Size2, (kai_u8*)context }; // static memory
+        error_info.context = { Size2 - 1, (kai_u8*)context }; // static memory
 
-        if (token.type == token_string) {
-            error_info.loc.string.data -= 1; // we know there will at least be one " to open the string
-        }
+        adjust_source_location(error_info.loc.string, token.type);
 
         auto& w = error_info.what;
         memcpy(w.data, "Unexpected ", 11);
@@ -118,5 +130,17 @@ struct Parser_Context {
         w.count += Size1 - 1;
 
         return nullptr;
+    }
+
+    // @TODO: Fix lexer so that this can be Deleted (adjust_source_location)
+    void adjust_source_location(kai_str& src, kai_u32 type) {
+        if (type == token_string) {
+            src.data -= 1; // we know there will at least be one " to open the string
+            src.count += 2;
+        }
+        if (type == token_directive) {
+            src.data -= 1;
+            src.count += 1;
+        }
     }
 };

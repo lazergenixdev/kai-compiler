@@ -55,6 +55,8 @@ static constexpr kai_str token_type_string(token_type ty) {
 	case token_string:     return kai_static_string("string");
 	case token_number:     return kai_static_string("number");
 
+	case '->':             return kai_static_string("'->'");
+
 #define X(NAME, ID) case ID: return kai_static_string(#NAME);
 		XTOKEN_KEYWORDS
 #undef X
@@ -105,17 +107,5 @@ private:
 			return false; // No characters next, can't be equal
 		}
 		return c == source.data[next];
-	}
-
-	// TODO: delete this
-	bool contains_keyword(kai_str const& keyword) {
-		kai_int it = 0;
-		while( it < keyword.count && cursor + it < source.count ) {
-			if( keyword.data[it] != source.data[cursor+it] ) {
-				return false;
-			}
-			++it;
-		}
-		return it == keyword.count;
 	}
 };

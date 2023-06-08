@@ -12,29 +12,65 @@ Notes:
 - only works on Windows (because costum allocator uses VirtualAlloc to reserve multiple pages at a time).
 - will use re2c to parse keywords in lexer, I think it is better than using a hash table, but this will need to be tested.
 - will use AsmJit for machine code generation, as it will speed up development time significantly.
-- todo: put license information in source files
 - will need dyncall for compile-time execution of bytecode
 
-# Problems :(
-
-## Typing needs to happen out-of-order (because headers suck very much)
+# How do I want the API to look?
 ```C++
-// Example:
-main :: () {
-	print("🤩"); // Typing does not know what "print" is!
+kai_Error_Info error;
+kai_result result;
+kai_Module mod; // contains the AST
+
+// Create AST
+{
+	kai_Syntax_Tree_Create_Info info;
+	info.source     = source_code;
+	info.module     = &mod;
+	info.filename   = kai_static_string("main.kai");
+	info.error_info = &error;
+	result = kai_create_syntax_tree(&info);
 }
 
-print :: (str) -> void #native
-```
-Solution: Dependencies and stuff??? IDK lol, typing is suck a huge and interconnected problem
+if( result != kai_Result_Success ) handle_error(&error);
 
----
+// Now that we have the AST, we can now modify the AST as we please
 
-## Typing needs to know information that can only be determined at compile-time
-```C++
-// Example:
-test :: () -> Type { ret s32; } // This can be whatever arbitrary code
-A :: test();
-B : A = 5; // Typing needs to know what the Heck "A" is!
+kai_Program program;
+
+// Compile into a program we can run directly
+{
+	kai_Program_Create_Info info;
+	info.module     = &mod;
+	info.error_info = &error;
+	result = kai_create_program(&info, &program);
+}
+
+if( result != kai_Result_Success ) handle_error(&error);
+
+// Now we get the main procedure from our script
+using main_proc_type = kai_int(kai_int, kai_str*);
+auto main_proc = (main_proc_type*)kai_find_procedure(program, "main", "(int, *str) -> int");
+
+if( main_proc == nullptr ) error("main not found!");
+
+// We now use "main_proc" as if it is just a C function!
+kai_str args[] = { "main.kai", "script test" };
+kai_int r = main_proc(2, args);
+std::cout << "main returned " << r << '\n';
 ```
-Solution: Every declaration gets their own compilation unit that compiles to bytecode, that is able to be executed when necessary. Exactly how do you implement something like that? Please answer my question.
+
+# TODO
+typing:
+- add value dependency generation
+- add type dependency generation
+- add circular dependency check
+- add Expression type deduction
+- add Expression evaluator (compile-time)
+- add bytecode generation for procedures
+- add "type slot" to declarations
+- add Expression type-checker
+
+errors:
+- better Error_Info struct (linked list)
+
+other
+- put license information in source files
