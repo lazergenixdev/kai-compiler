@@ -18,6 +18,8 @@ static constexpr char const* binary_operator_name(kai_u32 op) {
 
     case '?':return "cast";
 
+    case '.':return "member access";
+
     default:return "undefined";
     }
 }

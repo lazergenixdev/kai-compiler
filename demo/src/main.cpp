@@ -1,5 +1,6 @@
 ﻿#include "kai/generation.h"
 #include <iostream>
+#include <fstream>
 #include <bitset>
 #include <vector>
 #include <chrono>
@@ -103,6 +104,53 @@ void print_result(Fn& fn, Args&&...args) {
 	}
 }
 
+// C++ is a piece of serious garbage, screw your move constructor bullshit
+struct File_Builder {
+	void* data = nullptr;
+	kai_u64 size;
+
+	void init() {
+		if (size) data = malloc(size);
+	}
+};
+
+struct File {
+	void* data;
+	kai_u64 size;
+
+	File(File_Builder const& f):
+		data(f.data),
+		size(f.size)
+	{}
+
+	~File() {
+		free(data);
+	}
+};
+
+File_Builder read_entire_file(char const* filename) {
+	using io = std::ios;
+	if (auto f = std::ifstream(filename, io::binary)) {
+		File_Builder out;
+		
+		// get file size
+		f.seekg(0, io::end);
+		out.size = f.tellg();
+
+		// init output
+		if (out.size) out.data = malloc(out.size);
+
+		// read
+		f.seekg(0, io::beg);
+		f.read((char*)out.data, out.size);
+
+		return out;
+	}
+	return {};
+}
+
+#define FILENAME "test.kai"
+
 int main() {
 
 	SetConsoleOutputCP( CP_UTF8 );
@@ -118,31 +166,16 @@ int main() {
 	kai_Error_Info error;
 	kai_Lib_create_memory(&mod.memory);
 
-	static kai_str source_code = kai_static_string(
-		u8R"KAICODE(
-A :: B * 2;
-B :: 1;
-C := A + B; // global variable
+	File source_file = read_entire_file(FILENAME);
 
-main :: () {
-	A := 2;
-	B := A + 2;
-	var := 2;
-
-	{
-		//var2 := var; // This is an error, should not be
+	if (source_file.data == nullptr) {
+		std::cout << "failed to read file: \"" << FILENAME << "\"\n";
+		exit(1);
 	}
 
-	h :: thing;
-
-	thing :: (x: s64) -> s64 
-		ret h * A + x; // uses A from global scope
-}
-
-foo :: () {
-//	bar := thing; // "thing" is not visible to this scope
-}
-)KAICODE");
+	kai_str source_code;
+	source_code.data = (kai_u8*)source_file.data;
+	source_code.count = (kai_int)source_file.size;
 
 	std::cout << view(source_code);
 	std::cout << '\n';
@@ -153,7 +186,7 @@ foo :: () {
 		kai_Syntax_Tree_Create_Info info;
 		info.source     = source_code;
 		info.module     = &mod;
-		info.filename   = kai_static_string("main.kai");
+		info.filename   = kai_static_string(FILENAME);
 		info.error_info = &error;
 		result = kai_create_syntax_tree(&info);
 	}

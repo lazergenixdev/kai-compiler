@@ -4,8 +4,7 @@
 #include <unordered_map>
 #include <optional>
 
-// @TODO: need a variable to tell when we are out of procedure scope,
-//   so that we do not skip local variables when looking at parent scopes
+// @TODO: don't repeat dependencies pls thx
 // @TODO: add type dependencies on procedure calls
 
 #define GLOBAL_SCOPE 0
@@ -16,6 +15,7 @@
 struct Scope {
 	std::unordered_map<std::string_view, kai_u32> map; // maps Identifiers to Dependency Nodes
 	kai_u32 parent = -1;
+	kai_bool is_proc_scope = false;
 };
 
 struct Dependency {
@@ -33,9 +33,11 @@ enum Dependency_Flag: kai_u32 {
 	Temperary = KAI_BIT(1), // temporarily in the dependency system (for procedure input/variables)
 };
 
+using Dependency_List = std::vector<Dependency>;
+
 struct Dependency_Node {
 	kai_u32 flags;
-	std::vector<Dependency> dependencies;
+	Dependency_List dependencies;
 };
 
 struct Dependency_Node_Info {
@@ -113,10 +115,10 @@ struct Bytecode_Generation_Context {
 	bool insert_node_for_declaration(kai_Stmt_Declaration* decl, bool in_proc, kai_u32 scope = GLOBAL_SCOPE);
 	bool insert_node_for_statement(kai_Stmt stmt, bool in_proc, kai_u32 scope = GLOBAL_SCOPE);
 
-	bool insert_value_dependencies(Value_Dependency_Node& node, kai_u32 scope, kai_Expr expr);
-	bool insert_type_dependencies(Type_Dependency_Node& node, kai_u32 scope, kai_Expr expr);
+	bool insert_value_dependencies(Dependency_List& deps, kai_u32 scope, kai_Expr expr);
+	bool insert_type_dependencies(Dependency_List& deps, kai_u32 scope, kai_Expr expr);
 
-	bool insert_value_dependencies_proc(Value_Dependency_Node& node, Scope* scope, kai_Expr expr);
+	bool insert_value_dependencies_proc(Dependency_List& deps, kai_u32 scope, kai_Expr expr);
 
 	std::optional<kai_u32> resolve_dependency_node(std::string_view name, kai_u32 scope) {
 		Scope* s = nullptr;
@@ -135,18 +137,39 @@ struct Bytecode_Generation_Context {
 
 		return {};
 	}
-	std::optional<kai_u32> resolve_dependency_node_outside_procedure(std::string_view name, Scope* scope) {
+	std::optional<kai_u32> resolve_dependency_node_procedure(std::string_view name, Scope* scope) {
+		bool allow_locals = true;
 		loop {
 			auto it = scope->map.find(name);
 
-			// Skip dependency IF it is local to parent procedure
-			if (it != scope->map.end() && it->second != LOCAL_VARIABLE_INDEX)
-				return std::make_optional(it->second);
+			if (it != scope->map.end()) {
+				bool const is_local = it->second == LOCAL_VARIABLE_INDEX;
+				if (is_local) {
+					if (allow_locals) {
+						return std::make_optional(it->second);
+					}
+				}
+				else {
+					return std::make_optional(it->second);
+				}
+			}
 
 			if (scope->parent == -1)
 				return {};
+
+			if (scope->is_proc_scope)
+				allow_locals = false;
 			
 			scope = &dg.scopes[scope->parent];
 		}
 	}
 };
+
+void remove_all_locals(Scope& s) {
+	for (auto it = s.map.begin(); it != s.map.end();)
+	{
+		if (it->second == LOCAL_VARIABLE_INDEX)
+			it = s.map.erase(it);
+		else ++it;
+	}
+}

@@ -5,7 +5,7 @@
 #define view(S) std::string_view( (char*)S.data, S.count )
 #define catch_and_throw(a) if(a) return true
 
-bool Bytecode_Generation_Context::insert_value_dependencies(Value_Dependency_Node& node, kai_u32 scope, kai_Expr expr) {
+bool Bytecode_Generation_Context::insert_value_dependencies(Dependency_List& deps, kai_u32 scope, kai_Expr expr) {
 	if (expr == nullptr) { panic_with_message("null expression\n"); return true; }
 
     switch (expr->id)
@@ -17,7 +17,7 @@ bool Bytecode_Generation_Context::insert_value_dependencies(Value_Dependency_Nod
 		if (!result)
 			return error_not_declared(expr->source_code, expr->line_number);
 
-		node.dependencies.emplace_back(Dependency::VALUE, *result);
+		deps.emplace_back(Dependency::VALUE, *result);
         break;
     }
 
@@ -26,14 +26,14 @@ bool Bytecode_Generation_Context::insert_value_dependencies(Value_Dependency_Nod
 
     case kai_Expr_ID_Unary: {
         auto unary = (kai_Expr_Unary*)expr;
-		return insert_value_dependencies(node, scope, unary->expr);
+		return insert_value_dependencies(deps, scope, unary->expr);
         break;
     }
 
     case kai_Expr_ID_Binary: {
         auto binary = (kai_Expr_Binary*)expr;
-		if (insert_value_dependencies(node, scope, binary->left)) return true;
-        return insert_value_dependencies(node, scope, binary->right);
+		if (insert_value_dependencies(deps, scope, binary->left)) return true;
+        return insert_value_dependencies(deps, scope, binary->right);
         break;
     }
 
@@ -78,19 +78,15 @@ bool Bytecode_Generation_Context::insert_value_dependencies(Value_Dependency_Nod
 			local_scope.map.emplace(name, LOCAL_VARIABLE_INDEX);
         }
 
-		if (insert_value_dependencies_proc(node, &local_scope, proc->body))
+		if (insert_value_dependencies_proc(deps, proc->_scope, proc->body))
 			return true;
-		
-		for (auto it = local_scope.map.begin(); it != local_scope.map.end();)
-		{
-			if (it->second == LOCAL_VARIABLE_INDEX)
-				it = local_scope.map.erase(it);
-			else ++it;
-		}
+
+		remove_all_locals(local_scope);
 		break;
     }
 
     case kai_Stmt_ID_Declaration: {
+
         break;
     }
 
@@ -116,7 +112,113 @@ bool Bytecode_Generation_Context::insert_value_dependencies(Value_Dependency_Nod
 	return false;
 }
 
-bool Bytecode_Generation_Context::insert_value_dependencies_proc(Value_Dependency_Node& node, Scope* scope, kai_Expr expr)
+bool Bytecode_Generation_Context::insert_type_dependencies(Dependency_List& deps, kai_u32 scope, kai_Expr expr)
+{
+	if (expr == nullptr) { panic_with_message("null expression\n"); return false; }
+
+	switch (expr->id)
+	{
+	case kai_Expr_ID_Identifier: {
+		auto name = view(expr->source_code);
+
+		auto result = resolve_dependency_node_procedure(name, &dg.scopes[scope]);
+
+		if (!result)
+			return error_not_declared(expr->source_code, expr->line_number);
+
+		if (*result != LOCAL_VARIABLE_INDEX) // DO NOT depend on local variables
+			deps.emplace_back(Dependency::TYPE, *result);
+		break;
+	}
+
+	case kai_Expr_ID_Unary: {
+		auto unary = (kai_Expr_Unary*)expr;
+		return insert_type_dependencies(deps, scope, unary->expr);
+	}
+
+	case kai_Expr_ID_Binary: {
+		auto binary = (kai_Expr_Binary*)expr;
+		catch_and_throw(insert_type_dependencies(deps, scope, binary->left));
+		return insert_type_dependencies(deps, scope, binary->right);
+	}
+
+	case kai_Expr_ID_Procedure_Call: {
+		panic_with_message("procedure call\n");
+
+		auto call = (kai_Expr_Procedure_Call*)expr;
+
+		insert_type_dependencies(deps, scope, call->proc);
+		for (kai_u32 i = 0; i < call->arg_count; ++i) {
+			catch_and_throw(insert_type_dependencies(deps, scope, call->arguments[i]));
+		}
+		break;
+	}
+
+	case kai_Expr_ID_Procedure_Type: {
+		auto proc = (kai_Expr_Procedure_Type*)expr;
+		panic_with_message("procedure type\n");
+		//kai_int total = proc->parameter_count + proc->ret_count;
+		//for (int i = 0; i < total; ++i) {
+		//    print_tree(ctx, proc->types[i]);
+		//}
+		break;
+	}
+
+	case kai_Expr_ID_Procedure: {
+		auto proc = (kai_Expr_Procedure*)expr;
+		auto const n = proc->param_count + proc->ret_count;
+		for range(n) {
+			auto param = proc->input_output[i];
+			catch_and_throw(insert_value_dependencies(deps, scope, param.type));
+		}
+		break;
+	}
+
+	case kai_Stmt_ID_Declaration: {
+		auto decl = (kai_Stmt_Declaration*)expr;
+
+		//// Already has a dependency node
+		//if (decl->flags & kai_Decl_Flag_Const) return false;
+
+		//auto name = view(decl->name);
+		//auto& s = dg.scopes[scope];
+
+		//// Insert into local scope (if not already defined)
+		//auto it = s.map.find(name);
+		//if (it != s.map.end())
+		//	return error_redefinition(decl->name, decl->line_number);
+		//s.map.emplace(name, LOCAL_VARIABLE_INDEX);
+
+		//// Look into it's definition to find possible dependencies
+		//return insert_value_dependencies_proc(deps, scope, decl->expr);
+		break;
+	}
+
+	case kai_Stmt_ID_Return: {
+		auto ret = (kai_Stmt_Return*)expr;
+		return insert_type_dependencies(deps, scope, ret->expr);
+	}
+
+	case kai_Stmt_ID_Compound: {
+		//auto comp = (kai_Stmt_Compound*)expr;
+
+		//auto const n = comp->count;
+		//for range(n) {
+		//	catch_and_throw(insert_type_dependencies(deps, comp->_scope, comp->statements[i]));
+		//}
+
+		//Scope& s = dg.scopes[comp->_scope];
+		//remove_all_locals(s);
+		break;
+	}
+
+	default: break;
+	}
+
+	return false;
+}
+
+bool Bytecode_Generation_Context::insert_value_dependencies_proc(Dependency_List& deps, kai_u32 scope, kai_Expr expr)
 {
 	if (expr == nullptr) { panic_with_message("null expression\n"); return true; }
 
@@ -125,48 +227,34 @@ bool Bytecode_Generation_Context::insert_value_dependencies_proc(Value_Dependenc
 	case kai_Expr_ID_Identifier: {
 		auto name = view(expr->source_code);
 
-		{ 
-			auto it = scope->map.find(name);
-			if (it != scope->map.end()) {
-				if (it->second != LOCAL_VARIABLE_INDEX) // DO NOT depend on local variables
-					node.dependencies.emplace_back(Dependency::VALUE, it->second);
-				return false;
-			}
-		}
-
-		if (scope->parent == -1) panic_with_message("what?");
-
-		scope = &dg.scopes[scope->parent];
-		auto result = resolve_dependency_node_outside_procedure(name, scope);
+		auto result = resolve_dependency_node_procedure(name, &dg.scopes[scope]);
 
 		if (!result)
 			return error_not_declared(expr->source_code, expr->line_number);
 
 		if(*result != LOCAL_VARIABLE_INDEX) // DO NOT depend on local variables
-			node.dependencies.emplace_back(Dependency::VALUE, *result);
+			deps.emplace_back(Dependency::VALUE, *result);
 		break;
 	}
 
 	case kai_Expr_ID_Unary: {
 		auto unary = (kai_Expr_Unary*)expr;
-		return insert_value_dependencies_proc(node, scope, unary->expr);
+		return insert_value_dependencies_proc(deps, scope, unary->expr);
 	}
 
 	case kai_Expr_ID_Binary: {
 		auto binary = (kai_Expr_Binary*)expr;
-		catch_and_throw(insert_value_dependencies_proc(node, scope, binary->left));
-		return insert_value_dependencies_proc(node, scope, binary->right);
+		catch_and_throw(insert_value_dependencies_proc(deps, scope, binary->left));
+		return insert_value_dependencies_proc(deps, scope, binary->right);
 	}
 
 	case kai_Expr_ID_Procedure_Call: {
 		auto call = (kai_Expr_Procedure_Call*)expr;
 
-		panic_with_message("procedure call\n");
-
-		//print_tree(ctx, call->proc);
-		//for (kai_u32 i = 0; i < call->arg_count; ++i) {
-		//    print_tree(ctx, call->arguments[i]);
-		//}
+		insert_type_dependencies(deps, scope, call->proc);
+		for (kai_u32 i = 0; i < call->arg_count; ++i) {
+			catch_and_throw(insert_value_dependencies_proc(deps, scope, call->arguments[i]));
+		}
 		break;
 	}
 
@@ -198,15 +286,10 @@ bool Bytecode_Generation_Context::insert_value_dependencies_proc(Value_Dependenc
 			local_scope.map.emplace(name, LOCAL_VARIABLE_INDEX);
 		}
 
-		if (insert_value_dependencies_proc(node, &local_scope, proc->body))
+		if (insert_value_dependencies_proc(deps, proc->_scope, proc->body))
 			return true;
-		
-		for (auto it = local_scope.map.begin(); it != local_scope.map.end();)
-		{
-			if (it->second == LOCAL_VARIABLE_INDEX)
-				it = local_scope.map.erase(it);
-			else ++it;
-		}
+
+		remove_all_locals(local_scope);
 		break;
 	}
 
@@ -217,31 +300,33 @@ bool Bytecode_Generation_Context::insert_value_dependencies_proc(Value_Dependenc
 		if (decl->flags & kai_Decl_Flag_Const) return false;
 
 		auto name = view(decl->name);
+		auto& s = dg.scopes[scope];
 
 		// Insert into local scope (if not already defined)
-		auto it = scope->map.find(name);
-		if (it != scope->map.end())
+		auto it = s.map.find(name);
+		if (it != s.map.end())
 			return error_redefinition(decl->name, decl->line_number);
-		scope->map.emplace(name, LOCAL_VARIABLE_INDEX);
+		s.map.emplace(name, LOCAL_VARIABLE_INDEX);
 
 		// Look into it's definition to find possible dependencies
-		return insert_value_dependencies_proc(node, scope, decl->expr);
+		return insert_value_dependencies_proc(deps, scope, decl->expr);
 	}
 
 	case kai_Stmt_ID_Return: {
 		auto ret = (kai_Stmt_Return*)expr;
-		return insert_value_dependencies_proc(node, scope, ret->expr);
+		return insert_value_dependencies_proc(deps, scope, ret->expr);
 	}
 
 	case kai_Stmt_ID_Compound: {
 		auto comp = (kai_Stmt_Compound*)expr;
 
-		Scope& s = dg.scopes[comp->_scope];
-
 		auto const n = comp->count;
 		for range(n) {
-			catch_and_throw(insert_value_dependencies_proc(node, &s, comp->statements[i]));
+			catch_and_throw(insert_value_dependencies_proc(deps, comp->_scope, comp->statements[i]));
 		}
+
+		Scope& s = dg.scopes[comp->_scope];
+		remove_all_locals(s);
 		break;
 	}
 
@@ -303,11 +388,11 @@ bool Bytecode_Generation_Context::generate_dependency_graph()//-> failed: bool
 		auto& tnode = dg.type_nodes[i];
 		auto& info = dg.node_infos[i];
 
-		if (!(vnode.flags&Evaluated) && insert_value_dependencies(vnode, info.scope, info.expr))
+		if (!(vnode.flags&Evaluated) && insert_value_dependencies(vnode.dependencies, info.scope, info.expr))
 			return true;
-		
-	//	if (tnode.flags & Evaluated);
-	//	else insert_type_dependencies(tnode, info.scope, info.expr);
+
+		if (!(tnode.flags&Evaluated) && insert_type_dependencies(tnode.dependencies, info.scope, info.expr))
+			return true;
 	}
 
 	return false;
@@ -360,7 +445,7 @@ bool Bytecode_Generation_Context::insert_node_for_declaration(kai_Stmt_Declarati
 		auto index = (kai_u32)dg.value_nodes.size();
 
 		Value_Dependency_Node vnode = {};
-		{
+		{ // @Note: is this dependency always correct?
 			Dependency dep;
 			dep.node_index = index;
 			dep.type = Dependency::TYPE;
@@ -390,6 +475,7 @@ bool Bytecode_Generation_Context::insert_node_for_declaration(kai_Stmt_Declarati
 		auto new_scope_index = (kai_u32)dg.scopes.size();
 		Scope new_scope;
 		new_scope.parent = scope;
+		new_scope.is_proc_scope = true;
 		dg.scopes.emplace_back(new_scope);
 
 		proc->_scope = new_scope_index;
@@ -403,15 +489,25 @@ bool Bytecode_Generation_Context::insert_node_for_declaration(kai_Stmt_Declarati
 	return false;
 }
 
+#define RESET "\x1b[0m"
+static char const* _color_table[] = {
+	"\x1b[31m", "\x1b[91m",
+	/*"\x1b[32m",*/ "\x1b[92m",
+	"\x1b[33m", "\x1b[93m",
+	"\x1b[34m", "\x1b[94m",
+	"\x1b[35m", "\x1b[95m",
+	"\x1b[36m", "\x1b[96m",
+};
+#define GET_COLOR(N) _color_table[N % std::size(_color_table)]
 void print_dependecies(HL_Dependency_Graph& dg) {
 	for range(dg.value_nodes.size()) {
 		auto const& info = dg.node_infos[i];
 		auto const& node = dg.value_nodes[i];
 		auto const& name = info.name;
 
-		std::cout << name;
-
-		std::cout << ':' << info.scope << ' ';
+		std::cout << GET_COLOR(i);
+		std::cout << name << ':' << info.scope << ' ';
+		std::cout << RESET;
 
 		if (node.flags & Dependency_Flag::Evaluated) {
 			std::cout << "is already evaluated\n";
@@ -424,22 +520,27 @@ void print_dependecies(HL_Dependency_Graph& dg) {
 			auto const& info = dg.node_infos[dep.node_index];
 			if (dep.type == Dependency::TYPE)
 				std::cout << "type_of(";
+			std::cout << GET_COLOR(dep.node_index);
 			std::cout << info.name << ':' << info.scope;
+			std::cout << RESET;
 			if (dep.type == Dependency::TYPE)
 				std::cout << ")";
 			if (++k < node.dependencies.size()) std::cout << ", ";
 		}
 		std::cout << "}\n";
 	}
-	return;
+	for range(100) std::cout << '-';
+	std::cout << '\n';
 	for range(dg.type_nodes.size()) {
 		auto const& info = dg.node_infos[i];
 		auto const& node = dg.type_nodes[i];
 		auto const& name = info.name;
 
-		std::cout << "type_of(" << name;
-
-		std::cout << ':' << info.scope << ") ";
+		std::cout << "type_of(";
+		std::cout << GET_COLOR(i);
+		std::cout << name << ':' << info.scope;
+		std::cout << RESET;
+		std::cout << ") ";
 
 		if (node.flags & Dependency_Flag::Evaluated) {
 			std::cout << "is already evaluated\n";
@@ -452,7 +553,9 @@ void print_dependecies(HL_Dependency_Graph& dg) {
 			auto const& info = dg.node_infos[dep.node_index];
 			if (dep.type == Dependency::TYPE)
 				std::cout << "type_of(";
+			std::cout << GET_COLOR(dep.node_index);
 			std::cout << info.name << ':' << info.scope;
+			std::cout << RESET;
 			if (dep.type == Dependency::TYPE)
 				std::cout << ")";
 			if (++k < node.dependencies.size()) std::cout << ", ";
@@ -460,6 +563,9 @@ void print_dependecies(HL_Dependency_Graph& dg) {
 		std::cout << "}\n";
 	}
 }
+#undef NODE 
+#undef DEP 
+#undef RESET
 
 void print_scopes();
 
