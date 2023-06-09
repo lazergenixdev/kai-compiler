@@ -1,3 +1,3 @@
 cd ..\
-.\tools\cloc.exe kai\src\ include\
+.\tools\cloc.exe --by-file kai\src\ include\
 pause

@@ -5,11 +5,10 @@
 #include <optional>
 
 // @TODO: don't repeat dependencies pls thx
-// @TODO: add type dependencies on procedure calls
+
+#define catch_and_throw(a) if(a) return true
 
 #define GLOBAL_SCOPE 0
-
-// local variables, if we see this, DO NOT depend on the identifier
 #define LOCAL_VARIABLE_INDEX -1
 
 struct Scope {
@@ -19,18 +18,33 @@ struct Scope {
 };
 
 struct Dependency {
-	u32 type; // value or type
-	u32 node_index;
+	union {
+		struct {
+			u32 type; // value or type
+			u32 node_index;
+		};
+		u64 _data;
+	};
 
 	enum {
-		TYPE,
 		VALUE,
+		TYPE,
 	};
+
+	constexpr Dependency() {
+		this->_data = 0;
+	}
+	constexpr Dependency(u32 type, u32 index) {
+		this->type       = type;
+		this->node_index = index;
+	}
+	constexpr bool operator==(Dependency const& right) const {
+		return this->_data == right._data;
+	}
 };
 
 enum Dependency_Flag: kai_u32 {
 	Evaluated = KAI_BIT(0),
-	Temperary = KAI_BIT(1), // temporarily in the dependency system (for procedure input/variables)
 };
 
 using Dependency_List = std::vector<Dependency>;
@@ -39,17 +53,18 @@ struct Dependency_Node {
 	kai_u32 flags;
 	Dependency_List dependencies;
 };
-
-struct Dependency_Node_Info {
-	std::string_view name;
-	kai_u32 scope;
-	kai_Expr expr; // AST node
-};
 struct Type_Dependency_Node : public Dependency_Node {
 	kai_Type type;  // evaluated type
 };
 struct Value_Dependency_Node : public Dependency_Node {
 	Register value; // evaluated value
+};
+
+struct Dependency_Node_Info {
+	std::string_view name;
+	kai_u32 scope;
+	kai_Expr expr; // AST node
+	kai_int line_number;
 };
 
 // @TODO: (optimization) use own dynamic array type, std::vector is dumb
@@ -109,6 +124,28 @@ struct Bytecode_Generation_Context {
 
 		return true;
 	}
+	bool error_circular_dependency(std::string_view const& string, kai_int line_number) {
+		if (error_info.value != kai_Result_Success) return true; // already have error value
+
+		error_info.value = kai_Result_Error_Semantic;
+		error_info.loc.string.data = (u8*)string.data();
+		error_info.loc.string.count = (u64)string.size();
+		error_info.loc.line = line_number;
+		error_info.what = {0, (kai_u8*)memory.temperary}; // uses temperary memory
+		error_info.context = {0, nullptr}; // static memory
+
+		auto& w = error_info.what;
+		memcpy(w.data, "indentifier \"", 13);
+		w.count += 13;
+
+		memcpy(w.data + w.count, string.data(), string.size());
+		w.count += string.size();
+
+		memcpy(w.data + w.count, "\" cannot depend on itself", 25);
+		w.count += 25;
+
+		return true;
+	}
 
 	bool generate_dependency_graph();
 
@@ -163,11 +200,38 @@ struct Bytecode_Generation_Context {
 			scope = &dg.scopes[scope->parent];
 		}
 	}
+	bool recursize_circular_dependency_check(Dependency const& dep, Dependency_Node& node) {
+		for (auto const& d : node.dependencies) {
+			if (dep == d) {
+				auto const& info = dg.node_infos[dep.node_index];
+				return error_circular_dependency(info.name, info.line_number);
+			}
+			if(d.type == Dependency::VALUE)
+				catch_and_throw(recursize_circular_dependency_check(dep, dg.value_nodes[d.node_index]));
+			else
+				catch_and_throw(recursize_circular_dependency_check(dep, dg.type_nodes[d.node_index]));
+		}
+		return false;
+	}
+	bool detect_circular_dependencies() {
+		for range(dg.node_infos.size()) {
+			{
+				Dependency value_dep{Dependency::VALUE, (u32)i};
+				auto& node = dg.value_nodes[i];
+				catch_and_throw(recursize_circular_dependency_check(value_dep, node));
+			}
+			{
+				Dependency type_dep{Dependency::TYPE, (u32)i};
+				auto& node = dg.type_nodes[i];
+				catch_and_throw(recursize_circular_dependency_check(type_dep, node));
+			}
+		}
+		return false;
+	}
 };
 
 void remove_all_locals(Scope& s) {
-	for (auto it = s.map.begin(); it != s.map.end();)
-	{
+	for (auto it = s.map.begin(); it != s.map.end();) {
 		if (it->second == LOCAL_VARIABLE_INDEX)
 			it = s.map.erase(it);
 		else ++it;

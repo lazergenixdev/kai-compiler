@@ -3,7 +3,9 @@ A :: B * 2;
 B :: 1;
 C := A + B;
 
-main :: (a: A) -> B {
+int :: s64;
+
+main :: (abc: int) -> int {
 	A := 2;
 	B :: A + 2;
 	var := C + A;
@@ -13,6 +15,7 @@ main :: (a: A) -> B {
 	}
 
 	h := thing(var, A, B) + B;
+	H  :: thing();
 
 	thing :: (x: s64) -> s64 {
 		ret 2 * A + x; // uses A from global scope

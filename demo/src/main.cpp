@@ -149,7 +149,7 @@ File_Builder read_entire_file(char const* filename) {
 	return {};
 }
 
-#define FILENAME "test.kai"
+#define FILENAME "constants.kai"
 
 int main() {
 

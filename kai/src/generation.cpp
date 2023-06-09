@@ -3,7 +3,6 @@
 #include <iomanip>
 #include <cassert>
 #define view(S) std::string_view( (char*)S.data, S.count )
-#define catch_and_throw(a) if(a) return true
 
 bool Bytecode_Generation_Context::insert_value_dependencies(Dependency_List& deps, kai_u32 scope, kai_Expr expr) {
 	if (expr == nullptr) { panic_with_message("null expression\n"); return true; }
@@ -27,25 +26,22 @@ bool Bytecode_Generation_Context::insert_value_dependencies(Dependency_List& dep
     case kai_Expr_ID_Unary: {
         auto unary = (kai_Expr_Unary*)expr;
 		return insert_value_dependencies(deps, scope, unary->expr);
-        break;
     }
 
     case kai_Expr_ID_Binary: {
         auto binary = (kai_Expr_Binary*)expr;
 		if (insert_value_dependencies(deps, scope, binary->left)) return true;
         return insert_value_dependencies(deps, scope, binary->right);
-        break;
     }
 
     case kai_Expr_ID_Procedure_Call: {
         auto call = (kai_Expr_Procedure_Call*)expr;
 
-        panic_with_message("procedure call\n");
+		return insert_type_dependencies(deps, scope, call->proc);
 
-        //print_tree(ctx, call->proc);
-        //for (kai_u32 i = 0; i < call->arg_count; ++i) {
-        //    print_tree(ctx, call->arguments[i]);
-        //}
+        for (kai_u32 i = 0; i < call->arg_count; ++i) {
+			insert_value_dependencies(deps, scope, call->arguments[i]);
+        }
         break;
     }
 
@@ -143,13 +139,12 @@ bool Bytecode_Generation_Context::insert_type_dependencies(Dependency_List& deps
 	}
 
 	case kai_Expr_ID_Procedure_Call: {
-		panic_with_message("procedure call\n");
-
 		auto call = (kai_Expr_Procedure_Call*)expr;
 
-		insert_type_dependencies(deps, scope, call->proc);
+		return insert_type_dependencies(deps, scope, call->proc);
+
 		for (kai_u32 i = 0; i < call->arg_count; ++i) {
-			catch_and_throw(insert_type_dependencies(deps, scope, call->arguments[i]));
+			insert_value_dependencies(deps, scope, call->arguments[i]);
 		}
 		break;
 	}
@@ -458,6 +453,7 @@ bool Bytecode_Generation_Context::insert_node_for_declaration(kai_Stmt_Declarati
 		info.name = name;
 		info.scope = scope;
 		info.expr = decl->expr;
+		info.line_number = decl->line_number;
 
 		s->map.emplace(info.name, index);
 
@@ -572,8 +568,8 @@ void print_scopes();
 kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* program)
 {
 	Bytecode_Generation_Context ctx{};
-	ctx.mod        = info->module;
-	ctx.memory     = info->module->memory;
+	ctx.mod    = info->module;
+	ctx.memory = info->module->memory;
 
 	std::cout << '\n';
 	if (ctx.generate_dependency_graph()) {
@@ -581,6 +577,11 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 	}
 
 	print_dependecies(ctx.dg);
+	std::cout << '\n';
+
+	if (ctx.detect_circular_dependencies()) {
+		goto error;
+	}
 
 	if (ctx.error_info.value) {
 	error:
