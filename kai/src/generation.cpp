@@ -331,6 +331,126 @@ bool Bytecode_Generation_Context::insert_value_dependencies_proc(Dependency_List
 	return false;
 }
 
+// BYTECODE GENERATION AND TYPECHECKING
+// @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+#define msg(S) std::cout << '[' << __FUNCTION__ << ']' << " " S "\n";
+
+kai_Type type_of_expression(Bytecode_Generation_Context& ctx, u32 scope_index, kai_Expr expr) {
+	switch (expr->id)
+	{
+	case kai_Expr_ID_Identifier: {
+		auto const& name = expr->source_code;
+
+		u32 node_index = -1;
+		while (scope_index != -1) {
+			auto& scope = ctx.dg.scopes[scope_index];
+			auto it = scope.map.find(view(name));
+			if (it != scope.map.end()) {
+				node_index = it->second;
+				break;
+			}
+			scope_index = scope.parent;
+		}
+
+		if (node_index == -1)
+			panic_with_message("failed to find identifier value");
+
+		if(ctx.dg.type_nodes[node_index].type->type != kai_Type_Type)
+			panic_with_message("Identifer is not a type!");
+
+		return (kai_Type)ctx.dg.value_nodes[node_index].value.ptrvalue;
+	}
+	case kai_Expr_ID_Number: {
+		msg("number");
+		return nullptr;
+	}
+	case kai_Expr_ID_Procedure_Call: {
+		msg("procedure call");
+		return nullptr;
+	}
+	case kai_Expr_ID_Procedure: {
+		msg("procedure");
+		return nullptr;
+	}
+	default:break;
+	}
+}
+
+void Bytecode_Generation_Context::evaluate_value(u32 node_index)
+{
+	auto& node = dg.value_nodes[node_index];
+	
+	if (node.flags & Evaluated) return;
+
+	auto& info = dg.node_infos[node_index];
+
+	node.flags |= Evaluated;
+
+	if (info.expr == nullptr)
+		panic_with_message("Node was not given an expression, this is bad.");
+
+	//switch (info.expr->id)
+	//{
+	//case kai_Expr_ID_Procedure: {
+	//	auto proc = (kai_Expr_Procedure*)info.expr;
+	//	generate_bytecode_for_procedure(proc->body);
+	//}
+	//default:evaluate_value_from_expression(node.value, info.expr); break;
+	//}
+
+	std::cout << "evaluated value: " << info.name << '\n';
+}
+
+void Bytecode_Generation_Context::evaluate_type(u32 node_index)
+{
+	auto& node = dg.type_nodes[node_index];
+	if (node.flags & Evaluated) return;
+
+	auto& info = dg.node_infos[node_index];
+	
+	node.flags |= Evaluated;
+
+	switch (info.expr->id)
+	{
+	case kai_Expr_ID_Procedure: {
+		auto proc = (kai_Expr_Procedure*)info.expr;
+
+		auto type = (kai_Type_Info_Procedure*)memory.alloc(memory.user, sizeof(kai_Type_Info_Procedure));
+		type->type = kai_Type_Procedure;
+
+		type->param_count = proc->param_count;
+		type->ret_count = proc->ret_count;
+
+		auto total_count = type->param_count + type->ret_count;
+
+		type->param_ret_types = (kai_Type*)memory.alloc(memory.user, sizeof(kai_Type) * total_count);
+
+		for range(total_count) {
+			type->param_ret_types[i] =
+				type_of_expression(*this, info.scope, proc->input_output->type);
+		}
+
+		break;
+	}
+	case kai_Expr_ID_Number: {
+		std::cout << "number found\n";
+		break;
+	}
+	case kai_Expr_ID_Identifier: {
+		std::cout << "identifier found\n";
+		break;
+	}
+	case kai_Expr_ID_Procedure_Call: {
+		std::cout << "procedure call found\n";
+		break;
+	}
+	default:break;
+	}
+
+	std::cout << "evaluated type: " << info.name << '\n';
+}
+// @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
 kai_Type_Info_Integer _s64_info = {
 	.type = kai_Type_Integer,
 	.bits = 64,
@@ -443,7 +563,7 @@ bool Bytecode_Generation_Context::insert_node_for_declaration(kai_Stmt_Declarati
 		{ // @Note: is this dependency always correct?
 			Dependency dep;
 			dep.node_index = index;
-			dep.type = Dependency::TYPE;
+			dep.what = Dependency::TYPE;
 			vnode.dependencies.emplace_back(dep);
 		}
 
@@ -514,12 +634,12 @@ void print_dependecies(HL_Dependency_Graph& dg) {
 		int k = 0;
 		for (auto const& dep : node.dependencies) {
 			auto const& info = dg.node_infos[dep.node_index];
-			if (dep.type == Dependency::TYPE)
+			if (dep.what == Dependency::TYPE)
 				std::cout << "type_of(";
 			std::cout << GET_COLOR(dep.node_index);
 			std::cout << info.name << ':' << info.scope;
 			std::cout << RESET;
-			if (dep.type == Dependency::TYPE)
+			if (dep.what == Dependency::TYPE)
 				std::cout << ")";
 			if (++k < node.dependencies.size()) std::cout << ", ";
 		}
@@ -547,12 +667,12 @@ void print_dependecies(HL_Dependency_Graph& dg) {
 		int k = 0;
 		for (auto const& dep : node.dependencies) {
 			auto const& info = dg.node_infos[dep.node_index];
-			if (dep.type == Dependency::TYPE)
+			if (dep.what == Dependency::TYPE)
 				std::cout << "type_of(";
 			std::cout << GET_COLOR(dep.node_index);
 			std::cout << info.name << ':' << info.scope;
 			std::cout << RESET;
-			if (dep.type == Dependency::TYPE)
+			if (dep.what == Dependency::TYPE)
 				std::cout << ")";
 			if (++k < node.dependencies.size()) std::cout << ", ";
 		}
@@ -563,13 +683,15 @@ void print_dependecies(HL_Dependency_Graph& dg) {
 #undef DEP 
 #undef RESET
 
-void print_scopes();
-
 kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* program)
 {
 	Bytecode_Generation_Context ctx{};
 	ctx.mod    = info->module;
-	ctx.memory = info->module->memory;
+	ctx.memory = info->memory;
+
+	// evaluate nodes that are unevaluated
+	std::vector<u32> uneval_values;
+	std::vector<u32>  uneval_types;
 
 	std::cout << '\n';
 	if (ctx.generate_dependency_graph()) {
@@ -583,11 +705,47 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 		goto error;
 	}
 
-	if (ctx.error_info.value) {
+	{
+		int i;
+		i = 0;
+		for (auto&& n : ctx.dg.value_nodes) {
+			if (!(n.flags & Evaluated))
+				uneval_values.emplace_back(i);
+			++i;
+		}
+		i = 0;
+		for (auto&& n : ctx.dg.type_nodes) {
+			if (!(n.flags & Evaluated))
+				uneval_types.emplace_back(i);
+			++i;
+		}
+	}
+
+//	return kai_Result_Error_Fatal;
+	while(uneval_values.size() != 0 || uneval_types.size() != 0) {
+		// evaluate types
+		for iterate(uneval_types) {
+			if (ctx.all_evaluated(ctx.dg.type_nodes[*it].dependencies)) {
+				ctx.evaluate_type(*it);
+				uneval_types.erase(it);
+				break;
+			}
+		}
+		// evaluate value
+		for iterate(uneval_values) {
+			if (ctx.all_evaluated(ctx.dg.value_nodes[*it].dependencies)) {
+				ctx.evaluate_value(*it);
+				uneval_values.erase(it);
+				break;
+			}
+		}
+	}
+
+	if (ctx.error_info.result) {
 	error:
-		ctx.error_info.file = kai_static_string("placeholder.kai"); // RIP
+		ctx.error_info.location.file = KAI_STR("placeholder.kai"); // RIP
 		*info->error_info = ctx.error_info;
-		return ctx.error_info.value;
+		return ctx.error_info.result;
 	}
 
 	return kai_Result_Error_Fatal;
@@ -646,6 +804,7 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 	// DEBUG
 	std::cout << '\n';
 	stream.debug_print();
+	return kai_Result_Error_Fatal;
 
 	std::cout << '\n';
 	std::cout << std::hex << std::setfill('0');

@@ -8,7 +8,7 @@ __KAI_BEGIN_API__
 // "Stmt" => Statement
 
 typedef struct kai_Expr_Base* kai_Expr;
-typedef struct kai_Expr_Base* kai_Stmt; // Same as Expr_Base
+typedef struct kai_Expr_Base* kai_Stmt;
 
 // Used to describe number literals
 // Value = ( Whole + Frac / (10 ^ Frac_Denom) ) * 10 ^ Exp
@@ -22,47 +22,41 @@ typedef struct {
 typedef struct {
 	kai_Stmt* toplevel_stmts;
 	kai_int   toplevel_count;
-	kai_Memory memory;
 } kai_Module;
 
 typedef struct {
 	kai_str         source;
 	kai_str         filename;
 	kai_Module*     module;
-	kai_Error_Info* error_info;
+	kai_Memory      memory;
+	kai_Error*      error;
 } kai_Syntax_Tree_Create_Info;
 
-KAI_API kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info);
-
-KAI_API void kai_Lib_print_syntax_tree(kai_Module* mod);
-
-KAI_API void kai_create_error_message(kai_Error_Info);
+KAI_API(kai_result)
+	kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* Info);
 
 typedef enum: kai_u32 {
-	kai_Expr_ID_Identifier,
-	kai_Expr_ID_String,
-	kai_Expr_ID_Number,
-	kai_Expr_ID_Binary,
-	kai_Expr_ID_Unary,
-	kai_Expr_ID_Procedure_Type,
-	kai_Expr_ID_Procedure_Call,
-	kai_Expr_ID_Procedure, // defines a procedure, e.g. "(a: int, b: int) -> int { ret a + b; }"
+	kai_Expr_ID_Identifier     = 0,
+	kai_Expr_ID_String         = 1,
+	kai_Expr_ID_Number         = 2,
+	kai_Expr_ID_Binary         = 3,
+	kai_Expr_ID_Unary          = 4,
+	kai_Expr_ID_Procedure_Type = 5,
+	kai_Expr_ID_Procedure_Call = 6,
+	kai_Expr_ID_Procedure      = 7, // defines a procedure, e.g. "(a: int, b: int) -> int { ret a + b; }"
+
+	kai_Stmt_ID_Return         = 8,
+	kai_Stmt_ID_Declaration    = 9,
+	kai_Stmt_ID_Compound       = 10,
 
 	kai_Stmt_ID_Expression, // use?
-	kai_Stmt_ID_Return,
-	kai_Stmt_ID_Declaration,
-	kai_Stmt_ID_Compound,
 
 } kai_Node_ID;
 
-typedef struct {
-	kai_u32 line_number;
-	kai_str source_code; // source code for this Expression/Statement/Type/...
-	                     //   example: "x == 0" for Binary Expression
-} kai_Source_Location;
+// `line_number` is the line number for the first token in an Expression/Statement
 
 #define KAI_BASE_MEMBERS \
-	kai_u32 id;          \
+	kai_u8  id;          \
 	kai_u32 line_number; \
 	kai_str source_code; \
 	kai_Type_Info* type
@@ -89,8 +83,8 @@ typedef struct {
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr      expr;
-	kai_u32       op;
+	kai_Expr expr;
+	kai_u32  op;
 } kai_Expr_Unary;
 
 typedef struct {
@@ -104,38 +98,38 @@ typedef struct {
 	KAI_BASE_MEMBERS;
 	kai_Expr  proc;
 	kai_Expr* arguments;
-	kai_u32   arg_count;
+	kai_u8    arg_count;
 } kai_Expr_Procedure_Call;
  
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr* types;
-	kai_u32 parameter_count;
-	kai_u32 ret_count; // If this is 0, then the return type defaults to "void"
+	kai_Expr* input_output;
+	kai_u8 param_count;
+	kai_u8 ret_count; // If this is 0, then the return type defaults to "void"
 } kai_Expr_Procedure_Type;
 
 typedef struct {
 	kai_str  name;
 	kai_Expr type;
-//	kai_u32  flags; // for keyword using
+	kai_u8   flags; // note: for keyword using
 } kai_Expr_Procedure_Parameter;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
 	kai_Expr_Procedure_Parameter* input_output;
-	kai_u32 param_count;
-	kai_u32 ret_count; // If this is 0, then the return defaults to "void"
 	kai_Stmt body;
+	kai_u8   param_count;
+	kai_u8   ret_count; // If this is 0, then the return defaults to "void"
 
 	kai_u32 _scope;
 } kai_Expr_Procedure;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr expr;
+	kai_Expr expr; // optional
 } kai_Stmt_Return;
 
-enum: kai_u32 {
+enum: kai_u8 {
 	kai_Decl_Flag_Const = KAI_BIT(0), // compile-time constant, not like C const
 	kai_Decl_Flag_Using = KAI_BIT(1),
 };
@@ -143,14 +137,14 @@ enum: kai_u32 {
 typedef struct {
 	KAI_BASE_MEMBERS;
 	kai_Expr expr;
-	kai_str name;
-	kai_u32 flags;
+	kai_str  name;
+	kai_u8   flags;
 } kai_Stmt_Declaration;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
 	kai_Stmt* statements;
-	kai_int   count;
+	kai_u32   count;
 
 	kai_u32 _scope;
 } kai_Stmt_Compound;
@@ -159,9 +153,4 @@ typedef struct {
 
 
 __KAI_END_API__
-#ifdef  KAI_CPP_API
-namespace kai {
-
-}
-#endif//KAI_CPP_API
 #endif//KAI_PARSER_H

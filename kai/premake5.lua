@@ -8,13 +8,20 @@ project 'kai'
 	objdir ("%{wks.location}/bin-int/" .. OutputDir .. "/%{prj.name}")
 
     files {
-        "%{prj.location}/src/**",
+        "%{prj.location}/src/*",
         "%{wks.location}/include/kai/**.h" -- public API
     }
+	
+	if (KAI_NO_DEBUG ~= nil) then
+		files "%{prj.location}/src/debug/*"
+	end
 	
 	includedirs {
 		'%{wks.location}/include',
 	}
+	
+	filter "system:windows"
+        files "%{prj.location}/src/platform/windows.cpp"
 	
     filter "configurations:Debug"
         defines { "KAI_DEBUG" }

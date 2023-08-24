@@ -13,8 +13,9 @@ X(for     , KEYWORD_START | 4) \
 X(if      , KEYWORD_START | 5) \
 X(loop    , KEYWORD_START | 6) \
 X(ret     , KEYWORD_START | 7) \
-X(using   , KEYWORD_START | 8) \
-X(while   , KEYWORD_START | 9) \
+X(struct  , KEYWORD_START | 8) \
+X(using   , KEYWORD_START | 9) \
+X(while   , KEYWORD_START |10) \
 
 
 using token_type = enum : kai_u32 {
@@ -40,7 +41,7 @@ static inline constexpr bool is_token_keyword(token_type ty) {
 //};
 
 inline kai_str const keyword_map[] = {
-#define X(NAME, ID) kai_static_string(#NAME),
+#define X(NAME, ID) KAI_STR(#NAME),
 	XTOKEN_KEYWORDS
 #undef X
 };
@@ -50,14 +51,14 @@ static constexpr kai_str token_type_string(token_type ty) {
 	{
 	default: return {0, nullptr};
 
-	case token_identifier: return kai_static_string("identifier");
-	case token_directive:  return kai_static_string("directive");
-	case token_string:     return kai_static_string("string");
-	case token_number:     return kai_static_string("number");
+	case token_identifier: return KAI_STR("identifier");
+	case token_directive:  return KAI_STR("directive");
+	case token_string:     return KAI_STR("string");
+	case token_number:     return KAI_STR("number");
 
-	case '->':             return kai_static_string("'->'");
+	case '->':             return KAI_STR("'->'");
 
-#define X(NAME, ID) case ID: return kai_static_string(#NAME);
+#define X(NAME, ID) case ID: return KAI_STR(#NAME);
 		XTOKEN_KEYWORDS
 #undef X
 	}
@@ -75,7 +76,7 @@ struct Lexer_Context {
 	Token      peekedToken;
 
 	kai_str    source;
-	kai_int     cursor;
+	kai_int    cursor;
 	kai_u32    line_number;
 	bool       peeking = false;
 
@@ -103,9 +104,8 @@ private:
 
 	bool next_character_equals(kai_u8 c) {
 		auto next = cursor + 1;
-		if( next >= source.count ) {
+		if( next >= source.count )
 			return false; // No characters next, can't be equal
-		}
 		return c == source.data[next];
 	}
 };

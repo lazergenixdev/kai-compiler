@@ -2,8 +2,7 @@
 #include <kai/parser.h>
 #include "lexer.hpp"
 
-template <typename T>
-struct expr_id_map { static constexpr kai_u32 ID = -1; };
+template <typename T> struct expr_id_map { static constexpr kai_u32 ID = -1; };
 template<> struct expr_id_map <kai_Expr_Identifier>     { static constexpr kai_u32 ID = kai_Expr_ID_Identifier;     };
 template<> struct expr_id_map <kai_Expr_Number>         { static constexpr kai_u32 ID = kai_Expr_ID_Number;         };
 template<> struct expr_id_map <kai_Expr_String>         { static constexpr kai_u32 ID = kai_Expr_ID_String;         };
@@ -17,11 +16,11 @@ template<> struct expr_id_map <kai_Stmt_Return>         { static constexpr kai_u
 template<> struct expr_id_map <kai_Stmt_Compound>       { static constexpr kai_u32 ID = kai_Stmt_ID_Compound;       };
 
 struct Parser_Context {
-    Lexer_Context  lexer;
     kai_Memory     memory;
+    Lexer_Context  lexer;
     kai_ptr        stack;
     kai_int        stack_size;
-    kai_Error_Info error_info;
+    kai_Error      error_info;
 
     template <typename NodeType>
     inline NodeType* alloc() {
@@ -36,19 +35,16 @@ struct Parser_Context {
         return expr;
     }
 
-    template <typename T>
-    nullptr_t error(T) { static_assert(std::_Always_false<T>, "Do not use this."); }
-
     template <size_t Size>
     nullptr_t error_internal(char const (&what)[Size]) {
-        if (error_info.value != kai_Result_Success) return nullptr; // already have error value
+        if (error_info.result != kai_Result_Success) return nullptr; // already have error value
 
-        error_info.value = kai_Result_Error_Internal;
-        error_info.what = {0, (kai_u8*)memory.temperary}; // uses temperary memory
+        error_info.result = kai_Result_Error_Internal;
+        error_info.message = {0, (kai_u8*)memory.temperary}; // uses temperary memory
         error_info.context.count = 0; // static memory
 
         // fill what buffer
-        auto& w = error_info.what;
+        auto& w = error_info.message;
         memcpy(w.data + w.count, what, Size - 1);
         w.count += Size - 1;
 
@@ -62,19 +58,18 @@ struct Parser_Context {
 
     template <size_t Size>
     nullptr_t error_expected(char const (&what)[Size], Token const& token) {
-        if (error_info.value != kai_Result_Success) return nullptr; // already have error value
+        if (error_info.result != kai_Result_Success) return nullptr; // already have error value
 
-        error_info.value      = kai_Result_Error_Syntax;
-        error_info.loc.string = token.string;
-        error_info.loc.line   = token.line_number;
-        error_info.file; // copied from source
-        error_info.what       = { 0, (kai_u8*)memory.temperary }; // uses temperary memory
-        error_info.context.count = 0; // static memory
+        error_info.result          = kai_Result_Error_Syntax;
+        error_info.location.string = token.string;
+        error_info.location.line   = token.line_number;
+        error_info.message         = { 0, (kai_u8*)memory.temperary }; // uses temperary memory
+        error_info.context.count   = 0; // static memory
         
-        adjust_source_location(error_info.loc.string, token.type);
+        adjust_source_location(error_info.location.string, token.type);
 
         // fill what buffer
-        auto& w = error_info.what;
+        auto& w = error_info.message;
         memcpy(w.data, "Expected ", 9);
         w.count += 9;
 
@@ -90,20 +85,18 @@ struct Parser_Context {
     }
 
     template <size_t Size1, size_t Size2>
-    nullptr_t error_unexpected(char const (&what)[Size1], char const (&context)[Size2], Token const& token)
-    {
-        if (error_info.value != kai_Result_Success) return nullptr; // already have error value
+    nullptr_t error_unexpected(char const (&what)[Size1], char const (&context)[Size2], Token const& token)  {
+        if (error_info.result != kai_Result_Success) return nullptr; // already have error value
 
-        error_info.value = kai_Result_Error_Syntax;
-        error_info.loc.string = token.string;
-        error_info.loc.line = token.line_number;
-        error_info.file; // copied from source
-        error_info.what = { 0, (kai_u8*)memory.temperary }; // uses temperary memory
+        error_info.result = kai_Result_Error_Syntax;
+        error_info.location.string = token.string;
+        error_info.location.line = token.line_number;
+        error_info.message = { 0, (kai_u8*)memory.temperary }; // uses temperary memory
         error_info.context = { Size2 - 1, (kai_u8*)context }; // static memory
 
-        adjust_source_location(error_info.loc.string, token.type);
+        adjust_source_location(error_info.location.string, token.type);
 
-        auto& w = error_info.what;
+        auto& w = error_info.message;
         memcpy(w.data, "Unexpected ", 11);
         w.count += 11;
 

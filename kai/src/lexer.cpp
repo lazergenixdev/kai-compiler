@@ -4,16 +4,14 @@
 // TODO: String Escape \"
 // TODO: Add "false" and "true" keywords (re2c)
 
-Token& Lexer_Context::next_token()
-{
+Token& Lexer_Context::next_token() {
 	if( !peeking )
 		return currentToken = generate_token();
 	peeking = false;
 	return currentToken = peekedToken;
 }
 
-Token& Lexer_Context::peek_token()
-{
+Token& Lexer_Context::peek_token() {
 	if( peeking )
 		return peekedToken;
 	peeking = true;
@@ -52,11 +50,10 @@ kai_u8 lex_lookup_table[128] = {
 	T,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 4
 	0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  T,  T,  T,  T,  0, // 5
 	T,  0,  K,  K,  K,  0,  K,  0,  0,  K,  0,  0,  K,  0,  0,  0, // 6
-	0,  0,  K,  0,  0,  K,  0,  K,  0,  0,  0,  T,  T,  T,  T,  W, // 7
+	0,  0,  K,  K,  0,  K,  0,  K,  0,  0,  0,  T,  T,  T,  T,  W, // 7
 };
 
-Token Lexer_Context::generate_token()
-{
+Token Lexer_Context::generate_token() {
 	Token token{token_end};
 	token.string.count = 1;
 	token.line_number = line_number;

@@ -1,4 +1,6 @@
 
+-- define KAI_NO_DEBUG to not compile functions in "kai/debug.h"
+
 if _KAI_EXTERNAL then
 	include 'kai'
 else

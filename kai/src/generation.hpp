@@ -20,7 +20,7 @@ struct Scope {
 struct Dependency {
 	union {
 		struct {
-			u32 type; // value or type
+			u32 what; // value or type
 			u32 node_index;
 		};
 		u64 _data;
@@ -35,7 +35,7 @@ struct Dependency {
 		this->_data = 0;
 	}
 	constexpr Dependency(u32 type, u32 index) {
-		this->type       = type;
+		this->what       = type;
 		this->node_index = index;
 	}
 	constexpr bool operator==(Dependency const& right) const {
@@ -45,6 +45,7 @@ struct Dependency {
 
 enum Dependency_Flag: kai_u32 {
 	Evaluated = KAI_BIT(0),
+	Incomplete_Dependency_List = KAI_BIT(1), // for depending on an overloaded function
 };
 
 using Dependency_List = std::vector<Dependency>;
@@ -57,41 +58,45 @@ struct Type_Dependency_Node : public Dependency_Node {
 	kai_Type type;  // evaluated type
 };
 struct Value_Dependency_Node : public Dependency_Node {
-	Register value; // evaluated value
+	union {
+		Register value; // evaluated value
+		u32 bytecode_index;
+	};
 };
 
 struct Dependency_Node_Info {
 	std::string_view name;
 	kai_u32 scope;
-	kai_Expr expr; // AST node
+	kai_Expr expr; // AST node to be evaluated
 	kai_int line_number;
 };
 
-// @TODO: (optimization) use own dynamic array type, std::vector is dumb
 // High level dependency graph
+// @TODO: (optimization) use own dynamic array type, std::vector is dumb
 struct HL_Dependency_Graph {
 	std::vector<Scope> scopes;
 	std::vector<Value_Dependency_Node> value_nodes;
 	std::vector<Type_Dependency_Node>   type_nodes;
 	std::vector<Dependency_Node_Info> node_infos;
+	std::vector<Bytecode_Instruction_Stream> bytecode_streams;
 };
 
 struct Bytecode_Generation_Context {
 	HL_Dependency_Graph dg;
 	kai_Module*         mod;
 	kai_Memory          memory;
-	kai_Error_Info      error_info;
+	kai_Error      error_info;
 
 	bool error_redefinition(kai_str const& string, kai_int line_number) {
-		if (error_info.value != kai_Result_Success) return true; // already have error value
+		if (error_info.result != kai_Result_Success) return true; // already have error value
 
-		error_info.value = kai_Result_Error_Semantic;
-		error_info.loc.string = string;
-		error_info.loc.line = line_number;
-		error_info.what = {0, (kai_u8*)memory.temperary}; // uses temperary memory
+		error_info.result = kai_Result_Error_Semantic;
+		error_info.location.string = string;
+		error_info.location.line = line_number;
+		error_info.message = {0, (kai_u8*)memory.temperary}; // uses temperary memory
 		error_info.context = {0, nullptr}; // static memory
 
-		auto& w = error_info.what;
+		auto& w = error_info.message;
 		memcpy(w.data, "Indentifier \"", 13);
 		w.count += 13;
 
@@ -104,15 +109,15 @@ struct Bytecode_Generation_Context {
 		return true;
 	}
 	bool error_not_declared(kai_str const& string, kai_int line_number) {
-		if (error_info.value != kai_Result_Success) return true; // already have error value
+		if (error_info.result != kai_Result_Success) return true; // already have error value
 
-		error_info.value = kai_Result_Error_Semantic;
-		error_info.loc.string = string;
-		error_info.loc.line = line_number;
-		error_info.what = {0, (kai_u8*)memory.temperary}; // uses temperary memory
+		error_info.result = kai_Result_Error_Semantic;
+		error_info.location.string = string;
+		error_info.location.line = line_number;
+		error_info.message = {0, (kai_u8*)memory.temperary}; // uses temperary memory
 		error_info.context = {0, nullptr}; // static memory
 
-		auto& w = error_info.what;
+		auto& w = error_info.message;
 		memcpy(w.data, "indentifier \"", 13);
 		w.count += 13;
 
@@ -125,16 +130,16 @@ struct Bytecode_Generation_Context {
 		return true;
 	}
 	bool error_circular_dependency(std::string_view const& string, kai_int line_number) {
-		if (error_info.value != kai_Result_Success) return true; // already have error value
+		if (error_info.result != kai_Result_Success) return true; // already have error value
 
-		error_info.value = kai_Result_Error_Semantic;
-		error_info.loc.string.data = (u8*)string.data();
-		error_info.loc.string.count = (u64)string.size();
-		error_info.loc.line = line_number;
-		error_info.what = {0, (kai_u8*)memory.temperary}; // uses temperary memory
+		error_info.result = kai_Result_Error_Semantic;
+		error_info.location.string.data = (u8*)string.data();
+		error_info.location.string.count = (u64)string.size();
+		error_info.location.line = line_number;
+		error_info.message = {0, (kai_u8*)memory.temperary}; // uses temperary memory
 		error_info.context = {0, nullptr}; // static memory
 
-		auto& w = error_info.what;
+		auto& w = error_info.message;
 		memcpy(w.data, "indentifier \"", 13);
 		w.count += 13;
 
@@ -200,13 +205,14 @@ struct Bytecode_Generation_Context {
 			scope = &dg.scopes[scope->parent];
 		}
 	}
+	// TODO: Flatten out this recursive algorithm to be iterative
 	bool recursize_circular_dependency_check(Dependency const& dep, Dependency_Node& node) {
 		for (auto const& d : node.dependencies) {
 			if (dep == d) {
 				auto const& info = dg.node_infos[dep.node_index];
 				return error_circular_dependency(info.name, info.line_number);
 			}
-			if(d.type == Dependency::VALUE)
+			if(d.what == Dependency::VALUE)
 				catch_and_throw(recursize_circular_dependency_check(dep, dg.value_nodes[d.node_index]));
 			else
 				catch_and_throw(recursize_circular_dependency_check(dep, dg.type_nodes[d.node_index]));
@@ -228,6 +234,28 @@ struct Bytecode_Generation_Context {
 		}
 		return false;
 	}
+
+	bool all_evaluated(Dependency_List const& deps) {
+		Dependency_Node const* node = nullptr;
+		for (auto&& d : deps) {
+			switch (d.what)
+			{
+			case Dependency::VALUE:
+				node = &dg.value_nodes[d.node_index];
+				break;
+			case Dependency::TYPE:
+				node = &dg.type_nodes[d.node_index];
+				break;
+			default: panic_with_message("something got corrupted.."); break;
+			}
+			if (0 == (node->flags & Evaluated))
+				return false;
+		}
+		return true;
+	}
+
+	void evaluate_value(u32 node_index);
+	void evaluate_type(u32 node_index);
 };
 
 void remove_all_locals(Scope& s) {

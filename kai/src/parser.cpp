@@ -1,6 +1,5 @@
 #include "parser.hpp"
 #include <cassert>
-#define DEFAULT_PREC -6942069
 
 //#define DEBUG_LEXER
 //#define DEBUG_PARSER
@@ -113,16 +112,16 @@ kai_Expr Parse_Type(Parser_Context& ctx) {
             }
         }
         auto proc = ctx.alloc_expr<kai_Expr_Procedure_Type>();
-        proc->parameter_count = param_count;
+        proc->param_count = param_count;
         proc->ret_count = count - param_count;
         proc->line_number;
         proc->source_code;
 
         // allocate the space we need for how many expressions we have:
-        proc->types = (kai_Expr*)ctx.memory.alloc(ctx.memory.user, count * sizeof(kai_Expr));
+        proc->input_output = (kai_Expr*)ctx.memory.alloc(ctx.memory.user, count * sizeof(kai_Expr));
 
         // copy expressions from temperary storage:
-        memcpy(proc->types, types, count * sizeof(kai_Expr));
+        memcpy(proc->input_output, types, count * sizeof(kai_Expr));
         // reset stack
         ctx.stack = types;
 
@@ -145,6 +144,7 @@ struct operator_info {
     op_type type = op_type::binary;
 };
 
+#define DEFAULT_PREC -6942069
 #define CAST_PREC     0x0900
 
 operator_info get_operator(token_type t) {
@@ -183,7 +183,7 @@ kai_Expr Parse_Simple_Expression(Parser_Context& ctx) {
     }
     case token_number: {
         auto num = ctx.alloc_expr<kai_Expr_Number>();
-        num->info = tok.number;
+        num->info        = tok.number;
         num->line_number = tok.line_number;
         num->source_code = tok.string;
         return(kai_Expr) num;
@@ -199,37 +199,31 @@ kai_Expr Parse_Simple_Expression(Parser_Context& ctx) {
 }
 
 kai_Expr Parse_Expression(Parser_Context& ctx, int prec) {
-    auto& tok = ctx.lexer.currentToken;
-    kai_Expr left = nullptr;
+	auto& tok = ctx.lexer.currentToken;
+	kai_Expr left = nullptr;
 
     // @TODO: turn this else if chain into a switch statement
 
     ////////////////////////////////////////////////////////////
     // Handle Parenthesis
     if (tok.type == '(') {
-        /*if (is_procedure_next(ctx)) {
-            left = Parse_Procedure(ctx);
-            if (!left) return ctx.error_expected("a procedure");
-        }
-        else*/ {
-            ctx.lexer.next_token(); // see whats after paren
+		ctx.lexer.next_token(); // see whats after paren
 
-            left = Parse_Expression(ctx); // parse whatever the hell we get
-            if (!left) return ctx.error_expected("an expression with paranthesis");
+		left = Parse_Expression(ctx); // parse whatever the hell we get
+		if (!left) return ctx.error_expected("an expression with paranthesis");
 
-            // advance to closing parenthesis hopefully
-            ctx.lexer.next_token();
+		// advance to closing parenthesis hopefully
+		ctx.lexer.next_token();
 
-            // when opening a paranthesis, you kinda need to close it
-            if (tok.type != ')') {
-                return ctx.error_expected("an operator or ')' in expression");
-            }
-        }
+		// when opening a paranthesis, you kinda need to close it
+		if (tok.type != ')') {
+			return ctx.error_expected("an operator or ')' in expression");
+		}
     }
     ////////////////////////////////////////////////////////////
     // Handle Unary Operators
     else if (auto unary_prec = unary_operator_prec(tok.type)) {
-        auto op = tok.type;
+		auto op = tok.type;
 
         ctx.lexer.next_token();
         left = Parse_Expression(ctx, unary_prec);
@@ -249,7 +243,7 @@ kai_Expr Parse_Expression(Parser_Context& ctx, int prec) {
 
         ctx.lexer.next_token();
         left = Parse_Type(ctx);
-        if (!left) return ctx.error_expected("Type");
+        if (!left) return ctx.error_expected("type");
 
         ctx.lexer.next_token();
         if (tok.type != ')') return ctx.error_expected("')' after Type in cast expression");
@@ -268,10 +262,10 @@ kai_Expr Parse_Expression(Parser_Context& ctx, int prec) {
     }
     ////////////////////////////////////////////////////////////
     // Handle Types
-    else if (tok.type == token_directive && kai_string_equals(kai_static_string("type"), tok.string)) {
+    else if (tok.type == token_directive && kai_string_equals(KAI_STR("type"), tok.string)) {
         ctx.lexer.next_token(); // see what is next
         left = Parse_Type(ctx);
-        if (!left) return ctx.error_expected("Type");
+        if (!left) return ctx.error_expected("type");
     }
     ////////////////////////////////////////////////////////////
     // Default: just parse a single-token expression
@@ -284,7 +278,7 @@ loopBack:
     auto& peek = ctx.lexer.peek_token();
     auto op_info = get_operator(peek.type);
 
-    if (!op_info.prec || op_info.prec < prec)
+    if (!op_info.prec || op_info.prec <= prec)
         return left;
 
     ctx.lexer.next_token(); // eat operator token
@@ -448,6 +442,13 @@ kai_Stmt Parse_Statement(Parser_Context& ctx, bool is_top_level = false) {
         if (is_top_level) return ctx.error_unexpected("in top level statement", "");
 
         ctx.lexer.next_token(); // whats after ret?
+
+        // TODO: fix whatever this is
+        if (tok.type == ';') {
+            auto ret = ctx.alloc_expr<kai_Stmt_Return>();
+            ret->expr = nullptr;
+            return(kai_Stmt)ret;
+        }
 
         auto expr = Parse_Expression(ctx);
         if (!expr) return ctx.error_expected("expression");
@@ -676,48 +677,22 @@ kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
 
     return kai_Result_Success;
 }
-#elif defined(DEBUG_PARSER)
+#else
 kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
 {
     Parser_Context ctx{
+        info->memory,
         Lexer_Context{info->source},
-        info->module->memory
     };
     ctx.stack      = ctx.memory.temperary;
     ctx.stack_size = ctx.memory.temperary_size;
 
     // setup first token
-    ctx.lexer.next_token();
-
-    auto root = Parse_Function(ctx);
-
-    if (ctx.error_info.value) {
-        if (info->error_info) {
-            *info->error_info = ctx.error_info;
-            info->error_info->file = info->filename;
-            info->error_info->loc.source = info->source.data;
-        }
-        return ctx.error_info.value;
-    }
-    else {
-        info->module->AST_Root = root;
-    }
-
-    return kai_Result_Success;
-}
-#else
-kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
-{
-    Parser_Context ctx{
-        Lexer_Context{info->source},
-        info->module->memory
-    };
-    ctx.stack = ctx.memory.temperary;
-    ctx.stack_size = ctx.memory.temperary_size;
-
-    // setup first token
     auto& cur = ctx.lexer.next_token();
 
+#if defined(DEBUG_PARSER)
+    auto root = Parse_Function(ctx);
+#else
     // use temperary memory to store the statements we parse.
     auto statements = reinterpret_cast<kai_Stmt*>(ctx.stack);
     kai_u32 count = 0;
@@ -741,15 +716,16 @@ kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
 
     // copy expressions from temperary storage:
     memcpy(info->module->toplevel_stmts, statements, count * sizeof(kai_Stmt));
+#endif
 
 error:
-    if (ctx.error_info.value) {
-        if (info->error_info) {
-            *info->error_info = ctx.error_info;
-            info->error_info->file = info->filename;
-            info->error_info->loc.source = info->source.data;
+    if (ctx.error_info.result) {
+        if (info->error) {
+            *info->error = ctx.error_info;
+            info->error->location.file   = info->filename;
+            info->error->location.source = info->source.data;
         }
-        return ctx.error_info.value;
+        return ctx.error_info.result;
     }
 
     return kai_Result_Success;

@@ -49,7 +49,7 @@
 #include <Windows.h>
 
 static constexpr kai_int minimum_temerary_memory_size = 1024 * 256;
-static constexpr kai_int minimum_bucket_size          = 1024 * 32;
+static constexpr kai_int minimum_bucket_size          = 1024 * 256;
 
 struct Memory_Bucket {
 	kai_ptr data;
@@ -86,13 +86,15 @@ struct Memory_Win32_Impl {
 			++bucket_num_pages;
 		}
 
-		alloc_bucket();
+		buckets.emplace_back(bucket_num_pages * page_size);
+		bucket_allocated_size = 0;
 		bucket_index = 0;
 	}
 
 	void alloc_bucket() {
-		buckets.emplace_back(bucket_num_pages * page_size);
 		++bucket_index;
+		while (buckets.size() <= bucket_index)
+			buckets.emplace_back(bucket_num_pages * page_size);
 		bucket_allocated_size = 0;
 	}
 };
@@ -103,6 +105,7 @@ kai_ptr allocate_win32(kai_ptr user, kai_int Size) {
 
 	// If the size we are allocating is bigger than the bucket size, we are screwed!
 	assert(Size < impl->bucket_num_pages * impl->page_size);
+//	if (Size < impl->bucket_num_pages * impl->page_size) return malloc(Size);
 
 	// we want a new bucket
 	if( impl->bucket_allocated_size + Size > impl->bucket_num_pages * impl->page_size ) {
@@ -114,7 +117,7 @@ kai_ptr allocate_win32(kai_ptr user, kai_int Size) {
 	return ptr;
 }
 
-void kai_Lib_create_memory(kai_Memory* mem) {
+void kai_memory_create(kai_Memory* mem) {
 	kai_int page_size;
 	{
 		SYSTEM_INFO sys_info;
@@ -148,7 +151,7 @@ void kai_Lib_create_memory(kai_Memory* mem) {
 }
 
 
-void kai_Lib_reset_memory( kai_Memory* mem ) {
+void kai_memory_reset( kai_Memory* mem ) {
 	auto impl = reinterpret_cast<Memory_Win32_Impl*>(mem->user);
 
 	// blazing fast ??
@@ -156,7 +159,7 @@ void kai_Lib_reset_memory( kai_Memory* mem ) {
 	impl->bucket_allocated_size = 0;
 }
 
-void kai_Lib_destroy_memory( kai_Memory* mem ) {
+void kai_memory_destroy( kai_Memory* mem ) {
 	if( mem->user == nullptr ) return; // our work is done!
 
 	auto impl = reinterpret_cast<Memory_Win32_Impl*>(mem->user);
@@ -174,7 +177,21 @@ void kai_Lib_destroy_memory( kai_Memory* mem ) {
 	mem->temperary_size = 0;
 }
 
+kai_u64 kai_memory_usage(kai_Memory* mem)
+{
+	auto impl = reinterpret_cast<Memory_Win32_Impl*>(mem->user);
+
+	kai_u64 total = 0;
+	if (impl->buckets.size() > 1) {
+		total = impl->bucket_num_pages * impl->page_size * (impl->buckets.size() - 1);
+	}
+	total += impl->bucket_allocated_size;
+
+	return total;
+}
+
 #include "../program.hpp"
+#include "memory.h"
 
 kai_Program init_program(void* raw_machine_code, kai_u64 size) {
 	auto program = new kai_Program_Impl;

@@ -6,7 +6,6 @@
 #ifdef __cplusplus
 #   define __KAI_BEGIN_API__ extern "C" {
 #   define __KAI_END_API__ }
-
 #	ifndef KAI_NO_CPP_API
 #		define KAI_CPP_API
 #	endif
@@ -15,7 +14,7 @@
 #   define __KAI_END_API__
 #endif
 
-#define KAI_API extern
+#define KAI_API(RET) extern RET
 
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1

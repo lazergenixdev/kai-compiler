@@ -15,6 +15,7 @@ extern void panic();
 
 // how is something like this not built into C++ already?
 #define range(N) (std::remove_const_t<decltype(N)> i = 0; i < N; ++i)
+#define iterate(CONTAINER) (auto it = (CONTAINER).begin(); it != (CONTAINER).end(); ++it)
 #define loop while(1)
 
 #define XPRIMITIVE_TYPES \
