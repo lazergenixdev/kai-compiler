@@ -1,4 +1,4 @@
-#include <kai/core.h>
+#include <kai/memory.h>
 #include <vector>
 #include <cassert>
 

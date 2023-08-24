@@ -1,5 +1,6 @@
 #include "parser.hpp"
 #include <cassert>
+#define DEFAULT_PREC -6942069
 
 //#define DEBUG_LEXER
 //#define DEBUG_PARSER
@@ -144,7 +145,6 @@ struct operator_info {
     op_type type = op_type::binary;
 };
 
-#define DEFAULT_PREC -6942069
 #define CAST_PREC     0x0900
 
 operator_info get_operator(token_type t) {
@@ -403,7 +403,7 @@ kai_Stmt Parse_Statement(Parser_Context& ctx, bool is_top_level = false) {
 
         // use temperary memory to store the statements we parse.
         auto statements = reinterpret_cast<kai_Expr*>(ctx.stack);
-        kai_int count = 0;
+        kai_u32 count = 0;
 
         // parse statements until we get a '}'
         if (tok.type != '}')

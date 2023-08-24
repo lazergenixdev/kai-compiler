@@ -12,7 +12,7 @@ project 'kai'
         "%{wks.location}/include/kai/**.h" -- public API
     }
 	
-	if (KAI_NO_DEBUG ~= nil) then
+	if (KAI_NO_DEBUG == nil) then
 		files "%{prj.location}/src/debug/*"
 	end
 	

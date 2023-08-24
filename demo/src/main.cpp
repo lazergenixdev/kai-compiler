@@ -36,66 +36,6 @@ private:
 #define view(S) std::string_view( (char*)S.data, S.count )
 #define range(N) (int i = 0; i < (N); ++i)
 
-//void print_error(kai_Error_Info& err) {
-//	std::cout << view(err.file) << ':' << err.loc.line << " --> ";
-//	switch (err.value)
-//	{
-//	case kai_Result_Error_Syntax:     std::cout << "Syntax Error"; break;
-//	case kai_Result_Error_Semantic:   std::cout << "Semantic Error"; break;
-//	case kai_Result_Error_Type_Check: std::cout << "Type Check Error"; break;
-//	default:break;
-//	}
-//	std::cout << ": ";
-//	std::cout << view(err.what);
-//	std::cout.put('\n');
-//
-//	char line_number_str[32];
-//	itoa((int)err.loc.line, line_number_str, 10);
-//
-//	int len = strlen(line_number_str);
-//
-//	for range(len) std::cout.put(' ');
-//	std::cout << " |\n";
-//
-//	std::cout << std::string_view(line_number_str, len);
-//	std::cout << " |";
-//
-//	char* start_of_line = (char*)err.loc.string.data;
-//	while (start_of_line > (char*)err.loc.source) {
-//		auto ch = start_of_line[-1];
-//		if (ch == '\n' || ch == '\r')
-//			break;
-//		start_of_line--;
-//	}
-//
-//	{ // print line with error
-//		auto str = start_of_line;
-//		while (1) {
-//			if(*str == '\t')
-//			std::cout.put(' '), str++;
-//			else std::cout.put(*str++);
-//
-//			if (*str == '\0' || *str == '\n' || *str == '\r')
-//				break;
-//		}
-//		std::cout.put('\n');
-//	}
-//
-//	for range(len) std::cout.put(' ');
-//	std::cout << " |";
-//
-//	for range((char*)err.loc.string.data - start_of_line) std::cout.put(' ');
-//
-//	std::cout.put('^');
-//
-//	// do "~~~" for error location string length
-//	for range(err.loc.string.count - 1) std::cout.put('~');
-//
-//	std::cout.put(' ');
-//	std::cout << view(err.context);
-//	std::cout.put('\n');
-//}
-
 template <typename Fn, typename...Args>
 void print_result(Fn& fn, Args&&...args) {
 	__try {
@@ -107,20 +47,16 @@ void print_result(Fn& fn, Args&&...args) {
 }
 
 // C++ is a piece of serious garbage, screw your move constructor bullshit
-struct File_Builder {
+struct File_Data {
 	void* data = nullptr;
 	kai_u64 size;
-
-	void init() {
-		if (size) data = malloc(size);
-	}
 };
 
 struct File {
 	void* data;
 	kai_u64 size;
 
-	File(File_Builder const& f):
+	File(File_Data const& f):
 		data(f.data),
 		size(f.size)
 	{}
@@ -130,10 +66,10 @@ struct File {
 	}
 };
 
-File_Builder read_entire_file(char const* filename) {
+File_Data read_entire_file(char const* filename) {
 	using io = std::ios;
 	if (auto f = std::ifstream(filename, io::binary)) {
-		File_Builder out;
+		File_Data out;
 		
 		// get file size
 		f.seekg(0, io::end);
@@ -151,8 +87,8 @@ File_Builder read_entire_file(char const* filename) {
 	return {};
 }
 
-//#define FILENAME "constants.kai"
-#define FILENAME "generated.kai"
+#define FILENAME "constants.kai"
+//#define FILENAME "generated.kai"
 
 int main() {
 
@@ -163,25 +99,23 @@ int main() {
 	std::cout << '\n';
 	
 
+	kai::Memory memory;
 	kai_result result;
-
 	kai_Module mod;
-	kai_Memory memory;
 	kai_Error error;
-	kai_memory_create(&memory);
 
 	File source_file = read_entire_file(FILENAME);
 
 	if (source_file.data == nullptr) {
 		std::cout << "failed to read file: \"" << FILENAME << "\"\n";
-		exit(1);
+		exit(0);
 	}
 
 	kai_str source_code;
 	source_code.data = (kai_u8*)source_file.data;
 	source_code.count = (kai_int)source_file.size;
 
-//	std::cout << view(source_code);
+	std::cout << view(source_code);
 	std::cout << '\n';
 
 	{
@@ -200,38 +134,12 @@ int main() {
 		kai_debug_write_error(kai_debug_clib_writer(), &error);
 		return 0;
 	}
-	else;// kai_debug_write_syntax_tree(kai_debug_clib_writer(), &mod);
+	else kai_debug_write_syntax_tree(kai_debug_clib_writer(), &mod);
 
 	std::cout << "\nParsing took: " << time_took_ms << " ms\n";
 	std::cout << "\nMemory Usage: " << kai_memory_usage(&memory) << " bytes\n";
 
-#if 0
-	std::cout << '\n' << '\n';
-	{
-		kai_Error other;
-		other.result = kai_Result_Error_Info;
-		other.location.file = KAI_STR("mylevel/main.kai");
-		other.location.line = 1;
-		other.location.source = (kai_u8*)"	num := (foo + 4) * 4";
-		other.location.string = {3, other.location.source + 1};
-		other.message = KAI_STR("Caught when finding dependencies for \"num\"");
-		other.context = {};
-		other.next = nullptr;
-
-		error.result = kai_Result_Error_Type_Check;
-		error.location.file = KAI_STR("mylevel/main.kai");
-		error.location.line = 1;
-		error.location.source = (kai_u8*)"	num := (foo + 4) * 4";
-		error.location.string = { 3, error.location.source + 9 };
-		error.message = KAI_STR("Undeclared identifier \"foo\"");
-		error.context = {};
-		error.next = &other;
-
-		kai_debug_write_error(kai_debug_clib_writer(), &error);
-		std::cout << '\n' << '\n';
-	}
-#endif
-	return 0;
+//	return 0;
 
 	kai_Program program;
 	if (!KAI_FAILED(result))
@@ -297,6 +205,5 @@ int main() {
 	on_update_proc(0.0167, nullptr);
 #endif
 
-	kai_memory_destroy(&memory);
 	return 0;
 }

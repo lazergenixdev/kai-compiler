@@ -67,7 +67,7 @@ static constexpr kai_str token_type_string(token_type ty) {
 struct Token {
 	token_type      type;
 	kai_str         string;
-	kai_int         line_number;
+	kai_u32         line_number;
 	kai_Number_Info number;
 };
 

@@ -423,10 +423,10 @@ void Bytecode_Generation_Context::evaluate_type(u32 node_index)
 
 		auto total_count = type->param_count + type->ret_count;
 
-		type->param_ret_types = (kai_Type*)memory.alloc(memory.user, sizeof(kai_Type) * total_count);
+		type->input_output = (kai_Type*)memory.alloc(memory.user, sizeof(kai_Type) * total_count);
 
 		for range(total_count) {
-			type->param_ret_types[i] =
+			type->input_output[i] =
 				type_of_expression(*this, info.scope, proc->input_output->type);
 		}
 
