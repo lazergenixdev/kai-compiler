@@ -1,0 +1,8 @@
+
+main :: () -> s64 {
+	ret alpha * gamma + beta;
+}
+
+alpha := gamma * 2;
+gamma := 1.0;
+beta := alpha + 1;

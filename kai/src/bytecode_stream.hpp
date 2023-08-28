@@ -102,9 +102,19 @@ struct Bytecode_Instruction_Stream {
 	u64 insert_jump();
 	void set_branch_position(u64 branch_position, u64 position);
 
+	// Example: %6, %7 = call "main" (%1, %4)
 	u64 procedure_call(u8 arg_count); // -> branch_position: u64
+
+	// Procedure knows about the types of it's arguments (dont need type metadata, unlike for operations)
+	// 
+	// Caller should never put the incorrect types into the proc call
+	// (because it knows the types at compile-time, so that would be a super idiot move)
 	void procedure_input(u32 reg);
+
+	// `count` does NOT need to match the procedure's actual output count,
+	// it is for storing the procedure's output into registers
 	void procedure_output_count(u8 count);
+	
 	void procedure_output(u32 reg);
 
 	void insert_return(u32 reg);

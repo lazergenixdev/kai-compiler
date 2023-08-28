@@ -61,15 +61,11 @@ void Bytecode_Instruction_Stream::insert_return(u32 count, u32 const* reg) {
 }
 
 // CALL(u8) FN_ADDRESS(u64) ARG_COUNT(u8) ARG1(reg) ARG2(reg) ARG3(reg) ... OUT_COUNT(u8) OUT1(reg) OUT2(reg) ...
-// %6, %7 = call "main" (%1, %4)
-// Procedure knows about the types of it's arguments (dont need type metadata, unlike for operations)
-// Caller should never put the incorrect types into the proc call (because it knows the types at compile-time, so that would be a super idiot move)
-// OUT_COUNT does NOT need to match the procedure's actual output count, it is for storing the procedure's output into registers
 u64 Bytecode_Instruction_Stream::procedure_call(u8 arg_count) // -> branch_position: u64
 {
 	stream.emplace_back(Operation_Procedure_Call);
 	u64 pos = position();
-	for range(8) stream.emplace_back(0xFF); // terrible
+	for range(8) stream.emplace_back(0xBA);
 	stream.emplace_back(arg_count);
 	return pos;
 }

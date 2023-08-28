@@ -22,11 +22,11 @@ typedef struct {
 typedef struct {
 	kai_Stmt* toplevel_stmts;
 	kai_int   toplevel_count;
+	kai_str   source_filename;
 } kai_Module;
 
 typedef struct {
 	kai_str         source;
-	kai_str         filename;
 	kai_Module*     module;
 	kai_Memory      memory;
 	kai_Error*      error;

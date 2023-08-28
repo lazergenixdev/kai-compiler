@@ -1,0 +1,4 @@
+
+add :: (left: s64, right: s64) -> s64 {
+    ret left + right;
+}

@@ -19,7 +19,7 @@ KAI_API(void)
 
 // Example: `proc = kai_find_procedure(program, "main", (int, *str) -> int")`
 KAI_API(void*)
-	kai_find_procedure(kai_Program Program, char const* Name, char const* Signature);
+	kai_find_procedure(kai_Program Program, char const* Name, char const* Type);
 
 __KAI_END_API__
 #endif//KAI_GENERATION_H

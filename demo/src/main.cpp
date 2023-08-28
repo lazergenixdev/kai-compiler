@@ -87,11 +87,16 @@ File_Data read_entire_file(char const* filename) {
 	return {};
 }
 
-#define FILENAME "constants.kai"
+//#define FILENAME "test.kai"
+//#define FILENAME "constants.kai"
 //#define FILENAME "generated.kai"
+#define FILENAME "simple.kai"
+
+#define FILEPATH "scripts/" FILENAME
 
 int main() {
-
+	/////////////////////////////////////////////////
+	// Setup
 	SetConsoleOutputCP( CP_UTF8 );
 	setlocale( LC_ALL, ".UTF8" );
 
@@ -99,48 +104,53 @@ int main() {
 	std::cout << '\n';
 	
 
+	/////////////////////////////////////////////////
+	// Load Source File
+	File source_file = read_entire_file(FILEPATH);
+
+	if (source_file.data == nullptr) {
+		std::cout << "failed to read file: \"" << FILEPATH << "\"\n";
+		exit(0);
+	}
+	kai_str source_code;
+	source_code.data = (kai_u8*)source_file.data;
+	source_code.count = (kai_int)source_file.size;
+	std::cout << view(source_code);
+	std::cout << '\n';
+
+
+	/////////////////////////////////////////////////
+	// Create Abstract Syntax Tree
 	kai::Memory memory;
 	kai_result result;
 	kai_Module mod;
 	kai_Error error;
-
-	File source_file = read_entire_file(FILENAME);
-
-	if (source_file.data == nullptr) {
-		std::cout << "failed to read file: \"" << FILENAME << "\"\n";
-		exit(0);
-	}
-
-	kai_str source_code;
-	source_code.data = (kai_u8*)source_file.data;
-	source_code.count = (kai_int)source_file.size;
-
-	std::cout << view(source_code);
-	std::cout << '\n';
-
 	{
 		timer t;
 
+		mod.source_filename = KAI_STR(FILEPATH);
 		kai_Syntax_Tree_Create_Info info;
-		info.source     = source_code;
-		info.module     = &mod;
-		info.memory     = memory;
-		info.filename   = KAI_STR(FILENAME);
-		info.error      = &error;
+		info.source = source_code;
+		info.module = &mod;
+		info.memory = memory;
+		info.error  = &error;
 		result = kai_create_syntax_tree(&info);
 	}
-
 	if KAI_FAILED(result) {
 		kai_debug_write_error(kai_debug_clib_writer(), &error);
 		return 0;
 	}
 	else kai_debug_write_syntax_tree(kai_debug_clib_writer(), &mod);
 
+	/////////////////////////////////////////////////
+	// Print some statistics
 	std::cout << "\nParsing took: " << time_took_ms << " ms\n";
 	std::cout << "\nMemory Usage: " << kai_memory_usage(&memory) << " bytes\n";
 
 //	return 0;
 
+	/////////////////////////////////////////////////
+	// Create program
 	kai_Program program;
 	if (!KAI_FAILED(result))
 	{
@@ -154,12 +164,19 @@ int main() {
 	}
 
 	if KAI_FAILED(result) {
-		error.location.source = source_code.data;
-		if(result != kai_Result_Error_Fatal)
+		auto n = &error;
+		while (n != nullptr) {
+			n->location.source = source_code.data;
+			n->location.file   = mod.source_filename;
+			n = n->next;
+		}
+		if (result != kai_Result_Error_Fatal)
 			kai_debug_write_error(kai_debug_clib_writer(), &error);
 	}
 
 	std::cout << "\nCompiling took: " << time_took_ms << " ms\n";
+
+	return 0;
 
 	if (!KAI_FAILED(result))
 	{

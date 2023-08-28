@@ -722,7 +722,7 @@ error:
     if (ctx.error_info.result) {
         if (info->error) {
             *info->error = ctx.error_info;
-            info->error->location.file   = info->filename;
+            info->error->location.file   = info->module->source_filename;
             info->error->location.source = info->source.data;
         }
         return ctx.error_info.result;
