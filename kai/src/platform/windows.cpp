@@ -117,7 +117,7 @@ kai_ptr allocate_win32(kai_ptr user, kai_int Size) {
 	return ptr;
 }
 
-void kai_memory_create(kai_Memory* mem) {
+void kai_create_memory(kai_Memory* mem) {
 	kai_int page_size;
 	{
 		SYSTEM_INFO sys_info;
@@ -151,15 +151,13 @@ void kai_memory_create(kai_Memory* mem) {
 }
 
 
-void kai_memory_reset( kai_Memory* mem ) {
+void kai_reset_memory( kai_Memory* mem ) {
 	auto impl = reinterpret_cast<Memory_Win32_Impl*>(mem->user);
-
-	// blazing fast ??
 	impl->bucket_index          = 0;
 	impl->bucket_allocated_size = 0;
 }
 
-void kai_memory_destroy( kai_Memory* mem ) {
+void kai_destroy_memory( kai_Memory* mem ) {
 	if( mem->user == nullptr ) return; // our work is done!
 
 	auto impl = reinterpret_cast<Memory_Win32_Impl*>(mem->user);
@@ -191,9 +189,8 @@ kai_u64 kai_memory_usage(kai_Memory* mem)
 }
 
 #include "../program.hpp"
-#include "memory.h"
 
-kai_Program init_program(void* raw_machine_code, kai_u64 size) {
+kai_Program init_program(Machine_Code code) {
 	auto program = new kai_Program_Impl;
 
 	kai_int allocation_size;
@@ -202,7 +199,7 @@ kai_Program init_program(void* raw_machine_code, kai_u64 size) {
 		GetSystemInfo(&sys_info);
 		kai_int page_size = sys_info.dwPageSize;
 
-		allocation_size = ((size / page_size) + 1) * page_size;
+		allocation_size = ((code.size / page_size) + 1) * page_size;
 	}
 
 	// allocate memory
@@ -211,7 +208,7 @@ kai_Program init_program(void* raw_machine_code, kai_u64 size) {
 	assert(mem != nullptr);
 
 	// write into the memory
-	memcpy(mem, raw_machine_code, size);
+	memcpy(mem, code.data, code.size);
 
 	// make memory Execute only
 	DWORD _;

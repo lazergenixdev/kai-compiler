@@ -15,6 +15,7 @@ template<> struct expr_id_map <kai_Stmt_Declaration>    { static constexpr kai_u
 template<> struct expr_id_map <kai_Stmt_Return>         { static constexpr kai_u32 ID = kai_Stmt_ID_Return;         };
 template<> struct expr_id_map <kai_Stmt_Compound>       { static constexpr kai_u32 ID = kai_Stmt_ID_Compound;       };
 
+// TODO: rewrite to use global context
 struct Parser_Context {
     kai_Memory     memory;
     Lexer_Context  lexer;
@@ -51,6 +52,7 @@ struct Parser_Context {
         return nullptr;
     }
 
+    // TODO: remove expected and add it to unexpected error.context
     template <size_t Size>
     nullptr_t error_expected(char const (&what)[Size]) {
         return error_expected(what, lexer.currentToken);

@@ -8,4 +8,11 @@ struct kai_Program_Impl {
 	void* procedure_table; // @TODO: procedure_table
 };
 
-extern kai_Program init_program(void* raw_machine_code, kai_u64 size);
+struct Machine_Code {
+	void* data;
+	kai_u64 size;
+};
+
+extern kai_Program init_program(Machine_Code code);
+
+extern Machine_Code generate_machine_code(void* bytecode, kai_u64 size);

@@ -4,9 +4,10 @@
 __KAI_BEGIN_API__
 
 typedef struct {
-	kai_Module* module;
+	kai_AST*    trees;
+	kai_int     tree_count;
 	kai_Memory  memory;
-	kai_Error*  error_info;
+	kai_Error*  error;
 } kai_Program_Create_Info;
 
 typedef struct kai_Program_Impl* kai_Program;

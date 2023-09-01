@@ -1,10 +1,18 @@
 #pragma once
 #include <kai/core.h>
-#define DEBUG 1
 
-#if DEBUG
+#ifdef KAI_DEBUG
+#define ENABLE_DEBUG_PRINT 1
+#else
+#define ENABLE_DEBUG_PRINT 0
+#endif
+
+
+#define ENABLE_DEV_MODE 1
+
+#if ENABLE_DEV_MODE
 // Rust got nothing on C
-extern void panic();
+[[noreturn]] extern void panic();
 #include <cstdio>
 #define assert(Z,...)           if(!(Z)) panic_with_message(__VA_ARGS__)
 #define panic_with_message(...) printf(__VA_ARGS__), panic()
@@ -13,7 +21,11 @@ extern void panic();
 #define assert(Z,...)           (void)0
 #define panic_with_message(...) (void)0
 #define debug_log(S)            (void)0
+#define panic()                 (void)0
 #endif
+
+// replace all `__debugbreak` with this
+#define debug_break() __debugbreak()
 
 #define NO_DISCARD [[nodiscard]]
 

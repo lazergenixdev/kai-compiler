@@ -49,6 +49,12 @@ typedef struct {
 	kai_u8* data;
 } kai_str;
 
+// TODO: many `kai_str`s can be replaced with `kai_view`, using 8 bytes less memory
+typedef struct {
+	kai_u32 offset;
+	kai_u32 count;
+} kai_view;
+
 typedef struct {
 	kai_int count;
 	void*   data;

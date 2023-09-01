@@ -38,7 +38,7 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 		case '-':return "subtract";
 		case '*':return "multiply";
 		case '/':return "divide";
-		case '?':return "cast";
+		case '->':return "cast";
 		case '.':return "member access";
 		default:
 			sprintf_s(temp, "undefined(%u)", op);
@@ -310,14 +310,14 @@ struct Write_Type_Traverser : public Type_Tree_Traverser {
 
 };
 
-void kai_debug_write_syntax_tree(kai_Debug_String_Writer* writer, kai_Module* module) {
+void kai_debug_write_syntax_tree(kai_Debug_String_Writer* writer, kai_AST* ast) {
 	Write_Tree_Traverser traverser{writer};
 
 	_write("Top Level\n");
 
-	auto count = module->toplevel_count;
+	auto count = ast->toplevel_count;
 	for range(count) {
-		traverser.visit(module->toplevel_stmts[i], i == (count - 1));
+		traverser.visit(ast->toplevel_stmts[i], i == (count - 1));
 	}
 }
 

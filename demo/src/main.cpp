@@ -115,32 +115,30 @@ int main() {
 	kai_str source_code;
 	source_code.data = (kai_u8*)source_file.data;
 	source_code.count = (kai_int)source_file.size;
-	std::cout << view(source_code);
-	std::cout << '\n';
-
+	std::cout << '\n' << view(source_code) << '\n';
+	
 
 	/////////////////////////////////////////////////
 	// Create Abstract Syntax Tree
 	kai::Memory memory;
 	kai_result result;
-	kai_Module mod;
+	kai_AST tree;
+	tree.source_filename = KAI_STR(FILEPATH);
 	kai_Error error;
 	{
 		timer t;
 
-		mod.source_filename = KAI_STR(FILEPATH);
 		kai_Syntax_Tree_Create_Info info;
 		info.source = source_code;
-		info.module = &mod;
 		info.memory = memory;
 		info.error  = &error;
-		result = kai_create_syntax_tree(&info);
+		result = kai_create_syntax_tree(&info, &tree);
 	}
 	if KAI_FAILED(result) {
 		kai_debug_write_error(kai_debug_clib_writer(), &error);
 		return 0;
 	}
-	else kai_debug_write_syntax_tree(kai_debug_clib_writer(), &mod);
+	else kai_debug_write_syntax_tree(kai_debug_clib_writer(), &tree);
 
 	/////////////////////////////////////////////////
 	// Print some statistics
@@ -157,44 +155,42 @@ int main() {
 		timer t;
 
 		kai_Program_Create_Info info;
-		info.module     = &mod;
-		info.memory     = memory;
-		info.error_info = &error;
+		info.trees  = &tree;
+		info.memory = memory;
+		info.error  = &error;
 		result = kai_create_program(&info, &program);
 	}
 
-	if KAI_FAILED(result) {
+	if (KAI_FAILED(result) && result != kai_Result_Error_Fatal) {
 		auto n = &error;
 		while (n != nullptr) {
 			n->location.source = source_code.data;
-			n->location.file   = mod.source_filename;
+			n->location.file   = tree.source_filename;
 			n = n->next;
 		}
-		if (result != kai_Result_Error_Fatal)
-			kai_debug_write_error(kai_debug_clib_writer(), &error);
+		kai_debug_write_error(kai_debug_clib_writer(), &error);
 	}
 
 	std::cout << "\nCompiling took: " << time_took_ms << " ms\n";
 
-	return 0;
-
 	if (!KAI_FAILED(result))
 	{
-		auto proc_ptr = kai_find_procedure(program, "function_that_does_stuff", "(s32, s32) -> s32");
+		auto proc_ptr = kai_find_procedure(program, "add", "(s64, s64) -> s64");
 
-		using fn_Type = kai_u64(kai_u64, kai_u64);
+		using fn_Type = kai_u64 (kai_s64, kai_s64);
 
-		auto proc = reinterpret_cast<fn_Type*>(proc_ptr);
+		auto proc = reinterpret_cast<fn_Type KAI_CALL*>(proc_ptr);
 
-		kai_u64
-			a = 5, b = 6;
+		kai_s64
+			a = 4, b = 9;
 
 		std::cout << '\n';
-		std::cout << "function_that_does_stuff(" << a << ", " << b << ") = ";
+		std::cout << "add(" << a << ", " << b << ") = ";
 		print_result(proc, a, b);
 
 		kai_destroy_program(program);
 	}
+	return 0;
 
 #if 0
 	auto _kai_print_int = [](kai_int n) { printf("%i\n", n); };

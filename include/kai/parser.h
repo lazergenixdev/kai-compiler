@@ -23,19 +23,18 @@ typedef struct {
 	kai_Stmt* toplevel_stmts;
 	kai_int   toplevel_count;
 	kai_str   source_filename;
-} kai_Module;
+} kai_AST;
 
 typedef struct {
 	kai_str         source;
-	kai_Module*     module;
 	kai_Memory      memory;
 	kai_Error*      error;
 } kai_Syntax_Tree_Create_Info;
 
 KAI_API(kai_result)
-	kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* Info);
+	kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* Info, kai_AST* out_AST);
 
-typedef enum: kai_u32 {
+typedef enum {
 	kai_Expr_ID_Identifier     = 0,
 	kai_Expr_ID_String         = 1,
 	kai_Expr_ID_Number         = 2,
@@ -48,9 +47,6 @@ typedef enum: kai_u32 {
 	kai_Stmt_ID_Return         = 8,
 	kai_Stmt_ID_Declaration    = 9,
 	kai_Stmt_ID_Compound       = 10,
-
-	kai_Stmt_ID_Expression, // use?
-
 } kai_Node_ID;
 
 // `line_number` is the line number for the first token in an Expression/Statement

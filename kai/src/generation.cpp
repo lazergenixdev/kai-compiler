@@ -2,7 +2,19 @@
 #include "program.hpp"
 #include <iomanip>
 #include <cassert>
+#include <kai/debug.h>
 // BYTECODE GENERATION AND TYPECHECKING
+
+u8 binary_to_bytecode_operation(u32 tree_op) {
+	switch (tree_op)
+	{
+	case '+': return Operation_Add;
+	case '*': return Operation_Mul;
+	case '-': return Operation_Sub;
+	case '/': return Operation_Div;
+	default: return 255;
+	}
+}
 
 kai_Type type_of_expression(Dependency_Graph& dg, u32 scope_index, kai_Expr expr) {
 	switch (expr->id)
@@ -10,24 +22,15 @@ kai_Type type_of_expression(Dependency_Graph& dg, u32 scope_index, kai_Expr expr
 	case kai_Expr_ID_Identifier: {
 		auto const& name = expr->source_code;
 
-		u32 node_index = -1;
-		while (scope_index != -1) {
-			auto& scope = dg.scopes[scope_index];
-			auto it = scope.map.find(view(name));
-			if (it != scope.map.end()) {
-				node_index = it->second;
-				break;
-			}
-			scope_index = scope.parent;
-		}
+		auto node_index = dg.resolve_dependency_node(view(name), scope_index);
 
-		if (node_index == -1)
+		if (!node_index)
 			panic_with_message("failed to find identifier value");
 
 	//	if(dg.type_nodes[node_index].type->type != kai_Type_Type)
 	//		panic_with_message("Identifer is not a type!");
 
-		return (kai_Type)dg.value_nodes[node_index].value.ptrvalue;
+		return (kai_Type)dg.value_nodes[*node_index].value.ptrvalue;
 	}
 	case kai_Expr_ID_Number: {
 		debug_log("number");
@@ -48,11 +51,61 @@ kai_Type type_of_expression(Dependency_Graph& dg, u32 scope_index, kai_Expr expr
 	}
 }
 
-void generate_bytecode_for_procedure(kai_Stmt body) {
+u64 Bytecode_Generation_Context::
+generate_bytecode(Bytecode_Context& ctx, kai_Stmt body) {
+	switch (body->id)
+	{
+	default: debug_break();
+//	evaluate_value_from_expression(node.value, info.expr); break;
+	break; case kai_Stmt_ID_Compound: {
+		auto comp = (kai_Stmt_Compound*)body;
+		ctx.scope_index = comp->_scope;
+		for range(comp->count) {
+			generate_bytecode(ctx, comp->statements[i]);
+		}
+		ctx.scope_index = dg.scopes[comp->_scope].parent;
+	}
+	break; case kai_Stmt_ID_Return: {
+		auto ret = (kai_Stmt_Return*)body;
+		auto reg = generate_bytecode(ctx, ret->expr);
+		bytecode_stream.insert_return((u32)reg);
+		return 0;
+	}
+	break; case kai_Expr_ID_Identifier: {
+		auto ident = (kai_Expr_Identifier*)body;
+		auto node_index = dg.resolve_dependency_node(
+			view(ident->source_code),
+			ctx.scope_index
+		);
 
+		if (!node_index) debug_break();
+
+		auto value_node = dg.value_nodes[*node_index];
+
+		if (value_node.flags& Dependency_Flags::Is_Local_Variable) {
+			return value_node.value.u32value;
+		}
+		else debug_break();
+	}
+	break; case kai_Expr_ID_Binary: {
+		auto bin = (kai_Expr_Binary*)body;
+
+		auto reg1 = (u32)generate_bytecode(ctx, bin->left);
+		auto reg2 = (u32)generate_bytecode(ctx, bin->right);
+
+		auto dst_reg = ctx.next_reg++;
+		u8 pt = Prim_Type_s64;
+		u8 op = binary_to_bytecode_operation(bin->op);
+
+		bytecode_stream.insert_primitive_operation(op, pt, dst_reg, reg1, reg2);
+		return dst_reg;
+	}
+	break;
+	}
+	return 0;
 }
 
-void evaluate_value(Dependency_Graph& dg, u32 node_index)
+void Bytecode_Generation_Context::evaluate_value(u32 node_index)
 {
 	auto& node = dg.value_nodes[node_index];
 	auto& info = dg.node_infos[node_index];
@@ -68,7 +121,28 @@ void evaluate_value(Dependency_Graph& dg, u32 node_index)
 	//	evaluate_value_from_expression(node.value, info.expr); break;
 	break; case kai_Expr_ID_Procedure: {
 		auto proc = (kai_Expr_Procedure*)info.expr;
-		generate_bytecode_for_procedure(proc->body);
+
+		auto restore_size = dg.node_infos.size();
+		auto proc_type = (kai_Type_Info_Procedure*)dg.type_nodes[node_index].type;
+		auto const n = proc->param_count + proc->ret_count;
+		for range(n) {
+			auto name = proc->input_output[i].name;
+			auto type = proc_type->input_output[i];
+			dg.insert_procedure_input(i, type, view(name), proc->_scope);
+		}
+
+		Bytecode_Context ctx;
+		ctx.scope_index = proc->_scope;
+		node.value.u64value = bytecode_stream.position();
+		generate_bytecode(ctx, proc->body);
+
+		dg.value_nodes.resize(restore_size);
+		dg.type_nodes.resize(restore_size);
+		for range(n) {
+			auto name = dg.node_infos[i + restore_size].name;
+			dg.scopes[proc->_scope].map.erase(name);
+		}
+		dg.node_infos.resize(restore_size);
 	}
 	break;
 	}
@@ -76,7 +150,7 @@ void evaluate_value(Dependency_Graph& dg, u32 node_index)
 	std::cout << "evaluated value: " << info.name << '\n';
 }
 
-void evaluate_type(Dependency_Graph& dg, u32 node_index)
+void Bytecode_Generation_Context::evaluate_type(u32 node_index)
 {
 	auto& node = dg.type_nodes[node_index];
 	auto& info = dg.node_infos[node_index];
@@ -109,6 +183,7 @@ void evaluate_type(Dependency_Graph& dg, u32 node_index)
 				type_of_expression(dg, info.scope, proc->input_output->type);
 		}
 
+		node.type = (kai_Type)type;
 		break;
 	}
 	break;case kai_Expr_ID_Procedure_Call: {
@@ -130,58 +205,76 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 	std::vector<u32> uneval_values;
 	std::vector<u32>  uneval_types;
 
-	Dependency_Graph dg;
-	if(dg.create(info->module))
+	Machine_Code output;
+
+	if(ctx.dg.create(info->trees))
 		goto error;
 
 	{
 		int i;
 		i = 0;
-		for (auto&& n : dg.value_nodes) {
+		for (auto&& n : ctx.dg.value_nodes) {
 			if (!(n.flags & Evaluated))
 				uneval_values.emplace_back(i);
 			++i;
 		}
 		i = 0;
-		for (auto&& n : dg.type_nodes) {
+		for (auto&& n : ctx.dg.type_nodes) {
 			if (!(n.flags & Evaluated))
 				uneval_types.emplace_back(i);
 			++i;
 		}
 	}
 
-//	return kai_Result_Success;
+//	return kai_Result_Error_Fatal;
 	while(uneval_values.size() != 0 || uneval_types.size() != 0) {
 		// evaluate types
 		for iterate(uneval_types) {
-			if (dg.all_evaluated(dg.type_nodes[*it].dependencies)) {
-				evaluate_type(dg, *it);
+			if (ctx.dg.all_evaluated(ctx.dg.type_nodes[*it].dependencies)) {
+				ctx.evaluate_type(*it);
 				uneval_types.erase(it);
 				break;
 			}
 		}
 		// evaluate value
 		for iterate(uneval_values) {
-			if (dg.all_evaluated(dg.value_nodes[*it].dependencies)) {
-				evaluate_value(dg, *it);
+			if (ctx.dg.all_evaluated(ctx.dg.value_nodes[*it].dependencies)) {
+				ctx.evaluate_value(*it);
 				uneval_values.erase(it);
 				break;
 			}
 		}
 	}
 
+#if ENABLE_DEBUG_PRINT
+	std::cout << '\n';
+	for range(ctx.dg.node_infos.size()) {
+		auto& t    = ctx.dg.type_nodes[i];
+		auto& info = ctx.dg.node_infos[i];
+		std::cout << info.name << '\n';
+		kai_debug_write_type(kai_debug_clib_writer(), t.type);
+		std::cout << '\n';
+	}
+
+	ctx.bytecode_stream.debug_print();
+#endif
+
+	output = generate_machine_code(
+		ctx.bytecode_stream.stream.data(),
+		ctx.bytecode_stream.stream.size()
+	);
+
+	*program = init_program(output);
+	free(output.data);
+
 	if (context.error.result) {
 	error:
-		// This is terrible
-		context.error.location.file = info->module->source_filename;
-		if (context.error.next) context.error.next->location.file = info->module->source_filename;
-
-		*info->error_info = context.error;
+		*info->error = context.error;
 		return context.error.result;
 	}
-	else *info->error_info = {};
+	else *info->error = {};
 
-	return kai_Result_Error_Fatal;
+	return kai_Result_Success;
 
 	Bytecode_Instruction_Stream stream;
 	
@@ -232,23 +325,6 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 	// (a procedure call is just a more sophisticated branch instruction)
 	stream.set_branch_position(call_pos1, fn_pos);
 	stream.set_branch_position(call_pos2, fn_pos);
-
-	//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-	// DEBUG
-	std::cout << '\n';
-	stream.debug_print();
-	return kai_Result_Error_Fatal;
-
-	std::cout << '\n';
-	std::cout << std::hex << std::setfill('0');
-	for range(stream.stream.size()) {
-		std::cout << std::setw(2) << (int)stream.stream[i];
-		if ((i&0b1111) == 0b1111) std::cout << '\n';
-		else std::cout << ' ';
-	}
-	std::cout << '\n';
-	std::cout << std::dec << std::setfill(' ');
-	//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 	Bytecode_Interpreter interp{
 		(u8*)stream.stream.data(),

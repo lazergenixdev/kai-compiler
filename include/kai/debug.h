@@ -33,7 +33,7 @@ KAI_API(kai_Debug_String_Writer*)
 
 
 KAI_API(void)
-	kai_debug_write_syntax_tree(kai_Debug_String_Writer* Writer, kai_Module* Module);
+	kai_debug_write_syntax_tree(kai_Debug_String_Writer* Writer, kai_AST* Tree);
 
 KAI_API(void)
 	kai_debug_write_error(kai_Debug_String_Writer* Writer, kai_Error* Error);

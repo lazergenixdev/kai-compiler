@@ -19,8 +19,9 @@ struct Dependency {
 };
 
 enum Dependency_Flags: u32 {
-	Evaluated = KAI_BIT(0),
+	Evaluated              = KAI_BIT(0),
 	Has_No_Self_Dependency = KAI_BIT(1),
+	Is_Local_Variable      = KAI_BIT(2),
 };
 
 using Dependency_List = std::vector<Dependency>;
@@ -36,7 +37,7 @@ struct Type_Dependency_Node : public Dependency_Node {
 struct Value_Dependency_Node : public Dependency_Node {
 	union {
 		Register value; // evaluated value
-		u32 bytecode_index;
+//		u32 bytecode_index;
 	};
 };
 struct Dependency_Node_Info {
@@ -70,7 +71,7 @@ struct Dependency_Graph {
     void insert_builtin_types();
     void insert_builtin_procedures();
 
-    bool create(kai_Module* src);
+	NO_DISCARD bool create(kai_AST* tree);
 
 	bool all_evaluated(Dependency_List const& deps) {
 		Dependency_Node const* node = nullptr;
@@ -89,6 +90,12 @@ struct Dependency_Graph {
 		}
 		return true;
 	}
+
+	void insert_procedure_input(int arg_index, kai_Type type, std::string_view name, u32 scope_index);
+	
+	NO_DISCARD
+	std::optional<u32>
+	resolve_dependency_node(std::string_view name, u32 scope_index);
 
 	void debug_print();
 private:
@@ -120,10 +127,6 @@ private:
 		u32 scope_index,
 		kai_Expr expr
 	);
-	
-	NO_DISCARD
-	std::optional<u32>
-	resolve_dependency_node(std::string_view name, u32 scope_index);
 
 	NO_DISCARD
 	std::optional<u32>

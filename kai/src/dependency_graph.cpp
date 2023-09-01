@@ -107,7 +107,7 @@ void* error_dependency_info(void* start, u32 dependency_type, Dependency_Node_In
     return (u8*)err.message.data + err.message.count;
 }
 
-bool Dependency_Graph::create(kai_Module* module) {
+bool Dependency_Graph::create(kai_AST* ast) {
     scopes.reserve(128);
     value_nodes.reserve(256);
     type_nodes.reserve(256);
@@ -117,8 +117,8 @@ bool Dependency_Graph::create(kai_Module* module) {
     insert_builtin_types();
 
 	// Make nodes for every statement
-	for range(module->toplevel_count) {
-		auto tl = module->toplevel_stmts[i];
+	for range(ast->toplevel_count) {
+		auto tl = ast->toplevel_stmts[i];
 		if (insert_node_for_statement(tl, false))
             return true;
 	}
@@ -140,7 +140,10 @@ bool Dependency_Graph::create(kai_Module* module) {
         ) return true;
 	}
 
+
+#if ENABLE_DEBUG_PRINT
     debug_print();
+#endif
 
     if (has_circular_dependency())
         return true; 
@@ -531,10 +534,31 @@ bool Dependency_Graph::insert_type_dependencies(
     return false;
 }
 
-std::optional<u32> Dependency_Graph::resolve_dependency_node(
-    std::string_view name,
-    u32 scope_index
-) {
+void Dependency_Graph::
+insert_procedure_input(int arg_index, kai_Type type, std::string_view name, u32 scope_index) {
+    Value_Dependency_Node vnode;
+    vnode.flags = Dependency_Flags::Is_Local_Variable;
+    vnode.value.u32value = PROC_ARG(arg_index);
+    value_nodes.emplace_back(vnode);
+
+    Type_Dependency_Node tnode;
+    tnode.flags = Dependency_Flags::Is_Local_Variable;
+    tnode.type = type;
+    type_nodes.emplace_back(tnode);
+
+    Dependency_Node_Info info;
+    info.name = name;
+    info.scope = scope_index;
+    info.expr = nullptr;
+    node_infos.emplace_back(info);
+
+    auto new_node_index = u32(node_infos.size() - 1);
+
+    scopes[scope_index].map.emplace(info.name, new_node_index);
+}
+
+std::optional<u32> Dependency_Graph::
+resolve_dependency_node(std::string_view name, u32 scope_index) {
     Scope* s = nullptr;
     loop {
         s = &scopes[scope_index];
@@ -550,10 +574,8 @@ std::optional<u32> Dependency_Graph::resolve_dependency_node(
     }
 }
 
-std::optional<u32> Dependency_Graph::resolve_dependency_node_procedure(
-    std::string_view name,
-    Scope* scope
-) {
+std::optional<u32> Dependency_Graph::
+resolve_dependency_node_procedure(std::string_view name, Scope* scope) {
     bool allow_locals = true;
     loop {
         auto it = scope->map.find(name);

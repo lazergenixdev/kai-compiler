@@ -142,7 +142,7 @@ enum class op_type {
 struct operator_info {
     kai_u32 op;
     int     prec;
-    op_type type = op_type::binary;
+    op_type type;
 };
 
 #define CAST_PREC     0x0900
@@ -150,15 +150,15 @@ struct operator_info {
 operator_info get_operator(token_type t) {
     switch (t)
     {
-    case '+': return {t, 0x0100};
-    case '-': return {t, 0x0100};
-    case '*': return {t, 0x0200};
-    case '/': return {t, 0x0200};
-    case '?': return {t, CAST_PREC};
-    case '[': return {t, 0xBEEF, op_type::index};
-    case '(': return {t, 0xBEEF, op_type::procedure_call};
-    case '.': return {t, 0xFFFF}; // member access
-    default:  return {t, 0};
+    case '+':  return {t, 0x0100,    op_type::binary};
+    case '-':  return {t, 0x0100,    op_type::binary};
+    case '*':  return {t, 0x0200,    op_type::binary};
+    case '/':  return {t, 0x0200,    op_type::binary};
+    case '->': return {t, CAST_PREC, op_type::binary};
+    case '[':  return {t, 0xBEEF,    op_type::index};
+    case '(':  return {t, 0xBEEF,    op_type::procedure_call};
+    case '.':  return {t, 0xFFFF,    op_type::binary}; // member access
+    default:   return {t, 0};
     }
 }
 int unary_operator_prec(token_type t) {
@@ -166,6 +166,7 @@ int unary_operator_prec(token_type t) {
     {
     case '-': return 0x1000;
     case '*': return 0x1000;
+    case '/': return 0x1000;
     default:  return 0;
     }
 }
@@ -253,7 +254,7 @@ kai_Expr Parse_Expression(Parser_Context& ctx, int prec) {
         if (!right) return ctx.error_expected("expression after cast");
 
         auto binary = ctx.alloc_expr<kai_Expr_Binary>();
-        binary->op = '?';
+        binary->op = '->';
         binary->left  = left;
         binary->right = right;
         binary->line_number;
@@ -678,7 +679,7 @@ kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
     return kai_Result_Success;
 }
 #else
-kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
+kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info, kai_AST* out_AST)
 {
     Parser_Context ctx{
         info->memory,
@@ -711,18 +712,18 @@ kai_result kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* info)
     }
 
     // allocate the space we need for how many statements we have:
-    info->module->toplevel_stmts = (kai_Stmt*)ctx.memory.alloc(ctx.memory.user, count * sizeof(kai_Stmt));
-    info->module->toplevel_count = count;
+    out_AST->toplevel_stmts = (kai_Stmt*)ctx.memory.alloc(ctx.memory.user, count * sizeof(kai_Stmt));
+    out_AST->toplevel_count = count;
 
     // copy expressions from temperary storage:
-    memcpy(info->module->toplevel_stmts, statements, count * sizeof(kai_Stmt));
+    memcpy(out_AST->toplevel_stmts, statements, count * sizeof(kai_Stmt));
 #endif
 
 error:
     if (ctx.error_info.result) {
         if (info->error) {
             *info->error = ctx.error_info;
-            info->error->location.file   = info->module->source_filename;
+            info->error->location.file   = out_AST->source_filename;
             info->error->location.source = info->source.data;
         }
         return ctx.error_info.result;

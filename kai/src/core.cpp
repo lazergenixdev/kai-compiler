@@ -7,7 +7,7 @@ void kai_get_version(kai_Version* ver) {
 }
 
 char const* kai_get_version_string() {
-	return "Kai Compiler " KAI_VERSION_STR;
+	return "Kai Compiler " KAI_VERSION_STRV;
 }
 
 // String Functions

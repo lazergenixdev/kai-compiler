@@ -10,16 +10,16 @@ namespace clib {
 		"\x1b[1;94m",
 	};
 
-	void write_string(kai_ptr user, kai_str string) {
+	void write_string(kai_ptr, kai_str string) {
 		fwrite(string.data, 1, string.count, stdout);
 	}
-	void write_c_string(kai_ptr user, char const* string) {
+	void write_c_string(kai_ptr, char const* string) {
 		printf("%s", string);
 	}
-	void write_char(kai_ptr user, kai_u8 c) {
+	void write_char(kai_ptr, kai_u8 c) {
 		putchar(c);
 	}
-	void set_color(kai_ptr user, kai_debug_color_enum color) {
+	void set_color(kai_ptr, kai_debug_color_enum color) {
 		printf("%s", colors[color]);
 	}
 	
