@@ -1,7 +1,8 @@
-#include "config.hpp"
 #include <iostream>
 #include <iomanip>
 #include <vector>
+#include "config.hpp"
+#include "builtin_types.hpp"
 
 // @TODO: branching, like cmon bro implement some branching already smh my head.
 // @TODO: need a stack, need some kind of static context, need globals maybe?
@@ -13,7 +14,7 @@
 // Note: 
 // Stack only really needs to be used for arrays, structs, and values that are "pointed to"
 
-enum Operation: u8 {
+enum Operation {
 	Operation_Add = 0, // add rax, 4
 	Operation_Sub = 1,
 	Operation_Mul = 2,

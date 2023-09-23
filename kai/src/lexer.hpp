@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <kai/parser.h>
+#include "config.hpp"
 
 #define KEYWORD_START 0x80
 
@@ -18,7 +19,7 @@ X(using   , KEYWORD_START | 9) \
 X(while   , KEYWORD_START |10) \
 
 
-using token_type = enum : kai_u32 {
+enum token_type: kai_u32 {
 	token_end = 0,
 
 	token_identifier = 0xC0 | 0,
@@ -31,7 +32,7 @@ using token_type = enum : kai_u32 {
 #undef X
 };
 
-static inline constexpr bool is_token_keyword(token_type ty) {
+static inline constexpr bool is_token_keyword(kai_u32 ty) {
 	return ty < token_identifier && ty >= KEYWORD_START;
 }
 
@@ -46,7 +47,7 @@ inline kai_str const keyword_map[] = {
 #undef X
 };
 
-static constexpr kai_str token_type_string(token_type ty) {
+static constexpr kai_str token_type_string(kai_u32 ty) {
 	switch( ty )
 	{
 	default: return {0, nullptr};
@@ -56,7 +57,8 @@ static constexpr kai_str token_type_string(token_type ty) {
 	case token_string:     return KAI_STR("string");
 	case token_number:     return KAI_STR("number");
 
-	case '->':             return KAI_STR("'->'");
+	case token_2("->"):    return KAI_STR("'->'");
+	case token_2("&&"):    return KAI_STR("'&&'");
 
 #define X(NAME, ID) case ID: return KAI_STR(#NAME);
 		XTOKEN_KEYWORDS
@@ -65,7 +67,7 @@ static constexpr kai_str token_type_string(token_type ty) {
 }
 
 struct Token {
-	token_type      type;
+	kai_u32         type;
 	kai_str         string;
 	kai_u32         line_number;
 	kai_Number_Info number;

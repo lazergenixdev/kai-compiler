@@ -1,5 +1,7 @@
+#pragma once
+#include "config.hpp"
 #include "bytecode_stream.hpp"
-
+#include <cstring>
 
 struct Bytecode_Interpreter {
 	u8* bytecode;

@@ -1,9 +1,8 @@
-#include "../program.hpp"
-#include <asmjit/asmjit.h>
-#include "../bytecode_stream.hpp"
 #include <iostream>
 #include <vector>
-#include "../config.hpp"
+#include <asmjit/asmjit.h>
+#include "../program.hpp"
+#include "../bytecode_stream.hpp"
 
 using namespace asmjit;
 
@@ -66,7 +65,7 @@ struct Code_Generation_Context {
 		registers.clear();
 		args.clear();
 
-		for range(signature.argCount()) {
+		for_n(signature.argCount()) {
 			auto arg_reg = compiler.newReg(signature.arg(i));
 			func->setArg(i, arg_reg);
 			args.emplace_back(std::move(arg_reg));

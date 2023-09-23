@@ -1,4 +1,5 @@
 ﻿#include <kai/debug.h>
+#include <cstdio>
 #include "tree_traverser.hpp"
 
 static constexpr char8_t const* branches[4] = {
@@ -7,17 +8,6 @@ static constexpr char8_t const* branches[4] = {
 	u8"    ",
 	u8"└───",
 };
-
-#define _write(CSTRING)       writer->write_c_string(writer->user, CSTRING)
-#define _write_string(STRING) writer->write_string(writer->user, STRING)
-#define _write_char(CHAR)     writer->write_char(writer->user, CHAR)
-#define _set_color(COLOR)     if(writer->set_color) writer->set_color(writer->user, COLOR)
-
-#define _write_format_buffer(B, ...)       \
-{                                           \
-    kai_int count = sprintf_s(B, __VA_ARGS__); \
-    writer->write_string(writer->user, kai_str{.count = count, .data = (kai_u8*)B}); \
-} (void)0
 
 struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
     kai_Debug_String_Writer* writer;
@@ -34,14 +24,16 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 	char const* binary_operator_name(kai_u32 op) {
 		switch (op)
 		{
+		case token_2("->"):return "cast";
+		case token_2("&&"):return "and";
+		case token_2("||"):return "or";
 		case '+':return "add";
 		case '-':return "subtract";
 		case '*':return "multiply";
 		case '/':return "divide";
-		case '->':return "cast";
 		case '.':return "member access";
 		default:
-			sprintf_s(temp, "undefined(%u)", op);
+			snprintf(temp, sizeof(temp), "undefined(%u)", op);
 			return temp;
 		}
 	}
@@ -51,7 +43,7 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 		case '-':return "negate";
 		case '*':return "pointer to";
 		default:
-			sprintf_s(temp, "undefined(%u)", op);
+			snprintf(temp, sizeof(temp), "undefined(%u)", op);
 			return temp;
 		}
 	}
@@ -62,7 +54,7 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 		_set_color(kai_debug_color_secondary);
 
 		auto const last = stack.size() - 1;
-		for range(stack.size()) {
+		for_n(stack.size()) {
 			u8 index = (stack[i] << 1) | u8(i == last);
 			_write((char*)branches[index]);
 		}
@@ -89,7 +81,7 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 
 	virtual void visit_unknown(kai_Expr node) override {
         _write("unknown (id = ");
-        _write_format_buffer(temp, "%i", node->id);
+        _write_format("%i", node->id);
         _write_char(')');
         _write_char('\n');
 	}
@@ -141,19 +133,19 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 
 	virtual void visit_procedure_type(kai_Expr_Procedure_Type* node) override {
 		_write("procedure type (");
-		_write_format_buffer(temp, "%u", node->param_count);
+		_write_format("%u", node->param_count);
 		_write(" in, ");
-		_write_format_buffer(temp, "%u", node->ret_count);
+		_write_format("%u", node->ret_count);
 		_write(" out)\n");
 
 		auto end = node->param_count + node->ret_count - 1;
 
-		for range(node->param_count) {
+		for_n(node->param_count) {
 			prefix = "in";
 			visit(node->input_output[i], i == end);
 		}
 
-		for range(node->ret_count) {
+		for_n(node->ret_count) {
 			prefix = "out";
 			auto idx = i + node->param_count;
 			visit(node->input_output[idx], idx == end);
@@ -166,23 +158,23 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 		prefix = "proc";
 		visit(node->proc, node->arg_count == 0);
 
-		for range(node->arg_count)
+		for_n(node->arg_count)
 			visit(node->arguments[i], i == node->arg_count - 1);
 	}
 
 	virtual void visit_procedure(kai_Expr_Procedure* node) override {
 		_write("procedure (");
-		_write_format_buffer(temp, "%u", node->param_count);
+		_write_format("%u", node->param_count);
 		_write(" in, ");
-		_write_format_buffer(temp, "%u", node->ret_count);
+		_write_format("%u", node->ret_count);
 		_write(" out)\n");
 
-		for range(node->param_count) {
+		for_n(node->param_count) {
 			prefix = "in";
 			visit(node->input_output[i].type);
 		}
 
-		for range(node->ret_count) {
+		for_n(node->ret_count) {
 			prefix = "out";
 			visit(node->input_output[i+node->param_count].type);
 		}
@@ -213,7 +205,7 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 		_write("compound statement\n");
 
 		auto const n = node->count;
-		for range(n) visit(node->statements[i], i == n - 1);
+		for_n(n) visit(node->statements[i], i == n - 1);
 	}
 };
 
@@ -235,7 +227,7 @@ struct Write_Type_Traverser : public Type_Tree_Traverser {
 		_set_color(kai_debug_color_secondary);
 
 		auto const last = stack.size() - 1;
-		for range(stack.size()) {
+		for_n(stack.size()) {
 			u8 index = (stack[i] << 1) | u8(i == last);
 			_write((char*)branches[index]);
 		}
@@ -262,25 +254,25 @@ struct Write_Type_Traverser : public Type_Tree_Traverser {
 
 	virtual void visit_unknown(kai_Type node) override {
 		_write("unknown (type = ");
-		_write_format_buffer(temp, "%i", node->type);
+		_write_format("%i", node->type);
 		_write_char(')');
 		_write_char('\n');
 	}
 	virtual void visit_type(kai_Type node) override {
-		_set_color(kai_debug_color_important_2);
+		_set_color(kai_debug_color_important);
 		_write("type\n");
 		_set_color(kai_debug_color_primary);
 	}
 	virtual void visit_integer(kai_Type_Info_Integer* node) override {
 		_write(node->is_signed ? "signed" : "unsigned");
 		_set_color(kai_debug_color_important);
-		_write(" int");
-		_write_format_buffer(temp, "%i\n", (int)node->bits);
+		_write_char(' ');
+		_write_format("int%i\n", (int)node->bits);
 		_set_color(kai_debug_color_primary);
 	}
 	virtual void visit_float(kai_Type_Info_Float* node) override {
 		_set_color(kai_debug_color_important);
-		_write_format_buffer(temp, "float%i\n", (int)node->bits);
+		_write_format("float%i\n", (int)node->bits);
 		_set_color(kai_debug_color_primary);
 	}
 	virtual void visit_pointer(kai_Type_Info_Pointer* node) override {
@@ -289,19 +281,19 @@ struct Write_Type_Traverser : public Type_Tree_Traverser {
 	}
 	virtual void visit_procedure(kai_Type_Info_Procedure* node) override {
 		_write("procedure (");
-		_write_format_buffer(temp, "%u", node->param_count);
+		_write_format("%u", node->param_count);
 		_write(" in, ");
-		_write_format_buffer(temp, "%u", node->ret_count);
+		_write_format("%u", node->ret_count);
 		_write(" out)\n");
 
 		auto end = node->param_count + node->ret_count - 1;
 
-		for range(node->param_count) {
+		for_n(node->param_count) {
 			prefix = "in";
 			visit(node->input_output[i], i == end);
 		}
 
-		for range(node->ret_count) {
+		for_n(node->ret_count) {
 			prefix = "out";
 			auto idx = i + node->param_count;
 			visit(node->input_output[idx], idx == end);
@@ -316,7 +308,7 @@ void kai_debug_write_syntax_tree(kai_Debug_String_Writer* writer, kai_AST* ast) 
 	_write("Top Level\n");
 
 	auto count = ast->toplevel_count;
-	for range(count) {
+	for_n(count) {
 		traverser.visit(ast->toplevel_stmts[i], i == (count - 1));
 	}
 }

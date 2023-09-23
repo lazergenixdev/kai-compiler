@@ -1,6 +1,6 @@
-﻿#include "../config.hpp"
+﻿#include <vector>
 #include <kai/parser.h>
-#include <vector>
+#include "../config.hpp"
 
 // This is terribly inefficient :(
 // where is my zero cost abstraction??

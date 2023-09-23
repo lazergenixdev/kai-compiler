@@ -1,5 +1,5 @@
 add :: (left: s64, right: s64) -> s64 {
-    ret (left + right) * left;//.value[0];
+    ret (left + right) * left;
 }
 
 // add :: (left: s64, right: s64) -> f64 {

@@ -1,8 +1,8 @@
 #include "generation.hpp"
-#include "program.hpp"
 #include <iomanip>
-#include <cassert>
 #include <kai/debug.h>
+#include "program.hpp"
+#include "compiler_context.hpp"
 // BYTECODE GENERATION AND TYPECHECKING
 
 u8 binary_to_bytecode_operation(u32 tree_op) {
@@ -22,7 +22,7 @@ kai_Type type_of_expression(Dependency_Graph& dg, u32 scope_index, kai_Expr expr
 	case kai_Expr_ID_Identifier: {
 		auto const& name = expr->source_code;
 
-		auto node_index = dg.resolve_dependency_node(view(name), scope_index);
+		auto node_index = dg.resolve_dependency_node(SV(name), scope_index);
 
 		if (!node_index)
 			panic_with_message("failed to find identifier value");
@@ -60,7 +60,7 @@ generate_bytecode(Bytecode_Context& ctx, kai_Stmt body) {
 	break; case kai_Stmt_ID_Compound: {
 		auto comp = (kai_Stmt_Compound*)body;
 		ctx.scope_index = comp->_scope;
-		for range(comp->count) {
+		for_n(comp->count) {
 			generate_bytecode(ctx, comp->statements[i]);
 		}
 		ctx.scope_index = dg.scopes[comp->_scope].parent;
@@ -74,7 +74,7 @@ generate_bytecode(Bytecode_Context& ctx, kai_Stmt body) {
 	break; case kai_Expr_ID_Identifier: {
 		auto ident = (kai_Expr_Identifier*)body;
 		auto node_index = dg.resolve_dependency_node(
-			view(ident->source_code),
+			SV(ident->source_code),
 			ctx.scope_index
 		);
 
@@ -125,10 +125,10 @@ void Bytecode_Generation_Context::evaluate_value(u32 node_index)
 		auto restore_size = dg.node_infos.size();
 		auto proc_type = (kai_Type_Info_Procedure*)dg.type_nodes[node_index].type;
 		auto const n = proc->param_count + proc->ret_count;
-		for range(n) {
+		for_n(n) {
 			auto name = proc->input_output[i].name;
 			auto type = proc_type->input_output[i];
-			dg.insert_procedure_input(i, type, view(name), proc->_scope);
+			dg.insert_procedure_input(i, type, SV(name), proc->_scope);
 		}
 
 		Bytecode_Context ctx;
@@ -138,7 +138,7 @@ void Bytecode_Generation_Context::evaluate_value(u32 node_index)
 
 		dg.value_nodes.resize(restore_size);
 		dg.type_nodes.resize(restore_size);
-		for range(n) {
+		for_n(n) {
 			auto name = dg.node_infos[i + restore_size].name;
 			dg.scopes[proc->_scope].map.erase(name);
 		}
@@ -178,7 +178,7 @@ void Bytecode_Generation_Context::evaluate_type(u32 node_index)
 
 		type->input_output = ctx_alloc_array(kai_Type, total_count);
 
-		for range(total_count) {
+		for_n(total_count) {
 			type->input_output[i] =
 				type_of_expression(dg, info.scope, proc->input_output->type);
 		}
@@ -229,7 +229,7 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 //	return kai_Result_Error_Fatal;
 	while(uneval_values.size() != 0 || uneval_types.size() != 0) {
 		// evaluate types
-		for iterate(uneval_types) {
+		for_iter(uneval_types) {
 			if (ctx.dg.all_evaluated(ctx.dg.type_nodes[*it].dependencies)) {
 				ctx.evaluate_type(*it);
 				uneval_types.erase(it);
@@ -237,7 +237,7 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 			}
 		}
 		// evaluate value
-		for iterate(uneval_values) {
+		for_iter(uneval_values) {
 			if (ctx.dg.all_evaluated(ctx.dg.value_nodes[*it].dependencies)) {
 				ctx.evaluate_value(*it);
 				uneval_values.erase(it);
@@ -248,7 +248,7 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 
 #if ENABLE_DEBUG_PRINT
 	std::cout << '\n';
-	for range(ctx.dg.node_infos.size()) {
+	for_n(ctx.dg.node_infos.size()) {
 		auto& t    = ctx.dg.type_nodes[i];
 		auto& info = ctx.dg.node_infos[i];
 		std::cout << info.name << '\n';

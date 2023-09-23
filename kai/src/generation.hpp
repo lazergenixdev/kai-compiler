@@ -1,5 +1,6 @@
 #pragma once
 #include <kai/generation.h>
+#include "config.hpp"
 #include "dependency_graph.hpp"
 
 struct Procedure_Reference {
@@ -23,7 +24,7 @@ struct Procedure_Signature {
 
 template <>
 struct std::hash<Procedure_Signature> {
-	_NODISCARD size_t operator()(const Procedure_Signature& _Keyval) const noexcept {
+	no_discard size_t operator()(const Procedure_Signature& _Keyval) const noexcept {
 		return 0;
 	}
 };

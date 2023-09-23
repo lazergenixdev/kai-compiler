@@ -1,10 +1,11 @@
 #pragma once
-#include "config.hpp"
-#include <kai/parser.h>
-#include "bytecode_interpreter.hpp"
 #include <vector>
 #include <unordered_map>
 #include <optional>
+#include <kai/parser.h>
+#include "config.hpp"
+#include "bytecode_interpreter.hpp"
+#include "builtin_types.hpp"
 
 struct Dependency {
     enum {
@@ -71,7 +72,7 @@ struct Dependency_Graph {
     void insert_builtin_types();
     void insert_builtin_procedures();
 
-	NO_DISCARD bool create(kai_AST* tree);
+	no_discard bool create(kai_AST* tree);
 
 	bool all_evaluated(Dependency_List const& deps) {
 		Dependency_Node const* node = nullptr;
@@ -93,27 +94,27 @@ struct Dependency_Graph {
 
 	void insert_procedure_input(int arg_index, kai_Type type, std::string_view name, u32 scope_index);
 	
-	NO_DISCARD
+	no_discard
 	std::optional<u32>
 	resolve_dependency_node(std::string_view name, u32 scope_index);
 
 	void debug_print();
 private:
-	NO_DISCARD
+	no_discard
     bool insert_node_for_statement(
 		kai_Stmt statement,
 		bool in_proc,
 		u32 scope_index = GLOBAL_SCOPE
 	);
 
-	NO_DISCARD
+	no_discard
     bool insert_node_for_declaration(
 		kai_Stmt_Declaration* decl,
 		bool in_proc,
 		u32 scope_index = GLOBAL_SCOPE
 	);
 
-	NO_DISCARD
+	no_discard
 	bool insert_value_dependencies(
 		Dependency_List& deps,
 		u32 scope_index,
@@ -121,20 +122,20 @@ private:
 		bool in_procedure
 	);
 
-	NO_DISCARD
+	no_discard
 	bool insert_type_dependencies(
 		Dependency_List& deps,
 		u32 scope_index,
 		kai_Expr expr
 	);
 
-	NO_DISCARD
+	no_discard
 	std::optional<u32>
 	resolve_dependency_node_procedure(std::string_view name, Scope* scope);
 
-	NO_DISCARD
+	no_discard
 	bool has_circular_dependency();
 	
-	NO_DISCARD
+	no_discard
 	bool circular_dependency_check(std::vector<Dependency>& dependency_stack, Dependency_Node& node);
 };

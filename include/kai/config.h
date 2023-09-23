@@ -14,7 +14,7 @@
 #   define __KAI_END_API__
 #endif
 
-#define KAI_CALL     __cdecl
+#define KAI_CALL     
 #define KAI_API(RET) extern RET
 
 #define KAI_VERSION_MAJOR 0

@@ -1,5 +1,5 @@
+#include <cstddef>
 #include "parser.hpp"
-#include <cassert>
 #define DEFAULT_PREC -6942069
 
 //#define DEBUG_LEXER
@@ -73,7 +73,7 @@ kai_Expr Parse_Type(Parser_Context& ctx) {
         auto param_count = count;
         auto& peek = ctx.lexer.peek_token(); // see if we have any returns
 
-        if (peek.type == '->') {
+        if (peek.type == token_2("->")) {
             ctx.lexer.next_token(); // eat '->'
             ctx.lexer.next_token(); // get token after
 
@@ -147,21 +147,24 @@ struct operator_info {
 
 #define CAST_PREC     0x0900
 
-operator_info get_operator(token_type t) {
+operator_info get_operator(kai_u32 t) {
     switch (t)
     {
-    case '+':  return {t, 0x0100,    op_type::binary};
-    case '-':  return {t, 0x0100,    op_type::binary};
-    case '*':  return {t, 0x0200,    op_type::binary};
-    case '/':  return {t, 0x0200,    op_type::binary};
-    case '->': return {t, CAST_PREC, op_type::binary};
+    case token_2("&&"): return {t, 0x0010,    op_type::binary};
+    case token_2("||"): return {t, 0x0010,    op_type::binary};
+    case '+':           return {t, 0x0100,    op_type::binary};
+    case '-':           return {t, 0x0100,    op_type::binary};
+    case '*':           return {t, 0x0200,    op_type::binary};
+    case '/':           return {t, 0x0200,    op_type::binary};
+    case token_2("->"): return {t, CAST_PREC, op_type::binary};
+
     case '[':  return {t, 0xBEEF,    op_type::index};
     case '(':  return {t, 0xBEEF,    op_type::procedure_call};
     case '.':  return {t, 0xFFFF,    op_type::binary}; // member access
     default:   return {t, 0};
     }
 }
-int unary_operator_prec(token_type t) {
+int unary_operator_prec(kai_u32 t) {
     switch (t)
     {
     case '-': return 0x1000;
@@ -254,7 +257,7 @@ kai_Expr Parse_Expression(Parser_Context& ctx, int prec) {
         if (!right) return ctx.error_expected("expression after cast");
 
         auto binary = ctx.alloc_expr<kai_Expr_Binary>();
-        binary->op = '->';
+        binary->op = token_2("->");
         binary->left  = left;
         binary->right = right;
         binary->line_number;
@@ -369,7 +372,7 @@ loopBack:
         break;
     }
 
-    default: assert(false);
+    default: unreachable();
     }
 
     goto loopBack;
@@ -569,7 +572,7 @@ kai_Expr Parse_Procedure(Parser_Context& ctx) {
     ctx.lexer.next_token(); // eat ')'
 
     // return value
-    if (tok.type == '->') {
+    if (tok.type == token_2("->")) {
         ctx.lexer.next_token(); // eat ')'
 
         ctx.stack = params + count;

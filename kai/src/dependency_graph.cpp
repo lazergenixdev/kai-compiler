@@ -1,5 +1,7 @@
 #include "dependency_graph.hpp"
+#include <algorithm>
 #include "builtin_types.hpp"
+#include "compiler_context.hpp"
 
 // @TODO: don't repeat dependencies in dependency list pls thx
 
@@ -117,14 +119,14 @@ bool Dependency_Graph::create(kai_AST* ast) {
     insert_builtin_types();
 
 	// Make nodes for every statement
-	for range(ast->toplevel_count) {
+	for_n(ast->toplevel_count) {
 		auto tl = ast->toplevel_stmts[i];
 		if (insert_node_for_statement(tl, false))
             return true;
 	}
     
 	// Insert dependencies for each node
-	for range(node_infos.size()) {
+	for_n(node_infos.size()) {
 		auto& vnode = value_nodes[i];
 		auto& tnode = type_nodes[i];
 		auto& info  = node_infos[i];
@@ -168,7 +170,7 @@ void Dependency_Graph::insert_builtin_types() {
         type_nodes.emplace_back(tnode);
         
         Dependency_Node_Info info;
-        info.name = view(name);
+        info.name = SV(name);
         info.scope = GLOBAL_SCOPE;
         info.expr = nullptr;
         node_infos.emplace_back(info);
@@ -198,7 +200,7 @@ bool Dependency_Graph::insert_node_for_statement(
 		new_scope.parent = scope_index;
 		scopes.emplace_back(new_scope);
 		comp->_scope = new_scope_index;
-		for range(comp->count) {
+		for_n(comp->count) {
 			if (insert_node_for_statement(comp->statements[i], in_proc, new_scope_index))
 				return true;
 		}
@@ -216,7 +218,7 @@ bool Dependency_Graph::insert_node_for_declaration(
     if (in_proc && !(decl->flags & kai_Decl_Flag_Const))
 		return false;
 
-	auto name = view(decl->name);
+	auto name = SV(decl->name);
 
 	Scope* s = &scopes[scope_index];
 
@@ -294,7 +296,7 @@ bool Dependency_Graph::insert_value_dependencies(
     default: panic_with_message("undefined expression\n");
 
     break; case kai_Expr_ID_Identifier: {
-        auto name = view(expr->source_code);
+        auto name = SV(expr->source_code);
 		auto result = in_procedure ?
             resolve_dependency_node_procedure(name, &scopes[scope_index]):
             resolve_dependency_node(name, scope_index);
@@ -360,7 +362,7 @@ bool Dependency_Graph::insert_value_dependencies(
 		auto const n = proc->param_count;
         for (int i = 0; i < n; ++i) {
 			auto const& parameter = proc->input_output[i];
-			auto name = view(parameter.name);
+			auto name = SV(parameter.name);
 
 			auto it = local_scope.map.find(name);
 			if (it != local_scope.map.end())
@@ -382,7 +384,7 @@ bool Dependency_Graph::insert_value_dependencies(
             // Already has a dependency node
             if (decl->flags & kai_Decl_Flag_Const) return false;
 
-            auto name = view(decl->name);
+            auto name = SV(decl->name);
             auto& s = scopes[scope_index];
 
             // Insert into local scope (if not already defined)
@@ -410,7 +412,7 @@ bool Dependency_Graph::insert_value_dependencies(
             auto comp = (kai_Stmt_Compound*)expr;
 
             auto const n = comp->count;
-            for range(n) {
+            for_n(n) {
                 if(insert_value_dependencies(deps, comp->_scope, comp->statements[i], true))
                     return true;
             }
@@ -438,7 +440,7 @@ bool Dependency_Graph::insert_type_dependencies(
     {
     default:
     break; case kai_Expr_ID_Identifier: {
-        auto name = view(expr->source_code);
+        auto name = SV(expr->source_code);
 
         auto result = resolve_dependency_node_procedure(name, &scopes[scope_index]);
 
@@ -485,7 +487,7 @@ bool Dependency_Graph::insert_type_dependencies(
     break; case kai_Expr_ID_Procedure: {
         auto proc = (kai_Expr_Procedure*)expr;
         auto const n = proc->param_count + proc->ret_count;
-        for range(n) {
+        for_n(n) {
             auto param = proc->input_output[i];
             if (insert_value_dependencies(deps, scope_index, param.type, false))
                 return true;
@@ -498,7 +500,7 @@ bool Dependency_Graph::insert_type_dependencies(
         //// Already has a dependency node
         //if (decl->flags & kai_Decl_Flag_Const) return false;
 
-        //auto name = view(decl->name);
+        //auto name = SV(decl->name);
         //auto& s = dg.scopes[scope];
 
         //// Insert into local scope (if not already defined)
@@ -520,7 +522,7 @@ bool Dependency_Graph::insert_type_dependencies(
         //auto comp = (kai_Stmt_Compound*)expr;
 
         //auto const n = comp->count;
-        //for range(n) {
+        //for_n(n) {
         //	catch_and_throw(insert_type_dependencies(deps, comp->_scope, comp->statements[i]));
         //}
 
@@ -560,7 +562,7 @@ insert_procedure_input(int arg_index, kai_Type type, std::string_view name, u32 
 std::optional<u32> Dependency_Graph::
 resolve_dependency_node(std::string_view name, u32 scope_index) {
     Scope* s = nullptr;
-    loop {
+    while (1) {
         s = &scopes[scope_index];
 
         auto it = s->map.find(name);
@@ -577,7 +579,7 @@ resolve_dependency_node(std::string_view name, u32 scope_index) {
 std::optional<u32> Dependency_Graph::
 resolve_dependency_node_procedure(std::string_view name, Scope* scope) {
     bool allow_locals = true;
-    loop {
+    while (1) {
         auto it = scope->map.find(name);
 
         if (it != scope->map.end()) {
@@ -606,7 +608,8 @@ resolve_dependency_node_procedure(std::string_view name, Scope* scope) {
 #define FIND(Container, Value) std::find(Container.begin(), Container.end(), Value)
 
 // TODO: Flatten out this recursive algorithm to be iterative
-bool Dependency_Graph::circular_dependency_check(std::vector<Dependency>& dependency_stack, Dependency_Node& node) {
+bool Dependency_Graph::
+circular_dependency_check(std::vector<Dependency>& dependency_stack, Dependency_Node& node) {
     for (auto const& nd : node.dependencies) {
 
         // TODO: optimization: should keep a flag that indicates that
@@ -648,11 +651,12 @@ bool Dependency_Graph::circular_dependency_check(std::vector<Dependency>& depend
     return false;
 }
 
-bool Dependency_Graph::has_circular_dependency() {
+bool Dependency_Graph::
+has_circular_dependency() {
     std::vector<Dependency> stack;
     stack.emplace_back();
     
-    for range(node_infos.size()) {
+    for_n(node_infos.size()) {
         stack[0].node_index = (u32)i;
 
         stack[0].type = Dependency::VALUE;
@@ -679,7 +683,7 @@ static char const* _color_table[] = {
 #define GET_COLOR(N) _color_table[N % std::size(_color_table)]
 void Dependency_Graph::debug_print() {
     std::cout << '\n';
-    for range(value_nodes.size()) {
+    for_n(value_nodes.size()) {
         auto const& info = node_infos[i];
         auto const& node = value_nodes[i];
         auto const& name = info.name;
@@ -708,9 +712,9 @@ void Dependency_Graph::debug_print() {
         }
         std::cout << "}\n";
     }
-    for range(100) std::cout << '-';
+    for_n(100) std::cout << '-';
     std::cout << '\n';
-    for range(type_nodes.size()) {
+    for_n(type_nodes.size()) {
         auto const& info = node_infos[i];
         auto const& node = type_nodes[i];
         auto const& name = info.name;

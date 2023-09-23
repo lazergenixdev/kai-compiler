@@ -1,5 +1,6 @@
 #pragma once
 #include <kai/generation.h>
+#include "config.hpp"
 
 struct kai_Program_Impl {
 	void* executable_memory;

@@ -1,5 +1,5 @@
+#include <cstring>
 #include "bytecode_stream.hpp"
-
 
 // PRIMITIVE_OP(u8) PRIMITIVE_TYPE(u8) DESTINATION(reg) LEFT(reg) IMMEDIATE(FALSE) RIGHT(reg)
 void Bytecode_Instruction_Stream::insert_primitive_operation(u8 op, u8 primtype, u32 reg_dst, u32 reg_op1, u32 reg_op2) {
@@ -55,7 +55,7 @@ void Bytecode_Instruction_Stream::insert_return(u32 count, u32 const* reg) {
 
 	stream.emplace_back(Operation_Return);
 	stream.emplace_back(count);
-	for range(count) {
+	for_n(count) {
 		_insert_register(reg[i]);
 	}
 }
@@ -65,7 +65,7 @@ u64 Bytecode_Instruction_Stream::procedure_call(u8 arg_count) // -> branch_posit
 {
 	stream.emplace_back(Operation_Procedure_Call);
 	u64 pos = position();
-	for range(8) stream.emplace_back(0xBA);
+	for_n(8) stream.emplace_back(0xBA);
 	stream.emplace_back(arg_count);
 	return pos;
 }
@@ -247,7 +247,7 @@ void Bytecode_Instruction_Stream::debug_print()
 			cursor += (u64)arg_count * sizeof(u32);
 
 			auto out_count = stream[cursor++];
-			for range(out_count) {
+			for_n(out_count) {
 				auto reg = LOAD(u32);
 				_print_register(reg);
 				if (i != out_count - 1) std::cout << ", ";
@@ -257,7 +257,7 @@ void Bytecode_Instruction_Stream::debug_print()
 			std::cout << std::hex << addr << std::dec << " (";
 
 			cursor = args_start;
-			for range(arg_count) {
+			for_n(arg_count) {
 				auto reg = LOAD(u32);
 				_print_register(reg);
 				if (i != arg_count - 1) std::cout << ", ";
@@ -269,7 +269,7 @@ void Bytecode_Instruction_Stream::debug_print()
 		case Operation_Return: {
 			auto ret_count = stream[cursor++];
 			std::cout << "ret ";
-			for range(ret_count) {
+			for_n(ret_count) {
 				auto reg = LOAD(u32);
 				_print_register(reg);
 				if (i != ret_count - 1) std::cout << ", ";

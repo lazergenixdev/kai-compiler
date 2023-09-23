@@ -1,19 +1,8 @@
-#include "../config.hpp"
-#include <kai/debug.h>
 #include <cstdio>
-#include <type_traits>
 #include <algorithm>
-
-#define _write(CSTRING)       writer->write_c_string(writer->user, CSTRING)
-#define _write_string(STRING) writer->write_string(writer->user, STRING)
-#define _write_char(CHAR)     writer->write_char(writer->user, CHAR)
-#define _set_color(COLOR)     if(writer->set_color) writer->set_color(writer->user, COLOR)
-
-#define _write_format(...)       \
-{                                 \
-    kai_int count = sprintf_s(temp, __VA_ARGS__); \
-    writer->write_string(writer->user, kai_str{.count = count, .data = (kai_u8*)temp}); \
-} (void)0
+#include <kai/debug.h>
+#include "../config.hpp"
+#include "../builtin_types.hpp"
 
 static constexpr char const* result_string_map[kai_Result_COUNT] = {
 	"Success"
@@ -26,8 +15,6 @@ static constexpr char const* result_string_map[kai_Result_COUNT] = {
 ,	"Fatal Error"
 ,	"Internal Error"
 };
-
-#define F_S64 "%I64i"
 
 int number_of_digits(kai_int x) {
 	if (x <            10) return 1;
@@ -79,13 +66,15 @@ write_error_message:
 		return;
 	}
 
+	// ----------------- Write Error Message -----------------
+
 	_set_color(kai_debug_color_important_2);
 	_write_string(error->location.file);
 	_set_color(kai_debug_color_primary);
-#ifdef KAI_SHOW_LINE_NUMBER_WITH_FILE
+#if KAI_SHOW_LINE_NUMBER_WITH_FILE
 	_write_char(':');
 	_set_color(kai_debug_color_important_2);
-	_write_format(F_S64, error->location.line);
+	_write_format("%u", error->location.line);
 	_set_color(kai_debug_color_primary);
 #endif
 	_write(" --> ");
@@ -99,10 +88,10 @@ write_error_message:
 	// ------------------ Write Source Code ------------------
 
 	auto digits = number_of_digits(error->location.line);
-	for range(digits) _write_char(' ');
-	_write(" |\n");
+	for_n(digits) _write_char(' ');
+	_write("  |\n");
 
-	_write_format(F_S64, error->location.line);
+	_write_format(" %u", error->location.line);
 	_write(" |");
 
 	auto begin = advance_to_line(error->location.source, error->location.line);
@@ -110,8 +99,8 @@ write_error_message:
 	write_source_code(writer, begin);
 	_write_char('\n');
 
-	for range(digits) _write_char(' ');
-	_write(" |");
+	for_n(digits) _write_char(' ');
+	_write("  |");
 
 	write_source_code_count(writer, begin,
 		kai_int(error->location.string.data - begin)
@@ -119,10 +108,12 @@ write_error_message:
 
 	_set_color(kai_debug_color_important);
 	_write_char('^');
-	auto n = std::max(0ll, error->location.string.count - 1);
-	for range(n) _write_char('~');
+	auto n = std::max((kai_int)0, error->location.string.count - 1);
+	for_n(n) _write_char('~');
 	_write_char('\n');
 	_set_color(kai_debug_color_primary);
+
+	// ----------------------- Repeat ------------------------
 
 	if (error->next != nullptr) {
 		error = error->next;

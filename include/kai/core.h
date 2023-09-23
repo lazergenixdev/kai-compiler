@@ -28,7 +28,7 @@ typedef kai_s64   kai_int;
 typedef double    kai_f64;
 typedef float     kai_f32;
 
-typedef void*     kai_ptr;
+typedef void*     kai_ptr; // TODO: void* is good enough, no need for this typedef (kai_ptr)
 
 typedef struct kai_Type_Info* kai_Type;
 

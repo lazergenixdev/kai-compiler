@@ -240,7 +240,7 @@ Token Lexer_Context::generate_token() {
 		}
 
 		default:
-			__debugbreak();
+			debug_break();
 			break;
 		}
 	}
@@ -318,7 +318,7 @@ void Lexer_Context::parse_multi_token(Token& t, kai_u8 current) {
 		if(source.data[cursor] == '&') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'&&';
+			t.type = token_2("&&");
 		}
 	break;
 
@@ -326,7 +326,7 @@ void Lexer_Context::parse_multi_token(Token& t, kai_u8 current) {
 		if(source.data[cursor] == '|') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'||';
+			t.type = token_2("||");
 		}
 	break;
 
@@ -334,7 +334,7 @@ void Lexer_Context::parse_multi_token(Token& t, kai_u8 current) {
 		if(source.data[cursor] == '=') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'==';
+			t.type = token_2("==");
 		}
 	break;
 
@@ -342,12 +342,12 @@ void Lexer_Context::parse_multi_token(Token& t, kai_u8 current) {
 		if(source.data[cursor] == '=') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'>=';
+			t.type = token_2(">=");
 		}
 		else if(source.data[cursor] == '>') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'>>';
+			t.type = token_2(">>");
 		}
 	break;
 
@@ -355,12 +355,12 @@ void Lexer_Context::parse_multi_token(Token& t, kai_u8 current) {
 		if(source.data[cursor] == '=') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'<=';
+			t.type = token_2("<=");
 		}
 		else if(source.data[cursor] == '<') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'<<';
+			t.type = token_2("<<");
 		}
 	break;
 
@@ -368,7 +368,7 @@ void Lexer_Context::parse_multi_token(Token& t, kai_u8 current) {
 		if(source.data[cursor] == '=') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'&&';
+			t.type = token_2("!=");
 		}
 	break;
 
@@ -376,7 +376,7 @@ void Lexer_Context::parse_multi_token(Token& t, kai_u8 current) {
 		if (source.data[cursor] == '>') {
 			++cursor;
 			++t.string.count;
-			t.type = (token_type)'->';
+			t.type = token_2("->");
 		} else
 		if(cursor + 1 < source.count &&
 			source.data[cursor] == '-' &&
@@ -384,7 +384,7 @@ void Lexer_Context::parse_multi_token(Token& t, kai_u8 current) {
 		) {
 			cursor += 2;
 			t.string.count += 2;
-			t.type = (token_type)'---';
+			t.type = token_3("---");
 		}
 		break;
 	}

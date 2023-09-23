@@ -32,7 +32,7 @@ int Bytecode_Interpreter::step() {
 		auto last = base.back();
 		base.pop_back();
 		u32 max_reg_index = 0;
-		for range(op) {
+		for_n(op) {
 			u32 index = load<u32>();
 			u32 k = index + base.back().reg;
 			if (k > max_reg_index) max_reg_index = k;
@@ -63,7 +63,7 @@ int Bytecode_Interpreter::step() {
 
 		u32* ptr = reinterpret_cast<u32*>(&bytecode[cursor]);
 
-		for range(ret_count) {
+		for_n(ret_count) {
 			temp[i] = register_at(ptr[i], base.back());
 		}
 		memcpy(registers.data() + start_return_index, temp, ret_count * sizeof(Register));
@@ -81,7 +81,7 @@ int Bytecode_Interpreter::step() {
 
 		auto bi = base.back();
 		begin_procedure_input();
-		for range(arg_count) {
+		for_n(arg_count) {
 			// read register index
 			u32 index = load<u32>();
 			// push value at register

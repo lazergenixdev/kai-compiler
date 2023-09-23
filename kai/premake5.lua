@@ -41,6 +41,8 @@ project 'kai'
 
 	filter "system:windows"
         files "%{prj.location}/src/platform/windows.cpp"
+	filter "system:linux"
+        files "%{prj.location}/src/platform/linux.cpp"
     
 	filter "architecture:x86_64"
         files "%{prj.location}/vendor/asmjit/x86/*"

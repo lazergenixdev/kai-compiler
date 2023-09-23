@@ -1,6 +1,10 @@
 #pragma once
+#include <cstddef>
+#include <cstring>
 #include <kai/parser.h>
+#include "config.hpp"
 #include "lexer.hpp"
+using std::nullptr_t;
 
 template <typename T> struct expr_id_map { static constexpr kai_u32 ID = -1; };
 template<> struct expr_id_map <kai_Expr_Identifier>     { static constexpr kai_u32 ID = kai_Expr_ID_Identifier;     };

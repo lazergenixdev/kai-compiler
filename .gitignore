@@ -16,6 +16,9 @@
 # get tf outta here "Visual Studio Code"
 **.vscode
 
+# Make
+**/Makefile
+
 # Build Binaries
 bin/
 bin-int/

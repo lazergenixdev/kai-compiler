@@ -7,30 +7,20 @@
 #include <bitset>
 #include <vector>
 #include <chrono>
-#define NOMINMAX
-#include <Windows.h>
-#include <excpt.h>
 using namespace std::chrono_literals;
 
 inline double time_took_ms = 0.0;
+using namespace std::chrono;
 
 struct timer {
-	LARGE_INTEGER start;
-
+	high_resolution_clock::time_point start;
 	timer() {
-		QueryPerformanceCounter(&start);
+		start = high_resolution_clock::now();
 	}
 	~timer() {
-		LARGE_INTEGER end;
-		QueryPerformanceCounter(&end);
-
-		time_took_ms = static_cast<double>(
-			((end.QuadPart - start.QuadPart) * 1'000'000) / freq.QuadPart
-		) / 1000.0;
+		auto stop = high_resolution_clock::now();
+		time_took_ms = (double)duration_cast<microseconds>(stop - start).count()/1e3;
 	}
-
-private:
-	static inline LARGE_INTEGER freq = []() { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f; }();
 };
 
 #define view(S) std::string_view( (char*)S.data, S.count )
@@ -38,12 +28,12 @@ private:
 
 template <typename Fn, typename...Args>
 void print_result(Fn& fn, Args&&...args) {
-	__try {
+//	__try {
 		std::cout << fn(std::forward<Args>(args)...);
-	}
-	__except(EXCEPTION_EXECUTE_HANDLER) {
-		std::cout << "an error occured\n";
-	}
+//	}
+//	__except(EXCEPTION_EXECUTE_HANDLER) {
+//		std::cout << "an error occured\n";
+//	}
 }
 
 // C++ is a piece of serious garbage, screw your move constructor bullshit
@@ -97,7 +87,7 @@ File_Data read_entire_file(char const* filename) {
 int main() {
 	/////////////////////////////////////////////////
 	// Setup
-	SetConsoleOutputCP( CP_UTF8 );
+//	SetConsoleOutputCP( CP_UTF8 );
 	setlocale( LC_ALL, ".UTF8" );
 
 	std::cout << kai_get_version_string();
@@ -187,6 +177,7 @@ int main() {
 		std::cout << '\n';
 		std::cout << "add(" << a << ", " << b << ") = ";
 		print_result(proc, a, b);
+		std::cout << '\n';
 
 		kai_destroy_program(program);
 	}
