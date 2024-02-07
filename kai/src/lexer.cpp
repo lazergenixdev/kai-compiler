@@ -1,22 +1,31 @@
 #include "lexer.hpp"
+#include <string_view>
+#include <iostream>
 
-// TODO: Implement Comments (multi-line)
-// TODO: String Escape \"
-// TODO: Add "false" and "true" keywords (re2c)
+//! @TODO: Implement Comments (multi-line)
+//! @TODO: String Escape \"
+//! @TODO: Add "false" and "true" keywords (re2c)
 
 Token& Lexer_Context::next_token() {
-	if( !peeking )
-		return currentToken = generate_token();
+	if (!peeking) return current_token = generate_token();
 	peeking = false;
-	return currentToken = peekedToken;
+	return current_token = peeked_token;
 }
 
 Token& Lexer_Context::peek_token() {
-	if( peeking )
-		return peekedToken;
+	if (peeking) return peeked_token;
 	peeking = true;
-	return peekedToken = generate_token();
+	return peeked_token = generate_token();
 }
+
+
+static constexpr int hash_keyword(kai_str const& s) {
+	if (s.count < 2) return 6;
+	return (s.count&3) | ((s.data[0]&2) << 2) | ((s.data[1]&2) << 1);
+}
+static constexpr kai_u8 hash_keyword_map[16] = {
+	4, 3, 3, 3, 7, 10, 6, 6, 1, 11, 9, 8, 2, 0, 0, 5,
+};
 
 enum What {
 	// Last Bit == 0 means that the "character" can be used in an identifier
@@ -49,7 +58,7 @@ kai_u8 lex_lookup_table[128] = {
 	N,  N,  N,  N,  N,  N,  N,  N,  N,  N,  T,  T,  T,  T,  T,  T, // 3
 	T,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 4
 	0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  T,  T,  T,  T,  0, // 5
-	T,  0,  K,  K,  K,  0,  K,  0,  0,  K,  0,  0,  K,  0,  0,  0, // 6
+	T,  0,  K,  K,  K,  K,  K,  0,  0,  K,  0,  0,  K,  0,  0,  0, // 6
 	0,  0,  K,  K,  0,  K,  0,  K,  0,  0,  0,  T,  T,  T,  T,  W, // 7
 };
 
@@ -85,7 +94,6 @@ Token Lexer_Context::generate_token() {
 		}
 
 		case Keyword: {
-			// TODO: Use re2c for keyword lookup
 			token.type = token_identifier;
 			++cursor;
 			while( cursor < source.count ) {
@@ -97,13 +105,12 @@ Token Lexer_Context::generate_token() {
 				++token.string.count;
 			}
 
-			int i = 0;
-			for( auto&& kw: keyword_map ) {
-				if( kai_string_equals(token.string, kw) ) {
-					token.type = token_type(KEYWORD_START + i);
-					return token;
-				}
-				++i;
+			// Check if the string we just parsed is a keyword
+			auto hash = hash_keyword(token.string);
+			auto keyword_index = hash_keyword_map[hash];
+			if (kai_string_equals(keyword_map[keyword_index], token.string)) {
+				token.type = token_type(KEYWORD_START | keyword_index);
+				return token;
 			}
 
 			return token;
@@ -174,7 +181,7 @@ Token Lexer_Context::generate_token() {
 			parse_number_dec(token.number.Whole_Part);
 
 			// Parse Fractional Part
-			if( cursor < source.count && source.data[cursor] == '.' ) {
+			if( cursor < source.count && source.data[cursor] == '.' && !next_character_equals('.') ) {
 				++cursor;
 				auto start = cursor;
 				parse_number_dec(token.number.Frac_Part);
@@ -228,7 +235,17 @@ Token Lexer_Context::generate_token() {
 		}
 
 		case Dot: {
-			// TODO: handle case where this could be a number (e.g. ".01")
+			if(next_character_equals('.')) {
+				cursor += 2;
+				++token.string.count;
+				token.type = token_2("..");
+
+			//! @TODO: remove this
+			//	std::cout << "ok: " << SV(token.string) << '\n';
+
+				return token;
+			}
+			//! @TODO: handle case where this could be a number (e.g. ".01")
 		}
 
 		case Character_Token: {
@@ -248,7 +265,7 @@ Token Lexer_Context::generate_token() {
 	return token;
 }
 
-// TODO: Handle overflow of integers (how? lol idk, token_error_overflow?)
+//! @TODO: Handle overflow of integers (how? lol idk, token_error_overflow?)
 
 void Lexer_Context::parse_number_bin(kai_u64& n) {
 	for(; cursor < source.count; ++cursor) {

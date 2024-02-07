@@ -69,7 +69,7 @@ write_error_message:
 	// ----------------- Write Error Message -----------------
 
 	_set_color(kai_debug_color_important_2);
-	_write_string(error->location.file);
+	_write_string(error->location.file_name);
 	_set_color(kai_debug_color_primary);
 #if KAI_SHOW_LINE_NUMBER_WITH_FILE
 	_write_char(':');
@@ -92,7 +92,7 @@ write_error_message:
 	_write("  |\n");
 
 	_write_format(" %u", error->location.line);
-	_write(" |");
+	_write(" | ");
 
 	auto begin = advance_to_line(error->location.source, error->location.line);
 
@@ -100,7 +100,7 @@ write_error_message:
 	_write_char('\n');
 
 	for_n(digits) _write_char(' ');
-	_write("  |");
+	_write("  | ");
 
 	write_source_code_count(writer, begin,
 		kai_int(error->location.string.data - begin)
@@ -110,6 +110,10 @@ write_error_message:
 	_write_char('^');
 	auto n = std::max((kai_int)0, error->location.string.count - 1);
 	for_n(n) _write_char('~');
+
+	_write_char(' ');
+	_write_string(error->context);
+
 	_write_char('\n');
 	_set_color(kai_debug_color_primary);
 

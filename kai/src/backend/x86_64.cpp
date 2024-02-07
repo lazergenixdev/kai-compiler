@@ -87,19 +87,43 @@ struct Code_Generation_Context {
 			switch (instr)
 			{
 			default:
-				panic_with_message("undefined operation");
+				panic_with_message("undefined (generate_procedure) [opcode = %d]", instr);
+			break; case Operation_Load_Value: {
+				u8 prim_type = bytecode[index++];
+				u32 dst_reg_index = _load_and_inc<u32>(bytecode, index);
+				Register imm_value;
+				
+				auto dst_reg = get_register(dst_reg_index, TypeId::kInt64);
+				if (!dst_reg.isGp()) panic_with_message("how is this possible?\n");
+
+				imm_value.s64value = _load_and_inc<s64>(bytecode, index);
+				auto dst   = dst_reg  .as<x86::Gp>();
+
+				compiler.mov(dst, imm_value.s64value);
+			}
 			break; case Operation_Add: {
 				u8 prim_type = bytecode[index++];
 				u32 dst_reg_index = _load_and_inc<u32>(bytecode, index);
 				u32 left_reg_index = _load_and_inc<u32>(bytecode, index);
 				u8 is_imm = bytecode[index++]; // assume false
-				u32 right_reg_index = _load_and_inc<u32>(bytecode, index);
+				Register imm_value;
+				u32 right_reg_index;
 				
 				auto dst_reg = get_register(dst_reg_index, TypeId::kInt64);
 				auto left_reg = get_register(left_reg_index, TypeId::kInt64);
-				auto right_reg = get_register(right_reg_index, TypeId::kInt64);
+				
+				if (!dst_reg.isGp()) panic_with_message("how is this possible?\n");
 
-				if (dst_reg.isGp()) {
+				if (is_imm) {
+					imm_value.s64value = _load_and_inc<s64>(bytecode, index);
+					auto dst   = dst_reg  .as<x86::Gp>();
+					auto left  = left_reg .as<x86::Gp>();
+
+					compiler.mov(dst, left);
+					compiler.add(dst, imm_value.s64value);
+				} else {
+					right_reg_index = _load_and_inc<u32>(bytecode, index);
+					auto right_reg = get_register(right_reg_index, TypeId::kInt64);
 					auto dst   = dst_reg  .as<x86::Gp>();
 					auto left  = left_reg .as<x86::Gp>();
 					auto right = right_reg.as<x86::Gp>();
@@ -113,6 +137,37 @@ struct Code_Generation_Context {
 				u32 dst_reg_index = _load_and_inc<u32>(bytecode, index);
 				u32 left_reg_index = _load_and_inc<u32>(bytecode, index);
 				u8 is_imm = bytecode[index++]; // assume false
+				Register imm_value;
+				u32 right_reg_index;
+				
+				auto dst_reg = get_register(dst_reg_index, TypeId::kInt64);
+				auto left_reg = get_register(left_reg_index, TypeId::kInt64);
+				
+				if (!dst_reg.isGp()) panic_with_message("how is this possible?\n");
+
+				if (is_imm) {
+					imm_value.s64value = _load_and_inc<s64>(bytecode, index);
+					auto dst   = dst_reg  .as<x86::Gp>();
+					auto left  = left_reg .as<x86::Gp>();
+
+					compiler.mov(dst, left);
+					compiler.imul(dst, imm_value.s64value);
+				} else {
+					right_reg_index = _load_and_inc<u32>(bytecode, index);
+					auto right_reg = get_register(right_reg_index, TypeId::kInt64);
+					auto dst   = dst_reg  .as<x86::Gp>();
+					auto left  = left_reg .as<x86::Gp>();
+					auto right = right_reg.as<x86::Gp>();
+
+					compiler.mov(dst, left);
+					compiler.imul(dst, right);
+				}
+			}
+			break; case Operation_Div: {
+				u8 prim_type = bytecode[index++];
+				u32 dst_reg_index = _load_and_inc<u32>(bytecode, index);
+				u32 left_reg_index = _load_and_inc<u32>(bytecode, index);
+				u8 is_imm = bytecode[index++]; // assume false
 				u32 right_reg_index = _load_and_inc<u32>(bytecode, index);
 				
 				auto dst_reg = get_register(dst_reg_index, TypeId::kInt64);
@@ -124,8 +179,8 @@ struct Code_Generation_Context {
 					auto left  = left_reg .as<x86::Gp>();
 					auto right = right_reg.as<x86::Gp>();
 
-					compiler.mov(dst, left);
-					compiler.imul(dst, right);
+					compiler.xor_(x86::rdx, x86::rdx);
+					compiler.idiv(dst, left, right);
 				}
 			}
 			break; case Operation_Return: {

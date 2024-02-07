@@ -1,0 +1,10 @@
+int :: s64;
+
+main :: (n: s64, k: int) -> s64 {
+    ret fibonacci(n);
+}
+
+fibonacci :: (n: int) {
+    if n <= 2 ret 1;
+    ret fibonacci(n-1) + fibonacci(n-2);
+}

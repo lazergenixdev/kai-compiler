@@ -1,5 +1,5 @@
 #pragma once
-#include <array>
+#include <cstring>
 #include <kai/parser.h>
 #include "config.hpp"
 
@@ -10,15 +10,16 @@ X(break   , KEYWORD_START | 0) \
 X(cast    , KEYWORD_START | 1) \
 X(continue, KEYWORD_START | 2) \
 X(defer   , KEYWORD_START | 3) \
-X(for     , KEYWORD_START | 4) \
-X(if      , KEYWORD_START | 5) \
-X(loop    , KEYWORD_START | 6) \
-X(ret     , KEYWORD_START | 7) \
-X(struct  , KEYWORD_START | 8) \
-X(using   , KEYWORD_START | 9) \
-X(while   , KEYWORD_START |10) \
+X(else    , KEYWORD_START | 4) \
+X(for     , KEYWORD_START | 5) \
+X(if      , KEYWORD_START | 6) \
+X(loop    , KEYWORD_START | 7) \
+X(ret     , KEYWORD_START | 8) \
+X(struct  , KEYWORD_START | 9) \
+X(using   , KEYWORD_START |10) \
+X(while   , KEYWORD_START |11) \
 
-
+//! @TODO: This probably should not be lower case
 enum token_type: kai_u32 {
 	token_end = 0,
 
@@ -36,11 +37,6 @@ static inline constexpr bool is_token_keyword(kai_u32 ty) {
 	return ty < token_identifier && ty >= KEYWORD_START;
 }
 
-// count <= 8  hash = (count & 0b11 << 2) | (data[0] & 0b11)
-//kai_str* keyword_buckets[16] = {
-//
-//};
-
 inline kai_str const keyword_map[] = {
 #define X(NAME, ID) KAI_STR(#NAME),
 	XTOKEN_KEYWORDS
@@ -48,7 +44,7 @@ inline kai_str const keyword_map[] = {
 };
 
 static constexpr kai_str token_type_string(kai_u32 ty) {
-	switch( ty )
+	switch (ty)
 	{
 	default: return {0, nullptr};
 
@@ -58,12 +54,26 @@ static constexpr kai_str token_type_string(kai_u32 ty) {
 	case token_number:     return KAI_STR("number");
 
 	case token_2("->"):    return KAI_STR("'->'");
+	case token_2("=="):    return KAI_STR("'=='");
 	case token_2("&&"):    return KAI_STR("'&&'");
+	case token_2(".."):    return KAI_STR("'..'");
 
-#define X(NAME, ID) case ID: return KAI_STR(#NAME);
+#define X(NAME, ID) case ID: return KAI_STR("'" #NAME "'");
 		XTOKEN_KEYWORDS
 #undef X
 	}
+}
+
+static constexpr void insert_token_type_string(kai_str& output, kai_u32 token_type) {
+	auto s = token_type_string(token_type);
+	if (s.count == 0) {
+		output.data[output.count++] = '\'';
+		output.data[output.count++] = (char)token_type;
+		output.data[output.count++] = '\'';
+		return;
+	}
+	memcpy(output.data + output.count, s.data, s.count);
+	output.count += s.count;
 }
 
 struct Token {
@@ -74,8 +84,8 @@ struct Token {
 };
 
 struct Lexer_Context {
-	Token      currentToken;
-	Token      peekedToken;
+	Token      current_token;
+	Token      peeked_token;
 
 	kai_str    source;
 	kai_int    cursor;
@@ -94,6 +104,7 @@ struct Lexer_Context {
 	// Get next token after the current without replacing the current
 	Token& peek_token();
 
+	kai_str raw_string(kai_str delimiter);
 
 private:
 	Token generate_token();

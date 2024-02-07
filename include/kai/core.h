@@ -167,9 +167,9 @@ typedef enum: kai_u32 {
 #define KAI_FAILED(RESULT) (RESULT != kai_Result_Success)
 
 typedef struct {
-	kai_str file;
+	kai_str file_name;
 	kai_str string;
-	kai_u8* source;
+	kai_u8* source; // source code for this file
 	kai_int line;
 } kai_Location;
 

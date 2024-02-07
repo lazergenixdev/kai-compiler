@@ -1,5 +1,27 @@
 #include "bytecode_interpreter.hpp"
 
+template <typename T>
+static constexpr u32 compare_T(T const& left, T const& right) {
+	// why??
+	return
+	(u32(left <  right) << 0) |
+	(u32(left >  right) << 1) |
+	(u32(left <= right) << 2) |
+	(u32(left >= right) << 3) |
+	(u32(left == right) << 4) |
+	(u32(left != right) << 5) |
+	(u32(left == T(0) ) << 6);
+}
+static u32 compare(u8 primtype, Register const& left, Register const& right) {
+	switch (primtype) {
+#define X(NAME,TYPE) case Prim_Type_ ## NAME: \
+	return compare_T(left.NAME##value, right.NAME##value);
+		XPRIMITIVE_TYPES
+#undef  X
+	default: panic();
+	}
+}
+
 void Bytecode_Interpreter::debug_output_registers() {
 	for (auto const& r : registers) {
 		std::cout << std::setw(4) << r.s32value << ' ';
@@ -17,7 +39,7 @@ Register& Bytecode_Interpreter::register_at(u32 index, base_index b) {
 	u64 reg_index = index + b.reg;
 
 	if (reg_index >= (u64)registers.size())
-		panic_with_message("register not allocated");
+		panic_with_message("register # %d not allocated", reg_index);
 	
 	return registers[reg_index];
 }
@@ -51,6 +73,40 @@ int Bytecode_Interpreter::step() {
 	case Operation_Div:
 	{
 		primitive_operation(op);
+		return 1;
+	}
+	case Operation_Compare: {
+		auto type      = bytecode[cursor++];
+		auto op1       = load<u32>();
+		auto is_imm    = bytecode[cursor++];
+		
+		Register r2;
+		if (is_imm)
+			r2 = load_immediate(type, bytecode+cursor);
+		else
+			r2 = register_at(load<u32>(), base.back());
+		auto& r1 = register_at(op1, base.back());
+
+		compare_flags = compare(type, r1, r2);
+		return 1;
+	}
+	case Operation_Condition_Branch: {
+		auto condition = bytecode[cursor++];
+		auto position  = load<u64>();
+
+		if (compare_flags & (1 << condition))
+			cursor = position;
+
+		return 1;
+	}
+	case Operation_Load_Value: {
+		auto type = bytecode[cursor++];
+		auto dst = load<u32>();
+		Register value = load_immediate(type, bytecode+cursor);
+
+		make_registers(dst);
+		register_at(dst, base.back()) = value;
+		
 		return 1;
 	}
 	case Operation_Return: {

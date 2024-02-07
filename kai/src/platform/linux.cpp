@@ -8,8 +8,8 @@
 #include "../config.hpp"
 #include "../program.hpp"
 
-static constexpr kai_int minimum_temerary_memory_size = 1024 * 256;
-static constexpr kai_int minimum_bucket_size          = 1024 * 256;
+static constexpr kai_int minimum_temerary_memory_size = 1024 * 1;
+static constexpr kai_int minimum_bucket_size          = 1024 * 1;
 
 struct Memory_Bucket {
 	kai_ptr data;
@@ -18,7 +18,7 @@ struct Memory_Bucket {
 	Memory_Bucket(kai_int Size) {
 		_size = Size;
 		data = mmap(nullptr, Size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
-		assert(data != MAP_FAILED, "error: failed to allocator memory [mmap]");
+		assert(data != MAP_FAILED, "error: failed to allocate memory [mmap]");
 	}
 
 	~Memory_Bucket() {
@@ -47,6 +47,7 @@ struct Memory_Impl {
 		if( bucket_num_pages * page_size < minimum_bucket_size ) {
 			++bucket_num_pages;
 		}
+	//	printf("DEBUG: %i %i\n", bucket_num_pages, page_size);
 
 		buckets.emplace_back(bucket_num_pages * page_size);
 		bucket_allocated_size = 0;
@@ -90,7 +91,7 @@ void kai_create_memory(kai_Memory* mem) {
 
 
 void kai_reset_memory( kai_Memory* mem ) {
-
+	
 }
 
 void kai_destroy_memory( kai_Memory* mem ) {
@@ -121,28 +122,16 @@ kai_Program init_program(Machine_Code code) {
 		0
 	);
 
-	if(mem == MAP_FAILED) {
-		/* A file descriptor refers to a non-regular file.  Or a file
-       ENFILE The system-wide limit on the total number of open files
-              has been reached.
-
-       ENODEV The underlying filesystem of the specified file does not
-              support memory mapping.
-        No memory is available.*/
-		printf("%i %i %i %i    %i %i %i %i\n", EACCES, EAGAIN, EBADF, EEXIST, EINVAL, EINVAL, EINVAL, ENOMEM);
-		exit(errno);
-	}
+	if(mem == MAP_FAILED)
+		panic_with_message("failed to allocate memory [error = %i]", errno);
 
 	memcpy(mem, code.data, code.size);
 
 	program->executable_memory      = mem;
 	program->executable_memory_size = code.size;
 
-	mprotect(mem, code.size, PROT_EXEC);
-
-//	for_n(code.size) {
-//		code.data
-//	}
+	if(0 != mprotect(mem, code.size, PROT_EXEC))
+		panic_with_message("mprotect failed [error = %i]", errno);
 
 	return program;
 }

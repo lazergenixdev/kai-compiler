@@ -50,8 +50,20 @@ struct Syntax_Tree_Traverser {
             visit_declaration((kai_Stmt_Declaration*)node);
         break;
 
+        case kai_Stmt_ID_Assignment:
+            visit_assignment((kai_Stmt_Assignment*)node);
+        break;
+
         case kai_Stmt_ID_Compound:
 	        visit_compound((kai_Stmt_Compound*)node);
+        break;
+
+        case kai_Stmt_ID_If:
+	        visit_if((kai_Stmt_If*)node);
+        break;
+
+        case kai_Stmt_ID_For:
+	        visit_for((kai_Stmt_For*)node);
         break;
 
         default:
@@ -76,7 +88,10 @@ struct Syntax_Tree_Traverser {
 	virtual void visit_procedure      (kai_Expr_Procedure      * node) = 0;
     virtual void visit_return         (kai_Stmt_Return         * node) = 0;
 	virtual void visit_declaration    (kai_Stmt_Declaration    * node) = 0;
+	virtual void visit_assignment     (kai_Stmt_Assignment     * node) = 0;
 	virtual void visit_compound       (kai_Stmt_Compound       * node) = 0;
+	virtual void visit_if             (kai_Stmt_If             * node) = 0;
+	virtual void visit_for            (kai_Stmt_For            * node) = 0;
 };
 
 struct Type_Tree_Traverser {

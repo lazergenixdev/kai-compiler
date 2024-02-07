@@ -36,51 +36,42 @@ void print_result(Fn& fn, Args&&...args) {
 //	}
 }
 
-// C++ is a piece of serious garbage, screw your move constructor bullshit
-struct File_Data {
-	void* data = nullptr;
-	kai_u64 size;
-};
-
 struct File {
 	void* data;
 	kai_u64 size;
-
-	File(File_Data const& f):
-		data(f.data),
-		size(f.size)
-	{}
 
 	~File() {
 		free(data);
 	}
 };
 
-File_Data read_entire_file(char const* filename) {
+File read_entire_file(char const* filename) {
 	using io = std::ios;
 	if (auto f = std::ifstream(filename, io::binary)) {
-		File_Data out;
+		kai_u64 size;
+		void* data;
 		
 		// get file size
 		f.seekg(0, io::end);
-		out.size = f.tellg();
+		size = f.tellg();
 
 		// init output
-		if (out.size) out.data = malloc(out.size);
+		if (size) data = malloc(size);
 
 		// read
 		f.seekg(0, io::beg);
-		f.read((char*)out.data, out.size);
+		f.read((char*)data, size);
 
-		return out;
+		return File{data, size};
 	}
 	return {};
 }
 
-//#define FILENAME "test.kai"
+#define FILENAME "test.kai"
 //#define FILENAME "constants.kai"
 //#define FILENAME "generated.kai"
-#define FILENAME "simple.kai"
+//#define FILENAME "simple.kai"
+//#define FILENAME "fibo.kai"
 
 #define FILEPATH "scripts/" FILENAME
 
@@ -119,7 +110,7 @@ int main() {
 		timer t;
 
 		kai_Syntax_Tree_Create_Info info;
-		info.source = source_code;
+		info.source_code = source_code;
 		info.memory = memory;
 		info.error  = &error;
 		result = kai_create_syntax_tree(&info, &tree);
@@ -154,8 +145,8 @@ int main() {
 	if (KAI_FAILED(result) && result != kai_Result_Error_Fatal) {
 		auto n = &error;
 		while (n != nullptr) {
-			n->location.source = source_code.data;
-			n->location.file   = tree.source_filename;
+			n->location.source    = source_code.data;
+			n->location.file_name = tree.source_filename;
 			n = n->next;
 		}
 		kai_debug_write_error(kai_debug_clib_writer(), &error);
@@ -176,7 +167,8 @@ int main() {
 
 		std::cout << '\n';
 		std::cout << "add(" << a << ", " << b << ") = ";
-		print_result(proc, a, b);
+		std::cout << proc(a, b);
+		//print_result(proc, a, b);
 		std::cout << '\n';
 
 		kai_destroy_program(program);

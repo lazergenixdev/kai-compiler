@@ -7,6 +7,7 @@
 #include "bytecode_interpreter.hpp"
 #include "builtin_types.hpp"
 
+
 struct Dependency {
     enum {
         VALUE,
@@ -93,6 +94,7 @@ struct Dependency_Graph {
 	}
 
 	void insert_procedure_input(int arg_index, kai_Type type, std::string_view name, u32 scope_index);
+	void insert_local_variable(u32 reg_index, kai_Type type, std::string_view name, u32 scope_index);
 	
 	no_discard
 	std::optional<u32>

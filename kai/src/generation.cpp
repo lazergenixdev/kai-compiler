@@ -1,9 +1,55 @@
 #include "generation.hpp"
 #include <iomanip>
+#include <string_view>
 #include <kai/debug.h>
 #include "program.hpp"
 #include "compiler_context.hpp"
+#include "builtin_types.hpp"
+#define KAI_STRING_HELPER(K) #K
+#define KAI_STRING(K) KAI_STRING_HELPER(K)
+#define __LOCATION__ __FILE__ ":" KAI_STRING(__LINE__)
 // BYTECODE GENERATION AND TYPECHECKING
+
+#if 0
+void* operator new(std::size_t sz)
+{
+    std::printf("1) new(size_t), size = %zu\n", sz);
+    if (sz == 0)
+        ++sz; // avoid std::malloc(0) which may return nullptr on success
+    if (void *ptr = std::malloc(sz))
+        return ptr;
+    throw std::bad_alloc{}; // required by [new.delete.single]/3
+}
+void* operator new[](std::size_t sz)
+{
+    std::printf("2) new[](size_t), size = %zu\n", sz);
+    if (sz == 0)
+        ++sz; // avoid std::malloc(0) which may return nullptr on success
+    if (void *ptr = std::malloc(sz))
+        return ptr;
+    throw std::bad_alloc{}; // required by [new.delete.single]/3
+}
+void operator delete(void* ptr) noexcept
+{
+    std::puts("3) delete(void*)");
+    std::free(ptr);
+}
+void operator delete(void* ptr, std::size_t size) noexcept
+{
+    std::printf("4) delete(void*, size_t), size = %zu\n", size);
+    std::free(ptr);
+}
+void operator delete[](void* ptr) noexcept
+{
+    std::puts("5) delete[](void* ptr)");
+    std::free(ptr);
+}
+void operator delete[](void* ptr, std::size_t size) noexcept
+{
+    std::printf("6) delete[](void*, size_t), size = %zu\n", size);
+    std::free(ptr);
+}
+#endif
 
 u8 binary_to_bytecode_operation(u32 tree_op) {
 	switch (tree_op)
@@ -16,7 +62,8 @@ u8 binary_to_bytecode_operation(u32 tree_op) {
 	}
 }
 
-kai_Type type_of_expression(Dependency_Graph& dg, u32 scope_index, kai_Expr expr) {
+// expression_as_type
+kai_Type expression_as_type(Dependency_Graph& dg, u32 scope_index, kai_Expr expr) {
 	switch (expr->id)
 	{
 	case kai_Expr_ID_Identifier: {
@@ -27,8 +74,10 @@ kai_Type type_of_expression(Dependency_Graph& dg, u32 scope_index, kai_Expr expr
 		if (!node_index)
 			panic_with_message("failed to find identifier value");
 
-	//	if(dg.type_nodes[node_index].type->type != kai_Type_Type)
-	//		panic_with_message("Identifer is not a type!");
+		if(dg.type_nodes[*node_index].type->type != kai_Type_Type) {
+			std::string s{(char*)name.data, (size_t)name.count};
+			panic_with_message("Identifer is not a type! [name = %s]", s.c_str());
+		}
 
 		return (kai_Type)dg.value_nodes[*node_index].value.ptrvalue;
 	}
@@ -49,13 +98,76 @@ kai_Type type_of_expression(Dependency_Graph& dg, u32 scope_index, kai_Expr expr
 	}
 	default:break;
 	}
+	return nullptr;
 }
 
 u64 Bytecode_Generation_Context::
 generate_bytecode(Bytecode_Context& ctx, kai_Stmt body) {
 	switch (body->id)
 	{
-	default: debug_break();
+	default: {
+		panic_with_message("cannot generate bytecode from AST node [id = %i]", body->id);
+	}
+	break; case kai_Expr_ID_Procedure_Call: {
+		auto call = (kai_Expr_Procedure_Call*)body;
+
+		// TODO: [FIX] assuming there is only one arguement
+		auto arg1 = generate_bytecode(ctx, call->arguments[0]);
+
+		auto reg = ctx.next_reg;
+		auto call_pos = bytecode_stream.procedure_call(1);
+		bytecode_stream.procedure_input(arg1);
+		bytecode_stream.procedure_output_count(1);
+		bytecode_stream.procedure_output(reg);
+
+		// TODO: this function call needs to be resolved.. somehow....
+		bytecode_stream.set_branch_position(call_pos, 0x19);
+		
+		ctx.next_reg += 1;
+		return reg;
+	}
+	break; case kai_Stmt_ID_If: {
+		auto ifs = (kai_Stmt_If*)body;
+		// binary operator --> cmp -> branch
+		// anything else   --> evaluate -> test -> branch.nz
+
+		// TODO: [FIX] asssuming there should be a comparison here
+		auto left = generate_bytecode(ctx, ((kai_Expr_Binary*)(ifs->expr))->left); 
+		bytecode_stream.insert_compare_imm(Prim_Type_s64, left, {.s64value = 2});
+		
+		auto branch_pos = bytecode_stream.insert_conditional_branch(Condition::LESS_OR_EQUAL);
+
+		generate_bytecode(ctx, ifs->body);
+
+		bytecode_stream.set_branch_position(branch_pos, bytecode_stream.position());
+
+		return -1;
+	}
+	break; case kai_Expr_ID_Number: {
+		auto num = (kai_Expr_Number*)body;
+		auto reg = ctx.next_reg;
+		auto value = Register{.s64value = (signed)num->info.Whole_Part};
+		bytecode_stream.insert_load_value(Prim_Type_s64, reg, value);
+		ctx.next_reg += 1;
+		return reg;
+	}
+	break; case kai_Stmt_ID_Declaration: {
+		auto decl = (kai_Stmt_Declaration*)body;
+
+		std::cout << "decl name: " << SV(decl->name) << "\n";
+
+		if (decl->flags & kai_Decl_Flag_Const) {
+		//	dg.resolve_dependency_node(SV(decl->name), ctx.scope_index);
+		//	auto reg = generate_bytecode(ctx, decl->expr);
+		//	bytecode_stream.insert_return((u32)reg);
+			panic_with_message("I don't know what to do here!");
+		}
+		else {
+			auto reg = generate_bytecode(ctx, decl->expr);
+			dg.insert_local_variable(reg, nullptr, SV(decl->name), ctx.scope_index);
+			return reg;
+		}
+	}
 //	evaluate_value_from_expression(node.value, info.expr); break;
 	break; case kai_Stmt_ID_Compound: {
 		auto comp = (kai_Stmt_Compound*)body;
@@ -78,9 +190,20 @@ generate_bytecode(Bytecode_Context& ctx, kai_Stmt body) {
 			ctx.scope_index
 		);
 
-		if (!node_index) debug_break();
+		if (!node_index) {
+			auto name = std::string(
+				(char*)ident->source_code.data,
+				ident->source_code.count
+			);
+			panic_with_message("could not locate identifier [name = %s]", name.c_str());
+		}
 
+		auto  type_node = dg.type_nodes[*node_index];
 		auto value_node = dg.value_nodes[*node_index];
+
+		if (type_node.type == (kai_Type)&_type_type_info) {
+			panic_with_message("oh no");
+		}
 
 		if (value_node.flags& Dependency_Flags::Is_Local_Variable) {
 			return value_node.value.u32value;
@@ -91,13 +214,19 @@ generate_bytecode(Bytecode_Context& ctx, kai_Stmt body) {
 		auto bin = (kai_Expr_Binary*)body;
 
 		auto reg1 = (u32)generate_bytecode(ctx, bin->left);
-		auto reg2 = (u32)generate_bytecode(ctx, bin->right);
 
 		auto dst_reg = ctx.next_reg++;
 		u8 pt = Prim_Type_s64;
 		u8 op = binary_to_bytecode_operation(bin->op);
-
-		bytecode_stream.insert_primitive_operation(op, pt, dst_reg, reg1, reg2);
+		if (bin->right->id == kai_Expr_ID_Number) {
+			Register value;
+			value.s64value = ((kai_Expr_Number*)(bin->right))->info.Whole_Part;			
+			bytecode_stream.insert_primitive_operation_imm(op, pt, dst_reg, reg1, value);
+		}
+		else {
+			auto reg2 = (u32)generate_bytecode(ctx, bin->right);
+			bytecode_stream.insert_primitive_operation(op, pt, dst_reg, reg1, reg2);
+		}
 		return dst_reg;
 	}
 	break;
@@ -113,11 +242,19 @@ void Bytecode_Generation_Context::evaluate_value(u32 node_index)
 	node.flags |= Evaluated;
 
 	if (info.expr == nullptr)
-		panic_with_message("Node was not given an expression, this is bad.");
+		panic_with_message("cannot be nullptr");
 
 	switch (info.expr->id)
 	{
-	default:
+	default: {
+		panic_with_message("dont know how to evaluate expression [id=%i]", info.expr->id);
+	}
+
+	break; case kai_Expr_ID_Identifier: {
+		node.value.u64value = 0;
+	//	panic_with_message("[todo]");
+	}
+
 	//	evaluate_value_from_expression(node.value, info.expr); break;
 	break; case kai_Expr_ID_Procedure: {
 		auto proc = (kai_Expr_Procedure*)info.expr;
@@ -164,7 +301,13 @@ void Bytecode_Generation_Context::evaluate_type(u32 node_index)
 		std::cout << "number found\n";
 	}
 	break;case kai_Expr_ID_Identifier: {
-		std::cout << "identifier found\n";
+		auto ident = (kai_Expr_Identifier*)info.expr;
+		auto node_index = dg.resolve_dependency_node(SV(ident->source_code), info.scope);
+		if (node_index) {
+		//	node.type = (kai_Type)dg.value_nodes[*node_index].value.ptrvalue;
+			node.type = dg.type_nodes[*node_index].type;
+		}
+		else panic_with_message("node does not exist");
 	}
 	break;case kai_Expr_ID_Procedure: {
 		auto proc = (kai_Expr_Procedure*)info.expr;
@@ -180,7 +323,8 @@ void Bytecode_Generation_Context::evaluate_type(u32 node_index)
 
 		for_n(total_count) {
 			type->input_output[i] =
-				type_of_expression(dg, info.scope, proc->input_output->type);
+				expression_as_type(dg, info.scope, proc->input_output->type);
+		//	kai_debug_write_type(kai_debug_clib_writer(), type->input_output[i]);
 		}
 
 		node.type = (kai_Type)type;
@@ -198,6 +342,8 @@ void Bytecode_Generation_Context::evaluate_type(u32 node_index)
 
 kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* program)
 {
+	//goto TEST_BYTECODE_GENERATION;
+	{
 	Bytecode_Generation_Context ctx{};
 	context.reset(&info->memory);
 
@@ -207,8 +353,8 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 
 	Machine_Code output;
 
-	if(ctx.dg.create(info->trees))
-		goto error;
+	// Create Dependency Graph for the syntax trees
+	if(ctx.dg.create(info->trees)) goto error;
 
 	{
 		int i;
@@ -256,6 +402,7 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 		std::cout << '\n';
 	}
 
+	std::cout << "------------ generating bytecode ------------\n";
 	ctx.bytecode_stream.debug_print();
 #endif
 
@@ -275,56 +422,34 @@ kai_result kai_create_program(kai_Program_Create_Info* info, kai_Program* progra
 	else *info->error = {};
 
 	return kai_Result_Success;
-
+	}
+TEST_BYTECODE_GENERATION:
 	Bytecode_Instruction_Stream stream;
 	
 	// main :: (x: s32) -> s32 {
-	//     a := x + 1;
-	//     b := x * 2;
-	//     h := fn(a, b);
-	//     ret h + fn(h, b);
+	//     x = 0;
+	//     if x < 4 then ret x;
+	//     ret 1;
 	// }
-	// %0 = add.s32 arg(0), 1
-	// %1 = mul.s32 arg(0), 2
-	// %2 = call "fn" (%0, %1)
-	// %3 = call "fn" (%2, %1)
-	// %4 = add.s32 %2, %3
-	// ret %4
-	stream.insert_primitive_operation_imm(Operation_Add, Prim_Type_s32, 0, PROC_ARG(0), {.s32value = 1});
-	stream.insert_primitive_operation_imm(Operation_Mul, Prim_Type_s32, 1, PROC_ARG(0), {.s32value = 2});
+	// %0 = load_value.s64 0
+	// compare.s64 %0, 4
+	// branch.ge {end_if}
+	// ret %0
+	// {end_if}
+	// %1 = load_value.s64 1
+	// ret %1
+	stream.insert_load_value(Prim_Type_s64, PROC_ARG(0), {.s64value = -12});
+	stream.insert_compare_imm(Prim_Type_s64, PROC_ARG(0), {.s64value = 4});
+	auto if_end_branch = stream.insert_conditional_branch(Condition::GREATER_OR_EQUAL);
+	stream.insert_return(PROC_ARG(0));
+	auto end_pos = stream.position();
+	stream.insert_load_value(Prim_Type_s64, 0, {.s64value = 1});
+	stream.insert_return(0);
 
-	auto call_pos1 = stream.procedure_call(2);
-	stream.procedure_input(0);
-	stream.procedure_input(1);
-	stream.procedure_output_count(1); // we only want the first output
-	stream.procedure_output(2);       // put output into register # 2
+	/////////////
+	stream.set_branch_position(if_end_branch, end_pos);
 
-	auto call_pos2 = stream.procedure_call(2);
-	stream.procedure_input(2);
-	stream.procedure_input(1);
-	stream.procedure_output_count(1); // we only want the first output
-	stream.procedure_output(3);       // put output into register # 3
-	
-	stream.insert_primitive_operation(Operation_Add, Prim_Type_s32, 4, 2, 3);
-	stream.insert_return(4);
-// ----------------------------------------
-
-	auto fn_pos = stream.position();
-	// fn :: (a: s32, b : s32) -> s32, s32 {
-	//     t := a + 2;
-	//     ret t * b, t;
-	// }
-	// %0 = add.s32 arg(0), 2
-	// %1 = mul.s32 %0, arg(1)
-	// return %1, %0
-	stream.insert_primitive_operation_imm(Operation_Add, Prim_Type_s32, 0, PROC_ARG(0), {.s32value = 2});
-	stream.insert_primitive_operation(Operation_Mul, Prim_Type_s32, 1, 0, PROC_ARG(1));
-	stream.insert_return({1, 0});
-
-	// here we link our procedure call in main, to "fn"s position
-	// (a procedure call is just a more sophisticated branch instruction)
-	stream.set_branch_position(call_pos1, fn_pos);
-	stream.set_branch_position(call_pos2, fn_pos);
+	stream.debug_print();
 
 	Bytecode_Interpreter interp{
 		(u8*)stream.stream.data(),

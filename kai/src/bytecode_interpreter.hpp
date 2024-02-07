@@ -23,6 +23,7 @@ struct Bytecode_Interpreter {
 	std::vector<u64>        call_stack; // where to return to when exiting a procedure
 	std::vector<base_index> base;       // what index is "0" for this procedure call
 
+	u32 compare_flags = 0;
 	// This avoids a potential allocation on return instruction
 	// @TODO: fix allocations, there does not need to be ANY allocation when executing bytecode
 	//           (except registers and when done explicitly in the bytecode itself, like a call to malloc or something)

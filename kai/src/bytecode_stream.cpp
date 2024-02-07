@@ -24,6 +24,14 @@ void Bytecode_Instruction_Stream::insert_primitive_operation_imm(u8 op, u8 primt
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Memory operations
 
+// LOAD_VALUE(u8) PRIMITIVE_TYPE(u8) DESTINATION(reg) VALUE(imm)
+void Bytecode_Instruction_Stream::insert_load_value(u8 primtype, u32 reg_dst, Register value) {
+	stream.emplace_back(Operation_Load_Value);
+	stream.emplace_back(primtype);
+	_insert_register(reg_dst);
+	_insert_immediate(primtype, value);
+}
+
 // LOAD(u8) PRIMITIVE_TYPE(u8) DESTINATION(reg) ADDRESS(reg) INDEX(reg)
 void Bytecode_Instruction_Stream::insert_load(u8 primtype, u32 reg_dst, u32 reg_index) {
 	stream.emplace_back(Operation_Load);
@@ -37,6 +45,49 @@ void Bytecode_Instruction_Stream::insert_load(u8 primtype, u32 reg_dst, u64 inde
 	stream.emplace_back(primtype);
 	_insert_register(reg_dst);
 	_insert_immediate(Prim_Type_u64, {.u64value = index_value});
+}
+
+
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// Branching
+
+// TEST(u8) PRIMITIVE_TYPE(u8) LEFT(reg)
+void Bytecode_Instruction_Stream::insert_test(u8 primtype, u32 reg_left) {
+	stream.emplace_back(Operation_Test);
+	stream.emplace_back(primtype);
+	_insert_register(reg_left);
+}
+// COMPARE(u8) PRIMITIVE_TYPE(u8) LEFT(reg) IMMEDIATE(FALSE) RIGHT(reg)
+void Bytecode_Instruction_Stream::insert_compare(u8 primtype, u32 reg_left, u32 reg_right) {
+	stream.emplace_back(Operation_Compare);
+	stream.emplace_back(primtype);
+	_insert_register(reg_left);
+	stream.emplace_back(false);
+	_insert_register(reg_right);
+}
+// COMPARE(u8) PRIMITIVE_TYPE(u8) LEFT(reg) IMMEDIATE(TRUE) RIGHT(imm)
+void Bytecode_Instruction_Stream::insert_compare_imm(u8 primtype, u32 reg_left, Register value) {
+	stream.emplace_back(Operation_Compare);
+	stream.emplace_back(primtype);
+	_insert_register(reg_left);
+	stream.emplace_back(true);
+	_insert_immediate(primtype, value);
+}
+
+// BRANCH(u8) ADDRESS(u64)
+u64 Bytecode_Instruction_Stream::insert_branch() {
+	stream.emplace_back(Operation_Branch);
+	u64 pos = position();
+	for_n(8) stream.emplace_back(0xBA);
+	return pos;
+}
+// CONDITIONAL_BRANCH(u8) CONDITION(u8) ADDRESS(u64)
+u64 Bytecode_Instruction_Stream::insert_conditional_branch(u8 condition) {
+	stream.emplace_back(Operation_Condition_Branch);
+	stream.emplace_back(condition);
+	u64 pos = position();
+	for_n(8) stream.emplace_back(0xBA);
+	return pos;
 }
 
 //*******************************************************************
@@ -81,9 +132,6 @@ void Bytecode_Instruction_Stream::procedure_output(u32 reg) {
 
 
 //*******************************************************************
-// WIP
-// gives index of where the address is stored in bytecode
-u64 Bytecode_Instruction_Stream::insert_jump() { return 0; }
 void Bytecode_Instruction_Stream::set_branch_position(u64 branch_position, u64 position) {
 	void* dst = (stream.data() + branch_position);
 	memcpy(dst, &position, sizeof(u64));
@@ -138,11 +186,11 @@ char const* opstr(u8 op) {
 	case Operation_Sub:            return "sub";
 	case Operation_Mul:            return "mul";
 	case Operation_Div:            return "div";
+	case Operation_Compare:        return "cmp";
+	case Operation_Condition_Branch:
+	case Operation_Branch:         return "branch";
 	case Operation_Procedure_Call: return "call";
 	case Operation_Return:         return "ret";
-	case Operation_Continue_If:
-	case Operation_Jump_If:
-	case Operation_Jump:
 	case Operation_Load_Value:
 	case Operation_Load:
 	case Operation_Store:
@@ -161,6 +209,19 @@ char const* opstr(u8 op) {
 	case Operation_Convert_From_f64:
 	case Operation_Native_Procedure_Call:
 	default:return "undefined";
+	}
+}
+
+char const* condstr(u8 condition) {
+	switch(condition) {
+		case Condition::LESS_THAN:        return "lt";
+		case Condition::GREATER_THAN:     return "gt";
+		case Condition::LESS_OR_EQUAL:    return "le";
+		case Condition::GREATER_OR_EQUAL: return "ge";
+		case Condition::EQUAL:            return "eq";
+		case Condition::NOT_EQUAL:        return "ne";
+		case Condition::NOT_ZERO:         return "nz";
+		default:                          return "undefined";
 	}
 }
 
@@ -210,6 +271,7 @@ void Bytecode_Instruction_Stream::debug_print()
 	u64 cursor = 0;
 
 	while (cursor < stream.size()) {
+		std::cout << std::hex << std::setw(4) << cursor << std::dec << "    ";
 		u8 op = stream[cursor++];
 
 		switch (op)
@@ -218,8 +280,7 @@ void Bytecode_Instruction_Stream::debug_print()
 		case Operation_Add:
 		case Operation_Sub:
 		case Operation_Mul:
-		case Operation_Div:
-		{
+		case Operation_Div: {
 			auto type = stream[cursor++];
 			auto dst = LOAD(u32);
 			auto op1 = LOAD(u32);
@@ -236,6 +297,35 @@ void Bytecode_Instruction_Stream::debug_print()
 				_print_register(op2);
 			}
 			std::cout << '\n';
+			break;
+		}
+		case Operation_Compare: {
+			auto type      = stream[cursor++];
+			auto op1       = LOAD(u32);
+			
+			std::cout << opstr(op) << '.' << typestr(type) << ' ';
+			_print_register(op1);
+			std::cout << ", ";
+
+			auto is_imm    = stream[cursor++];
+			if (is_imm) {
+				auto value = load_prim(type, stream.data(), cursor);
+				_print_primitive_value(type, value);
+			}
+			else {
+				auto op2 = load<u32>(stream.data(), cursor);
+				_print_register(op2);
+			}
+
+			std::cout << '\n';
+			break;
+		}
+		case Operation_Condition_Branch: {
+			auto condition = stream[cursor++];
+			auto position = LOAD(u64);
+
+			std::cout << opstr(op) << '.' << condstr(condition) << " 0x" << std::hex << position << '\n';
+			std::cout << std::dec;
 			break;
 		}
 		// FN_ADDRESS(u64) ARG_COUNT(u8) ARG1(reg) ARG2(reg) ARG3(reg) ... OUT_COUNT(u8) OUT1(reg) OUT2(reg) ...
@@ -277,8 +367,18 @@ void Bytecode_Instruction_Stream::debug_print()
 			std::cout << '\n';
 			break;
 		}
-		default: { std::cout << "undefined bytecode instruction\n";  goto end; }
+		case Operation_Load_Value: {
+			auto type = stream[cursor++];
+			auto reg = LOAD(u32);
+			auto value = load_prim(type, stream.data(), cursor);
+			_print_register(reg);
+			std::cout << " = load_value.";
+			std::cout << typestr(type) << ' ';
+			_print_primitive_value(type, value);
+			std::cout << '\n';
+			break;
+		}
+		default: { std::cout << "undefined bytecode instruction [id = " << (int)op << "]\n"; return; }
 		}
 	}
-end:(void)0;
 }

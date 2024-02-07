@@ -26,13 +26,25 @@ typedef struct {
 } kai_AST;
 
 typedef struct {
-	kai_str         source;
+	kai_str         source_code;
 	kai_Memory      memory;
 	kai_Error*      error;
 } kai_Syntax_Tree_Create_Info;
 
+
+/* -------------------------------------------------------------------
+	info:    [in]
+	out_AST: [in] [out]
+		- source_filename: expected to contain the file name of the
+		                    source code
+
+	On success, out_AST will be filled with the syntax tree of the
+	source code.
+   ------------------------------------------------------------------- */
 KAI_API(kai_result)
 	kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* Info, kai_AST* out_AST);
+
+
 
 typedef enum {
 	kai_Expr_ID_Identifier     = 0,
@@ -46,7 +58,11 @@ typedef enum {
 
 	kai_Stmt_ID_Return         = 8,
 	kai_Stmt_ID_Declaration    = 9,
-	kai_Stmt_ID_Compound       = 10,
+	kai_Stmt_ID_Assignment     = 10,
+	kai_Stmt_ID_Compound       = 11,
+	kai_Stmt_ID_If             = 12,
+	kai_Stmt_ID_For            = 13,
+	kai_Stmt_ID_Defer          = 20,
 } kai_Node_ID;
 
 // `line_number` is the line number for the first token in an Expression/Statement
@@ -139,11 +155,33 @@ typedef struct {
 
 typedef struct {
 	KAI_BASE_MEMBERS;
+	kai_Expr left;
+	kai_Expr expr;
+} kai_Stmt_Assignment;
+
+typedef struct {
+	KAI_BASE_MEMBERS;
 	kai_Stmt* statements;
 	kai_u32   count;
 
 	kai_u32 _scope;
 } kai_Stmt_Compound;
+
+typedef struct {
+	KAI_BASE_MEMBERS;
+	kai_Expr expr;
+	kai_Stmt body;
+	kai_Stmt else_body;
+} kai_Stmt_If;
+
+typedef struct {
+	KAI_BASE_MEMBERS;
+	kai_Stmt body;
+	kai_Expr from;
+	kai_Expr to; // optional (interates through `from` if this is null)
+	kai_str  iterator_name;
+	kai_u8   flags;
+} kai_Stmt_For;
 
 //////////////////////////////////////////////////
 

@@ -3,17 +3,6 @@
 #include "builtin_types.hpp"
 #include "compiler_context.hpp"
 
-// @TODO: don't repeat dependencies in dependency list pls thx
-
-#define str_insert_string(Dest, String) \
-memcpy((Dest).data + (Dest).count, String, sizeof(String)-1), (Dest).count += sizeof(String)-1
-
-#define str_insert_str(Dest, Src) \
-memcpy((Dest).data + (Dest).count, (Src).data, (Src).count), (Dest).count += (Src).count
-
-#define str_insert_std(Dest, Src) \
-memcpy((Dest).data + (Dest).count, (Src).data(), (Src).size()), (Dest).count += (Src).size()
-
 bool error_not_declared(kai_str const& string, kai_int line_number) {
     auto& err = context.error;
     err.result = kai_Result_Error_Semantic;
@@ -109,6 +98,17 @@ void* error_dependency_info(void* start, u32 dependency_type, Dependency_Node_In
     return (u8*)err.message.data + err.message.count;
 }
 
+void remove_duplicate_dependencies(std::vector<Dependency>& deps) {
+    for_n(deps.size()) {
+        for(int j = i + 1; j < deps.size(); ++j) {
+            if(deps[i] == deps[j]) {
+                deps.erase(deps.begin() + j);
+                j = i;
+            }
+        }
+    }
+}
+
 bool Dependency_Graph::create(kai_AST* ast) {
     scopes.reserve(128);
     value_nodes.reserve(256);
@@ -136,12 +136,16 @@ bool Dependency_Graph::create(kai_AST* ast) {
             insert_value_dependencies(vnode.dependencies, info.scope, info.expr, false)
         ) return true;
 
+        // TODO: do not add dependencies that are already there
+        remove_duplicate_dependencies(vnode.dependencies);
+
 		if (
             !(tnode.flags&Evaluated) &&
             insert_type_dependencies(tnode.dependencies, info.scope, info.expr)
         ) return true;
-	}
 
+        remove_duplicate_dependencies(tnode.dependencies);
+	}
 
 #if ENABLE_DEBUG_PRINT
     debug_print();
@@ -188,6 +192,19 @@ bool Dependency_Graph::insert_node_for_statement(
     switch (statement->id)
 	{
 	default:
+    break; case kai_Stmt_ID_If: {
+        auto ifs = (kai_Stmt_If*)statement;
+		if (insert_node_for_statement(ifs->body, in_proc, scope_index))
+			return true;
+		if (ifs->else_body && insert_node_for_statement(ifs->else_body, in_proc, scope_index))
+			return true;
+    }
+    break; case kai_Stmt_ID_For: {
+        auto fors = (kai_Stmt_For*)statement;
+		if (insert_node_for_statement(fors->body, in_proc, scope_index))
+			return true;
+        // TODO: do we need to check the expression of the for statement? 
+    }
     break; case kai_Stmt_ID_Declaration: {
 		auto decl = (kai_Stmt_Declaration*)statement;
 		if (insert_node_for_declaration(decl, in_proc, scope_index))
@@ -293,7 +310,7 @@ bool Dependency_Graph::insert_value_dependencies(
 
     switch (expr->id)
     {
-    default: panic_with_message("undefined expression\n");
+    default: panic_with_message("undefined expr [insert_value_dependencies] (id = %d)\n", expr->id);
 
     break; case kai_Expr_ID_Identifier: {
         auto name = SV(expr->source_code);
@@ -399,12 +416,28 @@ bool Dependency_Graph::insert_value_dependencies(
         else panic_with_message("invalid declaration\n");
     }
 
+    break; case kai_Stmt_ID_Assignment: {
+        if (in_procedure) {
+            auto assignment = (kai_Stmt_Assignment*)expr;
+            return insert_value_dependencies(deps, scope_index, assignment->expr, true);
+        }
+        else panic_with_message("invalid assignment\n");
+    }
+
     break; case kai_Stmt_ID_Return: {
         if (in_procedure) {
             auto ret = (kai_Stmt_Return*)expr;
             return insert_value_dependencies(deps, scope_index, ret->expr, true);
         }
 		else panic_with_message("invalid return\n");
+    }
+
+    break; case kai_Stmt_ID_If: {
+		auto ifs = (kai_Stmt_If*)expr;
+		if(insert_value_dependencies(deps, scope_index, ifs->body, in_procedure))
+			return true;
+		if(ifs->else_body && insert_value_dependencies(deps, scope_index, ifs->else_body, in_procedure))
+			return true;
     }
 
     break; case kai_Stmt_ID_Compound: {
@@ -421,6 +454,12 @@ bool Dependency_Graph::insert_value_dependencies(
             remove_all_locals(s);
         }
         else panic_with_message("invalid compound statement\n");
+    }
+
+    break; case kai_Stmt_ID_For: {
+        auto for_ = (kai_Stmt_For*)expr;
+        if (insert_value_dependencies(deps, scope_index, for_->body, in_procedure))
+            return true;
     }
 
     break;
@@ -444,8 +483,13 @@ bool Dependency_Graph::insert_type_dependencies(
 
         auto result = resolve_dependency_node_procedure(name, &scopes[scope_index]);
 
-        if (!result)
+        if (!result) {
+            std::cout << "scope [" << scope_index << "] contains:\n";
+            for (auto&& [name,_]: scopes[scope_index].map) {
+                std::cout << name << '\n';
+            }
             return error_not_declared(expr->source_code, expr->line_number);
+        }
 
         if (*result != LOCAL_VARIABLE_INDEX) // DO NOT depend on local variables
             deps.emplace_back(Dependency::TYPE, *result);
@@ -558,6 +602,30 @@ insert_procedure_input(int arg_index, kai_Type type, std::string_view name, u32 
 
     scopes[scope_index].map.emplace(info.name, new_node_index);
 }
+
+void Dependency_Graph::
+insert_local_variable(u32 reg_index, kai_Type type, std::string_view name, u32 scope_index) {
+    Value_Dependency_Node vnode;
+    vnode.flags = Dependency_Flags::Is_Local_Variable;
+    vnode.value.u32value = reg_index;
+    value_nodes.emplace_back(vnode);
+
+    Type_Dependency_Node tnode;
+    tnode.flags = Dependency_Flags::Is_Local_Variable;
+    tnode.type = type;
+    type_nodes.emplace_back(tnode);
+
+    Dependency_Node_Info info;
+    info.name = name;
+    info.scope = scope_index;
+    info.expr = nullptr;
+    node_infos.emplace_back(info);
+
+    auto new_node_index = u32(node_infos.size() - 1);
+
+    scopes[scope_index].map.emplace(info.name, new_node_index);
+}
+
 
 std::optional<u32> Dependency_Graph::
 resolve_dependency_node(std::string_view name, u32 scope_index) {
@@ -712,7 +780,7 @@ void Dependency_Graph::debug_print() {
         }
         std::cout << "}\n";
     }
-    for_n(100) std::cout << '-';
+//    for_n(100) std::cout << '-';
     std::cout << '\n';
     for_n(type_nodes.size()) {
         auto const& info = node_infos[i];

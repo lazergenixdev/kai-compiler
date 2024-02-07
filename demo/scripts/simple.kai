@@ -1,12 +1,10 @@
-add :: (left: s64, right: s64) -> s64 {
+add :: (left: s64, right: f64) -> s64 {
+    v := left;
     ret (left + right) * left;
 }
 
-// add :: (left: s64, right: s64) -> f64 {
-//     ret left->f64 + (right * left)->f64;
-// }
+other :: (a: s64, b: s64) -> s64 {
+    ret a + b;
+}
+
 // %0 = cast.f64<-s64 arg(0)
-// %1 = mul.s64 arg(1), arg(0)
-// %2 = cast.f64<-s64 %1
-// %3 = add.s64 %0, %2
-// ret %3

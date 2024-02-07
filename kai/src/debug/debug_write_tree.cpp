@@ -27,11 +27,14 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 		case token_2("->"):return "cast";
 		case token_2("&&"):return "and";
 		case token_2("||"):return "or";
+		case token_2("=="):return "equals";
+		case token_2("<="):return "less or equal";
 		case '+':return "add";
 		case '-':return "subtract";
 		case '*':return "multiply";
 		case '/':return "divide";
 		case '.':return "member access";
+		case '[':return "index";
 		default:
 			snprintf(temp, sizeof(temp), "undefined(%u)", op);
 			return temp;
@@ -42,6 +45,7 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 		{
 		case '-':return "negate";
 		case '*':return "pointer to";
+		case '[':return "array";
 		default:
 			snprintf(temp, sizeof(temp), "undefined(%u)", op);
 			return temp;
@@ -201,11 +205,46 @@ struct Write_Tree_Traverser : public Syntax_Tree_Traverser {
 		visit(node->expr, true);
 	}
 
+	virtual void visit_assignment(kai_Stmt_Assignment* node) override {
+		_write("assignment\n");
+
+		prefix = "left";
+		visit(node->left);
+		prefix = "right";
+		visit(node->expr, true);
+	}
+
 	virtual void visit_compound(kai_Stmt_Compound* node) override {
 		_write("compound statement\n");
 
 		auto const n = node->count;
 		for_n(n) visit(node->statements[i], i == n - 1);
+	}
+
+	virtual void visit_if(kai_Stmt_If* node) override {
+		_write("if statement\n");
+
+		prefix = "expr";
+		visit(node->expr);
+		visit(node->body, node->else_body == nullptr);
+		if (node->else_body != nullptr) {
+			visit(node->else_body, true);
+		}
+	}
+
+	virtual void visit_for(kai_Stmt_For* node) override {
+		_write("for statement (iterator name = ");
+		_set_color(kai_debug_color_important);
+		_write_string(node->iterator_name);
+		_set_color(kai_debug_color_primary);
+		_write(")\n");
+
+		prefix = "from";
+		visit(node->from);
+		prefix = "to";
+		visit(node->to);
+
+		visit(node->body, true);
 	}
 };
 
