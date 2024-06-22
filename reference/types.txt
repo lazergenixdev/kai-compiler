@@ -1,0 +1,23 @@
+A :: B + C;
+
+if A is inferred:
+    tA <- type_of (B + C)
+else:
+    tA is known;
+    make sure that type_of (B + C) is convertable to tA
+
+     to -->
+from    u8  u16 u32 u64 s8  s16 s32 s64 f32 f64
+  |  u8  Y   Y   Y   Y   N   Y   Y   Y   N   N
+  V u16  N   Y   Y   Y   N   N   Y   Y   N   N
+    u32  N   N   Y   Y   N   N   N   Y   N   N
+    u64  N   N   N   Y   N   N   N   N   N   N
+     s8  
+    s16
+    s32
+    s64
+
+a : u64 : 258;
+b : u8  : cast.truc a;
+
+

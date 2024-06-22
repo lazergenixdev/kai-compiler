@@ -2,6 +2,9 @@ project 'kai'
     kind 'StaticLib'
     language 'C++'
 	cppdialect 'c++20'
+	cdialect "C17"
+    warnings "High"
+
 
 	defines { "KAI_BUILD" }
     targetdir ("%{wks.location}/bin/" .. OutputDir)
@@ -10,7 +13,7 @@ project 'kai'
     files {
         "%{prj.location}/src/*",
         "%{wks.location}/include/kai/**.h", -- public API
-        "%{prj.location}/src/backend/%{cfg.architecture}.cpp"
+--        "%{prj.location}/src/backend/%{cfg.architecture}.cpp"
     }
 	
 	if (KAI_NO_DEBUG == nil) then
@@ -37,15 +40,15 @@ project 'kai'
         "ASMJIT_NO_VALIDATION", -- Disables validation API.
     }
 
-    files "%{prj.location}/vendor/asmjit/core/*"
+--    files "%{prj.location}/vendor/asmjit/core/*"
 
 	filter "system:windows"
-        files "%{prj.location}/src/platform/windows.cpp"
+ --       files "%{prj.location}/src/platform/windows.cpp"
 	filter "system:linux"
-        files "%{prj.location}/src/platform/linux.cpp"
+--        files "%{prj.location}/src/platform/linux.cpp"
     
 	filter "architecture:x86_64"
-        files "%{prj.location}/vendor/asmjit/x86/*"
+--        files "%{prj.location}/vendor/asmjit/x86/*"
 	
     filter "configurations:Debug"
         defines { "KAI_DEBUG" }

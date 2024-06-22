@@ -1,48 +1,53 @@
 #ifndef KAI_DEBUG_H
 #define KAI_DEBUG_H
-#include <kai/parser.h>
+#include "parser.h"
 __KAI_BEGIN_API__
 
-typedef enum {
-	kai_debug_color_primary,
-	kai_debug_color_secondary,
-	kai_debug_color_important,
-	kai_debug_color_important_2,
+enum {
+	KAI_DEBUG_COLOR_PRIMARY,
+	KAI_DEBUG_COLOR_SECONDARY,
+	KAI_DEBUG_COLOR_IMPORTANT,
+	KAI_DEBUG_COLOR_IMPORTANT_2,
+	KAI_DEBUG_COLOR_DECORATION,
 
-	kai_debug_color_COUNT,
-} kai_debug_color_enum;
+	KAI_DEBUG_COLOR_COUNT,
+};
+typedef Kai_u32 Kai_Debug_Color;
 
-typedef void (*kai_fn_write_string  )(kai_ptr User, kai_str String);
-typedef void (*kai_fn_write_c_string)(kai_ptr User, char const* C_String);
-typedef void (*kai_fn_write_char    )(kai_ptr User, kai_u8 Char);
-typedef void (*kai_fn_set_color     )(kai_ptr User, kai_debug_color_enum Color);
+typedef void (*Kai_P_Write_String  )(Kai_ptr User, Kai_str String);
+typedef void (*Kai_P_Write_C_String)(Kai_ptr User, char const* C_String);
+typedef void (*Kai_P_Write_Char    )(Kai_ptr User, Kai_u8 Char);
+typedef void (*Kai_P_Set_Color     )(Kai_ptr User, Kai_Debug_Color Color);
 
 typedef struct {
-	kai_fn_write_string   write_string;
-	kai_fn_write_c_string write_c_string;
-	kai_fn_write_char     write_char;
-	kai_fn_set_color      set_color; // optional, this value may be NULL
-	void*                 user;
-} kai_Debug_String_Writer;
+	Kai_P_Write_String   write_string;
+	Kai_P_Write_C_String write_c_string;
+	Kai_P_Write_Char     write_char;
+	Kai_P_Set_Color      set_color; // optional, this value may be NULL
+	Kai_ptr              user;
+} Kai_Debug_String_Writer;
 
-KAI_API(kai_Debug_String_Writer*)
+KAI_API(Kai_Debug_String_Writer*)
 	kai_debug_clib_writer();
 
-KAI_API(kai_Debug_String_Writer*)
-	kai_debug_file_writer(char const* Filename);
+KAI_API(Kai_Debug_String_Writer*)
+	kai_debug_file_writer(char const* C_Filename);
+
+KAI_API(void)
+	kai_debug_destroy_file_writer(Kai_Debug_String_Writer* C_Filename);
 
 
 KAI_API(void)
-	kai_debug_write_syntax_tree(kai_Debug_String_Writer* Writer, kai_AST* Tree);
+	kai_debug_write_syntax_tree(Kai_Debug_String_Writer* Writer, Kai_AST* Tree);
 
 KAI_API(void)
-	kai_debug_write_error(kai_Debug_String_Writer* Writer, kai_Error* Error);
+	kai_debug_write_error(Kai_Debug_String_Writer* Writer, Kai_Error* Error);
 
 KAI_API(void)
-	kai_debug_write_type(kai_Debug_String_Writer* Writer, kai_Type Type);
+	kai_debug_write_type(Kai_Debug_String_Writer* Writer, Kai_Type Type);
 
 KAI_API(void)
-	kai_debug_write_expression(kai_Debug_String_Writer* Writer, kai_Expr Expr);
+	kai_debug_write_expression(Kai_Debug_String_Writer* Writer, Kai_Expr Expr);
 
 __KAI_END_API__
 #endif//KAI_DEBUG_H

@@ -3,6 +3,8 @@
 #include "builtin_types.hpp"
 #include "compiler_context.hpp"
 
+void print_node_reference(Node_Reference ref, std::vector<Info_Node>& info_nodes);
+
 bool error_not_declared(kai_str const& string, kai_int line_number) {
     auto& err = context.error;
     err.result = kai_Result_Error_Semantic;
@@ -17,7 +19,7 @@ bool error_not_declared(kai_str const& string, kai_int line_number) {
     return true;
 }
 
-bool error_redefinition(kai_str const& string, kai_u32 line_number, Dependency_Node_Info const& original) {
+bool error_redefinition(kai_str const& string, kai_u32 line_number, Info_Node const& original) {
     auto& err = context.error;
     err.result = kai_Result_Error_Semantic;
     err.location.string = string;
@@ -43,7 +45,7 @@ bool error_redefinition(kai_str const& string, kai_u32 line_number, Dependency_N
     return true;
 }
 
-void* error_circular_dependency(u32 dependency_type, Dependency_Node_Info const& info) {
+void* error_circular_dependency(u32 type, Info_Node const& info) {
     auto& err = context.error;
     err.result = kai_Result_Error_Semantic;
     err.location.string.data = (u8*)info.name.data();
@@ -51,12 +53,12 @@ void* error_circular_dependency(u32 dependency_type, Dependency_Node_Info const&
     err.location.line = info.line_number;
     err.message = { 0, (kai_u8*)context.memory.temperary }; // uses temperary memory
 
-    switch (dependency_type)
+    switch (type)
     {
     default:
-    break; case Dependency::VALUE:
+    break; case Node_Reference::VALUE:
         str_insert_string(err.message, "value");
-    break; case Dependency::TYPE:
+    break; case Node_Reference::TYPE:
         str_insert_string(err.message, "type");
     break;
     }
@@ -68,7 +70,7 @@ void* error_circular_dependency(u32 dependency_type, Dependency_Node_Info const&
     return (u8*)err.message.data + err.message.count;
 }
 
-void* error_dependency_info(void* start, u32 dependency_type, Dependency_Node_Info const& info) {
+void* error_dependency_info(void* start, u32 type, Info_Node const& info) {
     auto& err = *reinterpret_cast<kai_Error*>(start);
 
     err.result = kai_Result_Error_Info;
@@ -81,12 +83,12 @@ void* error_dependency_info(void* start, u32 dependency_type, Dependency_Node_In
 
     str_insert_string(err.message, "see ");
 
-    switch (dependency_type)
+    switch (type)
     {
     default:
-    break; case Dependency::VALUE:
+    break; case Node_Reference::VALUE:
         str_insert_string(err.message, "value");
-    break; case Dependency::TYPE:
+    break; case Node_Reference::TYPE:
         str_insert_string(err.message, "type");
     break;
     }
@@ -98,22 +100,77 @@ void* error_dependency_info(void* start, u32 dependency_type, Dependency_Node_In
     return (u8*)err.message.data + err.message.count;
 }
 
-void remove_duplicate_dependencies(std::vector<Dependency>& deps) {
-    for_n(deps.size()) {
-        for(int j = i + 1; j < deps.size(); ++j) {
-            if(deps[i] == deps[j]) {
-                deps.erase(deps.begin() + j);
-                j = i;
-            }
+struct DFS_Explore_Context {
+    std::vector<Node_Reference> nodes;
+    std::vector<int>            post;
+    std::vector<u32>            prev;
+    std::vector<bool>           visited;
+    std::vector<Value_Node> & value_nodes;
+    std::vector<Type_Node>  & type_nodes;
+    unsigned int n = 0;
+
+    DFS_Explore_Context(Dependency_Graph& dg):
+        post(2*dg.info_nodes.size(), 0),
+        prev(2*dg.info_nodes.size(), 0),
+        visited(2*dg.info_nodes.size(), false),
+        value_nodes(dg.value_nodes),
+        type_nodes(dg.type_nodes)
+    {
+        nodes.reserve(2*dg.info_nodes.size());
+        for_n (dg.info_nodes.size()) {
+            nodes.emplace_back(Node_Reference::VALUE, i);
+            nodes.emplace_back(Node_Reference::TYPE,  i);
         }
     }
-}
+
+    void clear() {
+        std::fill(visited.begin(), visited.end(), false);
+    }
+    
+    void dfs() {
+        for_n (nodes.size()) {
+            if (!visited[i])
+                explore(i);
+        }
+    }
+
+    void explore(u32 s) {
+        visited[s] = true;
+        ++n;
+        auto ref = nodes[s];
+
+        if (ref.type == Node_Reference::VALUE) {
+            auto deps = value_nodes[ref.node_index].dependencies;
+
+            for (auto&& dep: deps) {
+                u32 v = (dep.node_index*2)+dep.type;
+                if (!visited[v]) {
+                    prev[v] = s;
+                    explore(v);
+                }
+            }
+        }
+        if (ref.type == Node_Reference::TYPE) {
+            auto deps = type_nodes[ref.node_index].dependencies;
+
+            for (auto&& dep: deps) {
+                u32 v = (dep.node_index*2)+dep.type;
+                if (!visited[v]) {
+                    prev[v] = s;
+                    explore(v);
+                }
+            }
+        }
+        post[s] = ++n;
+    }
+};
+
 
 bool Dependency_Graph::create(kai_AST* ast) {
     scopes.reserve(128);
     value_nodes.reserve(256);
     type_nodes.reserve(256);
-    node_infos.reserve(256);
+    info_nodes.reserve(256);
 
     scopes.emplace_back();
     insert_builtin_types();
@@ -126,34 +183,102 @@ bool Dependency_Graph::create(kai_AST* ast) {
 	}
     
 	// Insert dependencies for each node
-	for_n(node_infos.size()) {
+	for_n(info_nodes.size()) {
 		auto& vnode = value_nodes[i];
-		auto& tnode = type_nodes[i];
-		auto& info  = node_infos[i];
+		auto& tnode =  type_nodes[i];
+		auto& info  =  info_nodes[i];
 
 		if (
             !(vnode.flags&Evaluated) &&
             insert_value_dependencies(vnode.dependencies, info.scope, info.expr, false)
         ) return true;
-
-        // TODO: do not add dependencies that are already there
-        remove_duplicate_dependencies(vnode.dependencies);
-
 		if (
             !(tnode.flags&Evaluated) &&
             insert_type_dependencies(tnode.dependencies, info.scope, info.expr)
         ) return true;
-
-        remove_duplicate_dependencies(tnode.dependencies);
 	}
 
 #if ENABLE_DEBUG_PRINT
     debug_print();
 #endif
 
-    if (has_circular_dependency())
-        return true; 
+    DFS_Explore_Context explorer(*this);
+    explorer.dfs();
 
+
+ //   std::vector<Node_Reference> nodes;
+//
+ //   for_n (info_nodes.size()) {
+ //       nodes.emplace_back(Node_Reference::VALUE, i);
+ //       nodes.emplace_back(Node_Reference::TYPE, i);
+ //   }
+//
+ //   std::vector<int> post(nodes.size(), 0);
+ //   std::vector<bool> visited(nodes.size(), false);
+ //   int k = 0;
+//
+//	for_n (nodes.size()) {
+//		if (!visited[i])
+//			explore(k, nodes, post, visited, value_nodes, type_nodes, i);
+ //   }
+
+    std::vector<unsigned int> order;
+    for_n (explorer.post.size()) {
+        order.emplace_back(i);
+    }
+
+    std::sort(order.begin(), order.end(), 
+        [&](unsigned int l, unsigned int r) {
+            return explorer.post[l] < explorer.post[r];
+        }
+    );
+
+    std::cout << "COMPILATION ORDER:\n";
+    for (auto&& i: order) {
+        print_node_reference(explorer.nodes[i], info_nodes);
+    //    std::cout << " -> " << post;
+        std::cout << "\n";
+    }
+
+    // DFS on the reverse graph, counting how many nodes are in each SCC,
+    // If this number is every >1, then we found a circular dependency
+
+    // OR: we could look for back edges in the graph G, then those back
+    //     edges are cycles
+    for (auto&& [type,node_index]: explorer.nodes)
+    {
+        auto u = (node_index*2)+type;
+        Dependency_List* deps = nullptr;
+        if (type == Node_Reference::VALUE)
+            deps = &(value_nodes[node_index].dependencies);
+        if (type == Node_Reference::TYPE)
+            deps = &(type_nodes[node_index].dependencies);
+
+        for (auto&& dep: *deps) {
+            int v = (dep.node_index*2)+dep.type;
+            if (explorer.post[u] < explorer.post[v]) {
+            //    error_circular_dependency(type, info_nodes[node_index]);
+            //    return true;
+                
+                explorer.clear();
+                explorer.explore(u);
+
+                // loop through prev pointers to get to u, and add errors in reverse order
+
+                void* start = error_circular_dependency(type, info_nodes[node_index]);
+                kai_Error* last = &context.error;
+                for (u32 i = explorer.prev[u];; i = explorer.prev[i]) {
+                    last->next = (kai_Error*)start;
+                    auto const& n = info_nodes[i >> 1];
+                    start = error_dependency_info(start, i & 1, n);
+                    last = last->next;
+
+                    if (i == 0 || i == u) break;
+                }
+                return true;
+            }
+        }
+    }
 	return false;
 }
 
@@ -163,21 +288,21 @@ void Dependency_Graph::insert_builtin_types() {
     for (auto&&[name, type]: __builtin_types) {
         auto index = (u32)value_nodes.size();
 
-        Value_Dependency_Node vnode;
-        vnode.flags = Dependency_Flags::Evaluated;
+        Value_Node vnode;
+        vnode.flags = Node_Flags::Evaluated;
         vnode.value.ptrvalue = type;
         value_nodes.emplace_back(vnode);
 
-        Type_Dependency_Node tnode;
-        tnode.flags = Dependency_Flags::Evaluated;
+        Type_Node tnode;
+        tnode.flags = Node_Flags::Evaluated;
         tnode.type = &_type_type_info;
         type_nodes.emplace_back(tnode);
         
-        Dependency_Node_Info info;
+        Info_Node info;
         info.name = SV(name);
         info.scope = GLOBAL_SCOPE;
         info.expr = nullptr;
-        node_infos.emplace_back(info);
+        info_nodes.emplace_back(info);
 
         global_scope.map.emplace(info.name, index);
     }    
@@ -242,24 +367,24 @@ bool Dependency_Graph::insert_node_for_declaration(
 	// Does this declaration already exist for this Scope?
 	auto it = s->map.find(name);
 	if (it != s->map.end()) {
-		return error_redefinition(decl->name, decl->line_number, node_infos[it->second]);
+		return error_redefinition(decl->name, decl->line_number, info_nodes[it->second]);
 	}
 
 	// Add node to dependency graph
 	{
 		auto index = (kai_u32)value_nodes.size();
 
-		Value_Dependency_Node vnode = {};
+		Value_Node vnode = {};
 		{ // @Note: is this dependency always correct?
-			Dependency dep;
+			Node_Reference dep;
 			dep.node_index = index;
-			dep.type = Dependency::TYPE;
+			dep.type = Node_Reference::TYPE;
 			vnode.dependencies.emplace_back(dep);
 		}
 
-		Type_Dependency_Node tnode = {};
+		Type_Node tnode = {};
 
-		Dependency_Node_Info info;
+		Info_Node info;
 		info.name = name;
 		info.expr = decl->expr;
         info.line_number = decl->line_number;
@@ -269,7 +394,7 @@ bool Dependency_Graph::insert_node_for_declaration(
 
 		value_nodes.emplace_back(vnode);
 		type_nodes.emplace_back(tnode);
-		node_infos.emplace_back(info);
+		info_nodes.emplace_back(info);
 	}
 
 	switch (decl->expr->id)
@@ -325,7 +450,9 @@ bool Dependency_Graph::insert_value_dependencies(
         if (in_procedure && *result == LOCAL_VARIABLE_INDEX)
             break;
 		
-        deps.emplace_back(Dependency::VALUE, *result);
+        Node_Reference ref = {Node_Reference::VALUE, *result};
+        auto it = std::find(deps.begin(), deps.end(), ref);
+        if (it == deps.end()) deps.emplace_back(ref);
     }
 
     break; case kai_Expr_ID_Number:
@@ -383,7 +510,7 @@ bool Dependency_Graph::insert_value_dependencies(
 
 			auto it = local_scope.map.find(name);
 			if (it != local_scope.map.end())
-				return error_redefinition(parameter.name, proc->line_number, node_infos[it->second]);
+				return error_redefinition(parameter.name, proc->line_number, info_nodes[it->second]);
 
 			local_scope.map.emplace(name, LOCAL_VARIABLE_INDEX);
         }
@@ -407,7 +534,7 @@ bool Dependency_Graph::insert_value_dependencies(
             // Insert into local scope (if not already defined)
             auto it = s.map.find(name);
             if (it != s.map.end() && it->second != LOCAL_VARIABLE_INDEX)
-                return error_redefinition(decl->name, decl->line_number, node_infos[it->second]);
+                return error_redefinition(decl->name, decl->line_number, info_nodes[it->second]);
             s.map.emplace(name, LOCAL_VARIABLE_INDEX);
 
             // Look into it's definition to find possible dependencies
@@ -491,8 +618,13 @@ bool Dependency_Graph::insert_type_dependencies(
             return error_not_declared(expr->source_code, expr->line_number);
         }
 
-        if (*result != LOCAL_VARIABLE_INDEX) // DO NOT depend on local variables
-            deps.emplace_back(Dependency::TYPE, *result);
+        // DO NOT depend on local variables
+        if (*result == LOCAL_VARIABLE_INDEX)
+            return false;
+
+        Node_Reference ref = {Node_Reference::TYPE, *result};
+        auto it = std::find(deps.begin(), deps.end(), ref);
+        if (it == deps.end()) deps.emplace_back(ref);
     }
 
     break; case kai_Expr_ID_Unary: {
@@ -582,49 +714,49 @@ bool Dependency_Graph::insert_type_dependencies(
 
 void Dependency_Graph::
 insert_procedure_input(int arg_index, kai_Type type, std::string_view name, u32 scope_index) {
-    Value_Dependency_Node vnode;
-    vnode.flags = Dependency_Flags::Is_Local_Variable;
+    Value_Node vnode;
+    vnode.flags = Node_Flags::Is_Local_Variable;
     vnode.value.u32value = PROC_ARG(arg_index);
     value_nodes.emplace_back(vnode);
 
-    Type_Dependency_Node tnode;
-    tnode.flags = Dependency_Flags::Is_Local_Variable;
+    Type_Node tnode;
+    tnode.flags = Node_Flags::Is_Local_Variable;
     tnode.type = type;
     type_nodes.emplace_back(tnode);
 
-    Dependency_Node_Info info;
+    Info_Node info;
     info.name = name;
     info.scope = scope_index;
     info.expr = nullptr;
-    node_infos.emplace_back(info);
+    info_nodes.emplace_back(info);
 
-    auto new_node_index = u32(node_infos.size() - 1);
+    auto new_node_index = u32(info_nodes.size() - 1);
 
     scopes[scope_index].map.emplace(info.name, new_node_index);
 }
 
-void Dependency_Graph::
-insert_local_variable(u32 reg_index, kai_Type type, std::string_view name, u32 scope_index) {
-    Value_Dependency_Node vnode;
-    vnode.flags = Dependency_Flags::Is_Local_Variable;
-    vnode.value.u32value = reg_index;
-    value_nodes.emplace_back(vnode);
+// void Dependency_Graph::
+// insert_local_variable(u32 reg_index, kai_Type type, std::string_view name, u32 scope_index) {
+//     Value_Node vnode;
+//     vnode.flags = Node_Flags::Is_Local_Variable;
+//     vnode.value.u32value = reg_index;
+//     value_nodes.emplace_back(vnode);
 
-    Type_Dependency_Node tnode;
-    tnode.flags = Dependency_Flags::Is_Local_Variable;
-    tnode.type = type;
-    type_nodes.emplace_back(tnode);
+//     Type_Node tnode;
+//     tnode.flags = Node_Flags::Is_Local_Variable;
+//     tnode.type = type;
+//     type_nodes.emplace_back(tnode);
 
-    Dependency_Node_Info info;
-    info.name = name;
-    info.scope = scope_index;
-    info.expr = nullptr;
-    node_infos.emplace_back(info);
+//     Info_Node info;
+//     info.name = name;
+//     info.scope = scope_index;
+//     info.expr = nullptr;
+//     info_nodes.emplace_back(info);
 
-    auto new_node_index = u32(node_infos.size() - 1);
+//     auto new_node_index = u32(info_nodes.size() - 1);
 
-    scopes[scope_index].map.emplace(info.name, new_node_index);
-}
+//     scopes[scope_index].map.emplace(info.name, new_node_index);
+// }
 
 
 std::optional<u32> Dependency_Graph::
@@ -673,86 +805,39 @@ resolve_dependency_node_procedure(std::string_view name, Scope* scope) {
     }
 }
 
-#define FIND(Container, Value) std::find(Container.begin(), Container.end(), Value)
-
-// TODO: Flatten out this recursive algorithm to be iterative
-bool Dependency_Graph::
-circular_dependency_check(std::vector<Dependency>& dependency_stack, Dependency_Node& node) {
-    for (auto const& nd : node.dependencies) {
-
-        // TODO: optimization: should keep a flag that indicates that
-        //         we already checked this node's dependencies,
-        //         so we never need to check more than once
-        auto it = FIND(dependency_stack, nd);
-        if (it != dependency_stack.end()) {
-            auto self = it->node_index;
-            auto const& info = node_infos[self];
-            void* start = error_circular_dependency(it->type, info);
-            kai_Error* last = &context.error;
-
-            for (auto _it = ++it; _it != dependency_stack.end(); ++_it) {
-                last->next = (kai_Error*)start;
-                start = error_dependency_info(start, it->type, node_infos[_it->node_index]);
-                last = last->next;
-            }
-
-            return true;
-        }
-
-        // TODO: If this node already KNOWS that it has no self dependencies,
-        //        then we dont need to push it onto the stack
-        dependency_stack.push_back(nd);
-
-        switch (nd.type)
-        {
-        default:
-        break; case Dependency::VALUE:
-            if(circular_dependency_check(dependency_stack, value_nodes[nd.node_index]))
-                return true;
-        break; case Dependency::TYPE:
-            if(circular_dependency_check(dependency_stack, type_nodes[nd.node_index]))
-                return true;
-        break;
-        }
-        dependency_stack.pop_back();
-    }
-    return false;
-}
-
-bool Dependency_Graph::
-has_circular_dependency() {
-    std::vector<Dependency> stack;
-    stack.emplace_back();
-    
-    for_n(node_infos.size()) {
-        stack[0].node_index = (u32)i;
-
-        stack[0].type = Dependency::VALUE;
-        if(circular_dependency_check(stack, value_nodes[i]))
-            return true;
-    
-        stack[0].type = Dependency::TYPE;
-        if(circular_dependency_check(stack, type_nodes[i]))
-            return true;
-    }
-    return false;
-}
-
 #if 1
 #define RESET "\x1b[0m"
 static char const* _color_table[] = {
-    "\x1b[31m", "\x1b[91m",
-    /*"\x1b[32m",*/ "\x1b[92m",
-    "\x1b[33m", "\x1b[93m",
-    "\x1b[34m", "\x1b[94m",
-    "\x1b[35m", "\x1b[95m",
-    "\x1b[36m", "\x1b[96m",
+    "\x1b[31m",
+    "\x1b[32m",
+    "\x1b[33m",
+    "\x1b[34m",
+    "\x1b[35m",
+    "\x1b[36m",
+    "\x1b[91m",
+    "\x1b[92m",
+    "\x1b[93m",
+    "\x1b[94m",
+    "\x1b[95m",
+    "\x1b[96m",
 };
 #define GET_COLOR(N) _color_table[N % std::size(_color_table)]
+
+void print_node_reference(Node_Reference ref, std::vector<Info_Node>& info_nodes) {
+    auto const& info = info_nodes[ref.node_index];
+    if (ref.type == Node_Reference::TYPE)
+        std::cout << "type_of(";
+    std::cout << GET_COLOR(ref.node_index);
+    std::cout << info.name << ':' << info.scope;
+    std::cout << RESET;
+    if (ref.type == Node_Reference::TYPE)
+        std::cout << ")";
+}
+
 void Dependency_Graph::debug_print() {
     std::cout << '\n';
     for_n(value_nodes.size()) {
-        auto const& info = node_infos[i];
+        auto const& info = info_nodes[i];
         auto const& node = value_nodes[i];
         auto const& name = info.name;
 
@@ -760,7 +845,7 @@ void Dependency_Graph::debug_print() {
         std::cout << name << ':' << info.scope << ' ';
         std::cout << RESET;
 
-        if (node.flags & Dependency_Flags::Evaluated) {
+        if (node.flags & Node_Flags::Evaluated) {
             std::cout << "is already evaluated\n";
             continue;
         }
@@ -768,22 +853,15 @@ void Dependency_Graph::debug_print() {
         std::cout << "depends on {";
         int k = 0;
         for (auto const& dep : node.dependencies) {
-            auto const& info = node_infos[dep.node_index];
-            if (dep.type == Dependency::TYPE)
-                std::cout << "type_of(";
-            std::cout << GET_COLOR(dep.node_index);
-            std::cout << info.name << ':' << info.scope;
-            std::cout << RESET;
-            if (dep.type == Dependency::TYPE)
-                std::cout << ")";
+            print_node_reference(dep, info_nodes);
             if (++k < node.dependencies.size()) std::cout << ", ";
         }
         std::cout << "}\n";
     }
-//    for_n(100) std::cout << '-';
+//  for_n(100) std::cout << '-';
     std::cout << '\n';
     for_n(type_nodes.size()) {
-        auto const& info = node_infos[i];
+        auto const& info = info_nodes[i];
         auto const& node = type_nodes[i];
         auto const& name = info.name;
 
@@ -793,7 +871,7 @@ void Dependency_Graph::debug_print() {
         std::cout << RESET;
         std::cout << ") ";
 
-        if (node.flags & Dependency_Flags::Evaluated) {
+        if (node.flags & Node_Flags::Evaluated) {
             std::cout << "is already evaluated\n";
             continue;
         }
@@ -801,14 +879,7 @@ void Dependency_Graph::debug_print() {
         std::cout << "depends on {";
         int k = 0;
         for (auto const& dep : node.dependencies) {
-            auto const& info = node_infos[dep.node_index];
-            if (dep.type == Dependency::TYPE)
-                std::cout << "type_of(";
-            std::cout << GET_COLOR(dep.node_index);
-            std::cout << info.name << ':' << info.scope;
-            std::cout << RESET;
-            if (dep.type == Dependency::TYPE)
-                std::cout << ")";
+            print_node_reference(dep, info_nodes);
             if (++k < node.dependencies.size()) std::cout << ", ";
         }
         std::cout << "}\n";

@@ -1,4 +1,5 @@
-﻿#include "kai/generation.h"
+﻿#include <Windows.h>
+#include "kai/kai.h"
 #include "kai/memory.h"
 #include "kai/debug.h"
 
@@ -38,7 +39,7 @@ void print_result(Fn& fn, Args&&...args) {
 
 struct File {
 	void* data;
-	kai_u64 size;
+	Kai_u64 size;
 
 	~File() {
 		free(data);
@@ -48,7 +49,7 @@ struct File {
 File read_entire_file(char const* filename) {
 	using io = std::ios;
 	if (auto f = std::ifstream(filename, io::binary)) {
-		kai_u64 size;
+		Kai_u64 size;
 		void* data;
 		
 		// get file size
@@ -67,8 +68,12 @@ File read_entire_file(char const* filename) {
 	return {};
 }
 
-#define FILENAME "test.kai"
-//#define FILENAME "constants.kai"
+void _kai_print_impl(Kai_str s) {
+	std::cout << view(s) << '\n';
+}
+
+//#define FILENAME "test.kai"
+#define FILENAME "constants.kai"
 //#define FILENAME "generated.kai"
 //#define FILENAME "simple.kai"
 //#define FILENAME "fibo.kai"
@@ -78,12 +83,11 @@ File read_entire_file(char const* filename) {
 int main() {
 	/////////////////////////////////////////////////
 	// Setup
-//	SetConsoleOutputCP( CP_UTF8 );
+	SetConsoleOutputCP( CP_UTF8 );
 	setlocale( LC_ALL, ".UTF8" );
 
-	std::cout << kai_get_version_string();
+	std::cout << kai_get_version_string().data;
 	std::cout << '\n';
-	
 
 	/////////////////////////////////////////////////
 	// Load Source File
@@ -93,23 +97,24 @@ int main() {
 		std::cout << "failed to read file: \"" << FILEPATH << "\"\n";
 		exit(0);
 	}
-	kai_str source_code;
-	source_code.data = (kai_u8*)source_file.data;
-	source_code.count = (kai_int)source_file.size;
+	Kai_str source_code;
+	source_code.data = (Kai_u8*)source_file.data;
+	source_code.count = (Kai_int)source_file.size;
 	std::cout << '\n' << view(source_code) << '\n';
 	
 
 	/////////////////////////////////////////////////
 	// Create Abstract Syntax Tree
 	kai::Memory memory;
-	kai_result result;
-	kai_AST tree;
-	tree.source_filename = KAI_STR(FILEPATH);
-	kai_Error error;
+	Kai_Result result;
+	Kai_AST tree;
+	tree.source_filename.data = (Kai_u8*)FILEPATH;
+	tree.source_filename.count = sizeof(FILEPATH) - 1;
+	Kai_Error error = {};
 	{
 		timer t;
 
-		kai_Syntax_Tree_Create_Info info;
+		Kai_Syntax_Tree_Create_Info info;
 		info.source_code = source_code;
 		info.memory = memory;
 		info.error  = &error;
@@ -128,21 +133,30 @@ int main() {
 
 //	return 0;
 
+	auto print_ref = Kai_Native_Procedure {
+		.address = reinterpret_cast<void*>(&_kai_print_impl),
+		.name = KAI_STR("print"),
+		.signature = KAI_STR("(str)")
+	};
+
+
 	/////////////////////////////////////////////////
 	// Create program
-	kai_Program program;
+	Kai_Program program;
 	if (!KAI_FAILED(result))
 	{
 		timer t;
 
-		kai_Program_Create_Info info;
+		Kai_Program_Create_Info info;
 		info.trees  = &tree;
 		info.memory = memory;
 		info.error  = &error;
+		info.native_procedures = &print_ref;
+		info.native_procedure_count = 1;
 		result = kai_create_program(&info, &program);
 	}
 
-	if (KAI_FAILED(result) && result != kai_Result_Error_Fatal) {
+	if (KAI_FAILED(result)) {
 		auto n = &error;
 		while (n != nullptr) {
 			n->location.source    = source_code.data;
@@ -158,11 +172,11 @@ int main() {
 	{
 		auto proc_ptr = kai_find_procedure(program, "add", "(s64, s64) -> s64");
 
-		using fn_Type = kai_u64 (kai_s64, kai_s64);
+		using fn_Type = Kai_u64 (Kai_s64, Kai_s64);
 
 		auto proc = reinterpret_cast<fn_Type KAI_CALL*>(proc_ptr);
 
-		kai_s64
+		Kai_s64
 			a = 4, b = 9;
 
 		std::cout << '\n';
@@ -176,7 +190,7 @@ int main() {
 	return 0;
 
 #if 0
-	auto _kai_print_int = [](kai_int n) { printf("%i\n", n); };
+	auto _kai_print_int = [](Kai_int n) { printf("%i\n", n); };
 	auto _kai_print_f32 = [](kai_f32 n) { printf("%f\n", n); };
 
 	struct kai_External {

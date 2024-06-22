@@ -1,7 +1,9 @@
 int :: s64;
 
-main :: (n: s64, k: int) -> s64 {
-    ret fibonacci(n);
+main :: (args: [] str) -> s64 {
+    x: int = k -> s64;
+    y: int = cast(s64) k;
+    ret fibonacci(cast((*u8)->int) n);
 }
 
 fibonacci :: (n: int) {

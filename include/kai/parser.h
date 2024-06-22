@@ -1,190 +1,183 @@
 #ifndef KAI_PARSER_H
 #define KAI_PARSER_H
-#include <kai/core.h>
+#include "core.h"
 __KAI_BEGIN_API__
 
-// Notes:
-// "Expr" => Expression
-// "Stmt" => Statement
-
-typedef struct kai_Expr_Base* kai_Expr;
-typedef struct kai_Expr_Base* kai_Stmt;
+typedef struct Kai_Expr_Base* Kai_Expr; // Expression Nodes
+typedef struct Kai_Expr_Base* Kai_Stmt; // Statement Nodes
 
 // Used to describe number literals
 // Value = ( Whole + Frac / (10 ^ Frac_Denom) ) * 10 ^ Exp
 typedef struct {
-	kai_u64 Whole_Part;
-	kai_u64 Frac_Part;
-	kai_s32 Exp_Part;
-	kai_u16 Frac_Denom;
-} kai_Number_Info;
+	Kai_u64 Whole_Part;
+	Kai_u64 Frac_Part;
+	Kai_s32 Exp_Part;
+	Kai_u16 Frac_Denom;
+} Kai_Number_Info;
 
 typedef struct {
-	kai_Stmt* toplevel_stmts;
-	kai_int   toplevel_count;
-	kai_str   source_filename;
-} kai_AST;
+	Kai_Stmt* top_level_statements;
+	Kai_int   top_level_count;
+	Kai_str   source_filename;
+} Kai_AST;
 
 typedef struct {
-	kai_str         source_code;
-	kai_Memory      memory;
-	kai_Error*      error;
-} kai_Syntax_Tree_Create_Info;
+	Kai_str         source_code;
+	Kai_Memory      memory;
+	Kai_Error*      error;
+} Kai_Syntax_Tree_Create_Info;
 
 
 /* -------------------------------------------------------------------
-	info:    [in]
-	out_AST: [in] [out]
+	info: [in]
+	AST:  [in] [out]
 		- source_filename: expected to contain the file name of the
 		                    source code
 
 	On success, out_AST will be filled with the syntax tree of the
 	source code.
    ------------------------------------------------------------------- */
-KAI_API(kai_result)
-	kai_create_syntax_tree(kai_Syntax_Tree_Create_Info* Info, kai_AST* out_AST);
+KAI_API(Kai_Result)
+	kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* Info, Kai_AST* AST);
 
 
+
+// ==========================> Syntax Tree Nodes <=============================
 
 typedef enum {
-	kai_Expr_ID_Identifier     = 0,
-	kai_Expr_ID_String         = 1,
-	kai_Expr_ID_Number         = 2,
-	kai_Expr_ID_Binary         = 3,
-	kai_Expr_ID_Unary          = 4,
-	kai_Expr_ID_Procedure_Type = 5,
-	kai_Expr_ID_Procedure_Call = 6,
-	kai_Expr_ID_Procedure      = 7, // defines a procedure, e.g. "(a: int, b: int) -> int { ret a + b; }"
+	KAI_EXPR_IDENTIFIER     = 0,
+	KAI_EXPR_STRING         = 1,
+	KAI_EXPR_NUMBER         = 2,
+	KAI_EXPR_BINARY         = 3,
+	KAI_EXPR_UNARY          = 4,
+	KAI_EXPR_PROCEDURE_TYPE = 5,
+	KAI_EXPR_PROCEDURE_CALL = 6,
+	KAI_EXPR_PROCEDURE      = 7, // defines a procedure, e.g. "(a: int, b: int) -> int { ret a + b; }"
 
-	kai_Stmt_ID_Return         = 8,
-	kai_Stmt_ID_Declaration    = 9,
-	kai_Stmt_ID_Assignment     = 10,
-	kai_Stmt_ID_Compound       = 11,
-	kai_Stmt_ID_If             = 12,
-	kai_Stmt_ID_For            = 13,
-	kai_Stmt_ID_Defer          = 20,
-} kai_Node_ID;
+	KAI_STMT_RETURN         = 8,
+	KAI_STMT_DECLARATION    = 9,
+	KAI_STMT_ASSIGNMENT     = 10,
+	KAI_STMT_COMPOUND       = 11,
+	KAI_STMT_IF             = 12,
+	KAI_STMT_FOR            = 13,
+	KAI_STMT_DEFER          = 20,
+} Kai_Node_ID;
 
 // `line_number` is the line number for the first token in an Expression/Statement
-
+// am I a good programmer?
 #define KAI_BASE_MEMBERS \
-	kai_u8  id;          \
-	kai_u32 line_number; \
-	kai_str source_code; \
-	kai_Type_Info* type
+	Kai_u8  id;          \
+	Kai_u32 line_number; \
+	Kai_str source_code
+//	Kai_Type_Info* type
 
-//////////////////////////////////////////////////
-// Expressions
-
-typedef struct kai_Expr_Base {
+typedef struct Kai_Expr_Base {
 	KAI_BASE_MEMBERS;
-} kai_Expr_Base;
+} Kai_Expr_Base;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-} kai_Expr_Identifier;
+} Kai_Expr_Identifier;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Number_Info info;
-} kai_Expr_Number;
+	Kai_Number_Info info;
+} Kai_Expr_Number;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-} kai_Expr_String;
+} Kai_Expr_String;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr expr;
-	kai_u32  op;
-} kai_Expr_Unary;
+	Kai_Expr expr;
+	Kai_u32  op;
+} Kai_Expr_Unary;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr left;
-	kai_Expr right;
-	kai_u32  op;
-} kai_Expr_Binary;
+	Kai_Expr left;
+	Kai_Expr right;
+	Kai_u32  op;
+} Kai_Expr_Binary;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr  proc;
-	kai_Expr* arguments;
-	kai_u8    arg_count;
-} kai_Expr_Procedure_Call;
+	Kai_Expr  proc;
+	Kai_Expr* arguments;
+	Kai_u8    arg_count;
+} Kai_Expr_Procedure_Call;
  
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr* input_output;
-	kai_u8 param_count;
-	kai_u8 ret_count; // If this is 0, then the return type defaults to "void"
-} kai_Expr_Procedure_Type;
+	Kai_Expr* input_output;
+	Kai_u8    param_count;
+	Kai_u8    ret_count; // If this is 0, then the return type defaults to "void"
+} Kai_Expr_Procedure_Type;
 
 typedef struct {
-	kai_str  name;
-	kai_Expr type;
-	kai_u8   flags; // note: for keyword using
-} kai_Expr_Procedure_Parameter;
-
-typedef struct {
-	KAI_BASE_MEMBERS;
-	kai_Expr_Procedure_Parameter* input_output;
-	kai_Stmt body;
-	kai_u8   param_count;
-	kai_u8   ret_count; // If this is 0, then the return defaults to "void"
-
-	kai_u32 _scope;
-} kai_Expr_Procedure;
+	Kai_str  name;
+	Kai_Expr type;
+	Kai_u8   flags; // note: for keyword using
+} Kai_Expr_Procedure_Parameter;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr expr; // optional
-} kai_Stmt_Return;
+	Kai_Expr_Procedure_Parameter* input_output;
+	Kai_Stmt body;
+	Kai_u8   param_count;
+	Kai_u8   ret_count; // If this is 0, then the return defaults to "void"
 
-enum: kai_u8 {
-	kai_Decl_Flag_Const = KAI_BIT(0), // compile-time constant, not like C const
-	kai_Decl_Flag_Using = KAI_BIT(1),
+	Kai_u32 _scope;
+} Kai_Expr_Procedure;
+
+typedef struct {
+	KAI_BASE_MEMBERS;
+	Kai_Expr expr; // optional
+} Kai_Stmt_Return;
+
+enum {
+	KAI_DECL_FLAG_CONST = 1 << 0, // compile-time constant, not like C const
+	KAI_DECL_FLAG_USING = 1 << 1,
 };
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr expr;
-	kai_str  name;
-	kai_u8   flags;
-} kai_Stmt_Declaration;
+	Kai_Expr expr;
+    Kai_Expr type; // optional
+	Kai_str  name;
+	Kai_u8   flags;
+} Kai_Stmt_Declaration;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Expr left;
-	kai_Expr expr;
-} kai_Stmt_Assignment;
+	Kai_Expr left;
+	Kai_Expr expr;
+} Kai_Stmt_Assignment;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Stmt* statements;
-	kai_u32   count;
+	Kai_Stmt* statements;
+	Kai_u32   count;
 
-	kai_u32 _scope;
-} kai_Stmt_Compound;
-
-typedef struct {
-	KAI_BASE_MEMBERS;
-	kai_Expr expr;
-	kai_Stmt body;
-	kai_Stmt else_body;
-} kai_Stmt_If;
+	Kai_u32 _scope;
+} Kai_Stmt_Compound;
 
 typedef struct {
 	KAI_BASE_MEMBERS;
-	kai_Stmt body;
-	kai_Expr from;
-	kai_Expr to; // optional (interates through `from` if this is null)
-	kai_str  iterator_name;
-	kai_u8   flags;
-} kai_Stmt_For;
+	Kai_Expr expr;
+	Kai_Stmt body;
+	Kai_Stmt else_body;
+} Kai_Stmt_If;
 
-//////////////////////////////////////////////////
-
+typedef struct {
+	KAI_BASE_MEMBERS;
+	Kai_Stmt body;
+	Kai_Expr from;
+	Kai_Expr to; // optional (interates through `from` if this is null)
+	Kai_str  iterator_name;
+	Kai_u8   flags;
+} Kai_Stmt_For;
 
 __KAI_END_API__
 #endif//KAI_PARSER_H
