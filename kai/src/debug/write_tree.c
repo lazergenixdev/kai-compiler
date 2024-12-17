@@ -22,18 +22,18 @@ typedef struct {
 #define binary_operator_name(OP) _binary_operator_name(context, OP)
 char const* _binary_operator_name(Tree_Traversal_Context* ctx, Kai_u32 op) {
     switch (op) {
-    case '->': return "cast";
-    case '&&': return "and";
-    case '||': return "or";
-    case '==': return "equals";
-    case '<=': return "less or equal";
-    case '>=': return "greater or equal";
-    case '+':  return "add";
-    case '-':  return "subtract";
-    case '*':  return "multiply";
-    case '/':  return "divide";
-    case '.':  return "member access";
-    case '[':  return "index";
+    case TT2("->"): return "cast";
+    case TT2("&&"): return "and";
+    case TT2("||"): return "or";
+    case TT2("=="): return "equals";
+    case TT2("<="): return "less or equal";
+    case TT2(">="): return "greater or equal";
+    case '+':       return "add";
+    case '-':       return "subtract";
+    case '*':       return "multiply";
+    case '/':       return "divide";
+    case '.':       return "member access";
+    case '[':       return "index";
     default:
         snprintf(ctx->temp, sizeof(ctx->temp), "undefined(%u)", op);
         return ctx->temp;
@@ -67,10 +67,11 @@ char const* _unary_operator_name(Tree_Traversal_Context* ctx, Kai_u32 op) {
 
 #define prefix context->prefix
 #define temp context->temp
-#define explore(EXPR, IS_LAST) _explore(context, EXPR, IS_LAST)
-void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last) {
+#define explore(EXPR, IS_LAST) _explore(context, EXPR, IS_LAST, KAI_TRUE)
+void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_bool push) {
     Kai_Debug_String_Writer* const writer = context->writer;
-    push_stack(is_last);
+
+    if (push) push_stack(is_last);
 
     _set_color(KAI_DEBUG_COLOR_DECORATION);
     Kai_int const last = context->stack_count - 1;
@@ -159,7 +160,7 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last) {
             _set_color(KAI_DEBUG_COLOR_PRIMARY);
             _write(")\n");
 
-            explore(node->left, 0);
+            explore(node->left,  0);
             explore(node->right, 1);
         }
         break; case KAI_EXPR_PROCEDURE_TYPE: {
@@ -292,30 +293,43 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last) {
 
             prefix = "from";
             explore(node->from, 0);
+
             prefix = "to";
             explore(node->to, 0);
 
             explore(node->body, 1);
         }
-//        break; case KAI_STMT_DEFER: {
-//        }
     }
 
-    pop_stack();
+    if (push) { pop_stack(); }
 }
 #undef prefix
 #undef temp
 
-void kai_debug_write_syntax_tree(Kai_Debug_String_Writer* writer, Kai_AST* ast) {
-    Tree_Traversal_Context context;
-    context.writer = writer;
-    context.stack_count = 0;
-    context.prefix = NULL;
-    _write("Top Level\n");
+void
+kai_debug_write_syntax_tree(Kai_Debug_String_Writer* writer, Kai_AST* ast) {
+    Tree_Traversal_Context context = {
+        .prefix = NULL,
+        .stack_count = 0,
+        .writer = writer,
+    };
     char temp[32];
+
+    _write("Top Level\n");
     for_n (ast->top_level_count) {
         _write_format("%"PRIi64"\n", i);
-        _explore(&context, ast->top_level_statements[i], i == (ast->top_level_count - 1));
+        _explore(&context, ast->top_level_statements[i], i == (ast->top_level_count - 1), KAI_TRUE);
     }
+}
+
+void
+kai_debug_write_expression(Kai_Debug_String_Writer* writer, Kai_Expr expr) {
+    Tree_Traversal_Context context = {
+        .prefix = NULL,
+        .stack_count = 0,
+        .writer = writer,
+    };
+    
+    _explore(&context, expr, KAI_TRUE, KAI_FALSE);
 }
 

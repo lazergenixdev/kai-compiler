@@ -1,6 +1,6 @@
 #ifndef PLATFORM_H
-#define KAI_PLATFORM_LINUX 0
-#define KAI_PLATFORM_WINDOWS 1
+#define KAI_PLATFORM_UNIX 1
+#define KAI_PLATFORM_WINDOWS 0
 
 // API:
 //     os_allocate(size, flags) -> void* | OS_FAILED
@@ -16,7 +16,7 @@
 // IMPLEMENATION:
 
 //-----------------------------------------------------------------------------
-#if KAI_PLATFORM_LINUX
+#if KAI_PLATFORM_UNIX
 #include <sys/mman.h> // -> mmap
 #include <unistd.h>   // -> getpagesize
 #define OS_FAILED     MAP_FAILED

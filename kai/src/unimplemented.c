@@ -12,7 +12,7 @@ void*
 kai_find_procedure(Kai_Program Program, char const* Name, char const* Type) {
     (void)Program;
     (void)Name;
-    (void)Type;
+    (void)Type; // need to parse type :(
 	UNIMPLEMENTED();
     return NULL;
 }
@@ -23,11 +23,3 @@ kai_debug_write_type(Kai_Debug_String_Writer* Writer, Kai_Type Type) {
     (void)Type;
 	UNIMPLEMENTED();
 }
-
-void
-kai_debug_write_expression(Kai_Debug_String_Writer* Writer, Kai_Expr Expr) {
-    (void)Writer;
-    (void)Expr;
-	UNIMPLEMENTED();
-}
-

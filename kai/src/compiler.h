@@ -20,10 +20,10 @@ enum {
 typedef struct {
 	Kai_Type   type;  // evaluated type
 	Value      value; // evaluated value
-	Kai_range  value_depenencies;
+	Kai_range  value_dependencies;
+    Kai_range   type_dependencies;
     u32        value_flags;
-    Kai_range  type_dependencies;
-    u32        type_flags;
+    u32         type_flags;
 	Kai_str    name;
 	Kai_Expr   expr; // AST node to be evaluated
 	u32        line_number;
@@ -56,5 +56,55 @@ typedef struct {
 } Compiler_Context;
 
 typedef struct {
+	Compiler_Context* compiler;
+    u32*              post;
+    u32*              prev;
+    Kai_bool*         visited;
+    u32               next;
+} DFS_Context;
+
+typedef struct {
 	int asdf;
 } Type_Checker;
+
+
+#define c_insert_node_for_statement(STATEMENT,SCOPE_INDEX,IN_PROC,FROM_PROC) \
+insert_node_for_statement(context, STATEMENT, SCOPE_INDEX, IN_PROC, FROM_PROC)
+
+Kai_bool insert_node_for_statement(
+	Compiler_Context*  context,
+	Kai_Stmt           statement,
+	u32                scope_index,
+	Kai_bool           in_procedure,
+	Kai_bool           from_procedure
+);
+#define c_insert_node_for_declaration(DECL,IN_PROC,SCOPE_INDEX) \
+insert_node_for_declaration(context, DECL, IN_PROC, SCOPE_INDEX)
+
+Kai_bool insert_node_for_declaration(
+	Compiler_Context* context,
+	Kai_Stmt_Declaration* decl,
+	Kai_bool in_proc,
+	u32 scope_index
+);
+
+#define c_insert_value_dependencies(DEPS,SCOPE_INDEX,EXPR,IN_PROC) \
+insert_value_dependencies(context, DEPS, SCOPE_INDEX, EXPR, IN_PROC)
+
+Kai_bool insert_value_dependencies(
+    Compiler_Context* context,
+	Kai_range*        deps,
+    u32               scope_index,
+    Kai_Expr          expr,
+    Kai_bool          in_procedure
+);
+
+#define c_insert_type_dependencies(DEPS,SCOPE_INDEX,EXPR) \
+insert_type_dependencies(context, DEPS, SCOPE_INDEX, EXPR)
+
+Kai_bool insert_type_dependencies(
+    Compiler_Context* context,
+	Kai_range*        deps,
+    u32               scope_index,
+    Kai_Expr          expr
+);

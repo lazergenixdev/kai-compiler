@@ -32,7 +32,7 @@ typedef struct {
 #define p_alloc_array(TYPE, COUNT) \
     (TYPE*)parser->memory.alloc(parser->memory.user, sizeof(TYPE)*COUNT)
     
-inline Kai_Expr alloc_type(Parser* p, Kai_u64 size, Kai_u8 id) {
+extern inline Kai_Expr alloc_type(Parser* p, Kai_u64 size, Kai_u8 id) {
     Kai_Expr expr = p->memory.alloc(p->memory.user, size);
     expr->id = id;
     return expr;
@@ -142,19 +142,19 @@ typedef struct {
 Op_Info operator_of_token_type(Kai_u32 t) {
     switch (t)
     {
-    case '&&':  return (Op_Info){t, 0x0010,    OP_BINARY};
-    case '||':  return (Op_Info){t, 0x0010,    OP_BINARY};
-    case '==':  return (Op_Info){t, 0x0040,    OP_BINARY};
-    case '<=':  return (Op_Info){t, 0x0040,    OP_BINARY};
-    case '+':   return (Op_Info){t, 0x0100,    OP_BINARY};
-    case '-':   return (Op_Info){t, 0x0100,    OP_BINARY};
-    case '*':   return (Op_Info){t, 0x0200,    OP_BINARY};
-    case '/':   return (Op_Info){t, 0x0200,    OP_BINARY};
-    case '->':  return (Op_Info){t, CAST_PREC, OP_BINARY};
-    case '[':   return (Op_Info){t, 0xBEEF,    OP_INDEX};
-    case '(':   return (Op_Info){t, 0xBEEF,    OP_PROCEDURE_CALL};
-    case '.':   return (Op_Info){t, 0xFFFF,    OP_BINARY}; // member access
-    default:    return (Op_Info){t, 0};
+    case TT2("&&"): return (Op_Info){t, 0x0010,    OP_BINARY};
+    case TT2("||"): return (Op_Info){t, 0x0010,    OP_BINARY};
+    case TT2("=="): return (Op_Info){t, 0x0040,    OP_BINARY};
+    case TT2("<="): return (Op_Info){t, 0x0040,    OP_BINARY};
+    case TT2("->"): return (Op_Info){t, CAST_PREC, OP_BINARY};
+    case '+':       return (Op_Info){t, 0x0100,    OP_BINARY};
+    case '-':       return (Op_Info){t, 0x0100,    OP_BINARY};
+    case '*':       return (Op_Info){t, 0x0200,    OP_BINARY};
+    case '/':       return (Op_Info){t, 0x0200,    OP_BINARY};
+    case '[':       return (Op_Info){t, 0xBEEF,    OP_INDEX};
+    case '(':       return (Op_Info){t, 0xBEEF,    OP_PROCEDURE_CALL};
+    case '.':       return (Op_Info){t, 0xFFFF,    OP_BINARY}; // member access
+    default:        return (Op_Info){t, 0};
     }
 }
 
@@ -221,7 +221,7 @@ Kai_Expr parse_type(Parser* parser) {
 
     ///////////////////////////////////////////////////////////////////////
     // "This code is broken as hell."
-    if (peek->type == '->') {
+    if (peek->type == TT2("->")) {
         p_next(); // eat '->'
         p_next(); // get token after
 
@@ -322,7 +322,7 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
         Kai_Expr expr = _parse_expr(CAST_PREC);
         p_expect(expr, "in expression", "expression after cast");
         Kai_Expr_Binary* binary = p_alloc_node(Expr_Binary);
-        binary->op    = '->';
+        binary->op    = TT2("->");
         binary->left  = expr;
         binary->right = type;
         left = (Kai_Expr) binary;
@@ -366,6 +366,7 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
     }
 
 loop_back:
+    (void)0;
     Token* p = p_peek();
     Op_Info op_info = operator_of_token_type(p->type);
 
@@ -469,7 +470,7 @@ parse_parameter:
     p_next();
 
     // return value
-    if (t->type == '->') {
+    if (t->type == TT2("->")) {
         p_next();
         Kai_Expr type = _parse_type();
         p_expect(type, "in procedure return type", "should be type");
@@ -620,7 +621,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         p_expect(from, "in for statement", "should be an expression here");
         Kai_Expr to = NULL;
         p_next();
-        if (t->type == '..') {
+        if (t->type == TT2("..")) {
             p_next();
             to = _parse_expr(DEFAULT_PREC);
             p_expect(to, "in for statement", "should be an expression here");
@@ -703,7 +704,7 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_AST* as
         .stack_top = 0,
         .memory = info->memory,
     };
-    Parser* const parser = &p; // ok
+    Parser* const parser = &p; // need this for Temperary Array
     
     // setup first token
     Token* token = p_next();
@@ -726,14 +727,14 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_AST* as
     // copy statements to AST
     p_tarray_copy(statement_array, ast->top_level_statements);
 
-    if (KAI_FAILED(parser->error.result)) {
+    if (KAI_FAILED(p.error.result)) {
 	error:
         if (info->error) {
-            *info->error = parser->error;
+            *info->error = p.error;
             info->error->location.file_name = ast->source_filename;
             info->error->location.source = info->source_code.data;
         }
-        return parser->error.result;
+        return p.error.result;
     }
     return KAI_SUCCESS; 
 }

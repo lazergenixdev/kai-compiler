@@ -9,32 +9,41 @@ typedef struct Kai_Expr_Base* Kai_Stmt; // Statement Nodes
 // Used to describe number literals
 // Value = ( Whole + Frac / (10 ^ Frac_Denom) ) * 10 ^ Exp
 typedef struct {
-	Kai_u64 Whole_Part;
-	Kai_u64 Frac_Part;
-	Kai_s32 Exp_Part;
-	Kai_u16 Frac_Denom;
+	Kai_u64  Whole_Part;
+	Kai_u64  Frac_Part;
+	Kai_s32  Exp_Part;
+	Kai_u16  Frac_Denom;
 } Kai_Number_Info;
 
 typedef struct {
-	Kai_Stmt* top_level_statements;
-	Kai_int   top_level_count;
-	Kai_str   source_filename;
+	Kai_Stmt*  top_level_statements;
+	Kai_int    top_level_count;
+	Kai_str    source_filename;
 } Kai_AST;
 
 typedef struct {
-	Kai_str         source_code;
-	Kai_Memory      memory;
-	Kai_Error*      error;
+	Kai_str     source_code;
+	Kai_Memory  memory;
+	Kai_Error*  error;
 } Kai_Syntax_Tree_Create_Info;
 
 
 /* -------------------------------------------------------------------
-	info: [in]
-	AST:  [in] [out]
+	Info:
+        [in]
+        - source_code
+
+        [in]
+        - memory
+
+        [out] (optional)
+        - error
+	AST:
+        [in]
 		- source_filename: expected to contain the file name of the
 		                    source code
 
-	On success, out_AST will be filled with the syntax tree of the
+	On success, `AST` will be filled with the syntax tree of the
 	source code.
    ------------------------------------------------------------------- */
 KAI_API(Kai_Result)
@@ -52,7 +61,7 @@ typedef enum {
 	KAI_EXPR_UNARY          = 4,
 	KAI_EXPR_PROCEDURE_TYPE = 5,
 	KAI_EXPR_PROCEDURE_CALL = 6,
-	KAI_EXPR_PROCEDURE      = 7, // defines a procedure, e.g. "(a: int, b: int) -> int { ret a + b; }"
+	KAI_EXPR_PROCEDURE      = 7, // defines a procedure, e.g. "(a: int, b: int) -> int ret a + b;"
 
 	KAI_STMT_RETURN         = 8,
 	KAI_STMT_DECLARATION    = 9,

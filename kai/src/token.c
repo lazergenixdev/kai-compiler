@@ -7,16 +7,17 @@
 
 Kai_str token_type_string(Kai_u32 type) {
     switch (type) {
-        default:               return KAI_EMPTY_STRING; // single character
-        case T_IDENTIFIER:     return KAI_STR("identifier");
-        case T_DIRECTIVE:      return KAI_STR("directive");
-        case T_STRING:         return KAI_STR("string");
-        case T_NUMBER:         return KAI_STR("number");
-#define X(SYMBOL) case SYMBOL: return KAI_STR(#SYMBOL);
-        XTOKEN_SYMBOLS
+        default:            return KAI_EMPTY_STRING; // single character
+        case T_IDENTIFIER:  return KAI_STR("identifier");
+        case T_DIRECTIVE:   return KAI_STR("directive");
+        case T_STRING:      return KAI_STR("string");
+        case T_NUMBER:      return KAI_STR("number");
+#define X(VALUE, SYMBOL) \
+        case VALUE:         return KAI_STR(#SYMBOL);
+        X_TOKEN_SYMBOLS
 #undef X
-#define X(NAME,ID) case ID:    return KAI_STR("'" #NAME "'");
-        XTOKEN_KEYWORDS
+#define X(NAME,ID) case ID: return KAI_STR("'" #NAME "'");
+        X_TOKEN_KEYWORDS
 #undef X
     }
 }
@@ -35,7 +36,7 @@ void insert_token_type_string(Kai_str* out, Kai_u32 type) {
 
 Kai_str keyword_map[] = {
 #define X(NAME, ID) {.data = (Kai_u8*)#NAME, .count = sizeof(#NAME)-1},
-    XTOKEN_KEYWORDS
+    X_TOKEN_KEYWORDS
 #undef X
 };
 
@@ -105,9 +106,8 @@ Token generate_token(Tokenization_Context* context) {
         token.string.data = source.data + cursor;
         Kai_u8 ch = *token.string.data;
 
-        if (ch&0b10000000) {
-            goto case_identifier;
-        }
+        // treat every multi-byte unicode symbol as just an identifier
+        if (ch & 0x80) goto case_identifier;
 
         switch (lex_lookup_table[ch])
         {
@@ -150,7 +150,7 @@ Token generate_token(Tokenization_Context* context) {
 
         case Directive: {
             token.type = T_DIRECTIVE;
-            ++token.string.data;
+            ++token.string.data; // skip over '#' symbol
             token.string.count = 0;
             ++cursor;
             goto parse_identifier;
@@ -271,7 +271,7 @@ Token generate_token(Tokenization_Context* context) {
             if (next_character_equals('.')) {
                 cursor += 2;
                 ++token.string.count;
-                token.type = '..';
+                token.type = TT2("..");
                 return token;
             }
             if ((cursor + 1) < source.count &&
@@ -371,59 +371,59 @@ void parse_multi_token(Tokenization_Context* context, Token* t, Kai_u8 current) 
 	
 	break; case '&': {
         if (source.data[cursor] == '&') {
-            t->type = '&&';
+            t->type = TT2("&&");
             ++cursor;
             ++t->string.count;
         }
 	}
 	break; case '|': {
         if (source.data[cursor] == '|') {
-            t->type = '||';
+            t->type = TT2("||");
             ++cursor;
             ++t->string.count;
         }
 	}
     break; case '=': {
         if (source.data[cursor] == '=') {
-            t->type = '==';
+            t->type = TT2("==");
             ++cursor;
             ++t->string.count;
         }
 	}
     break; case '>': {
         if (source.data[cursor] == '=') {
-            t->type = '>=';
+            t->type = TT2(">=");
             ++cursor;
             ++t->string.count;
         } else
 		if (source.data[cursor] == '>') {
-            t->type = '>>';
+            t->type = TT2(">>");
             ++cursor;
             ++t->string.count;
         }
 	}
     break; case '<': {
         if (source.data[cursor] == '=') {
-            t->type = '<=';
+            t->type = TT2("<=");
             ++cursor;
             ++t->string.count;
         } else
 		if (source.data[cursor] == '<') {
-            t->type = '<<';
+            t->type = TT2("<<");
             ++cursor;
             ++t->string.count;
         }
 	}
     break; case '!': {
         if (source.data[cursor] == '=') {
-            t->type = '!=';
+            t->type = TT2("!=");
             ++cursor;
             ++t->string.count;
         }
 	}
     break; case '-': {
         if (source.data[cursor] == '>') {
-            t->type = '->';
+            t->type = TT2("->");
             ++cursor;
             ++t->string.count;
         } else
@@ -431,7 +431,7 @@ void parse_multi_token(Tokenization_Context* context, Token* t, Kai_u8 current) 
             source.data[cursor] == '-' &&
             source.data[cursor+1] == '-'
         ) {
-            t->type = '---';
+            t->type = TT3("---");
             cursor += 2;
             t->string.count += 2;
         }

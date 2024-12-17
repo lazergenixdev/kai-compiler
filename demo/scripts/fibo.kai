@@ -1,12 +1,6 @@
-int :: s64;
-
-main :: (args: [] str) -> s64 {
-    x: int = k -> s64;
-    y: int = cast(s64) k;
-    ret fibonacci(cast((*u8)->int) n);
-}
-
 fibonacci :: (n: int) {
     if n <= 2 ret 1;
     ret fibonacci(n-1) + fibonacci(n-2);
 }
+
+int :: s64;

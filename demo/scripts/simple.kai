@@ -1,10 +1,11 @@
-add :: (left: s64, right: f64) -> s64 {
-    v := left;
-    ret (left + right) * left;
+add :: (left: s64, right: s64) -> s64 {
+    result := (left + right) / type_of(b);
+    ret result;
 }
 
-other :: (a: s64, b: s64) -> s64 {
-    ret a + b;
+main :: (a: s64, b: s64) -> s64 {
+    value := add(a, b);
+    ret value;
 }
 
-// %0 = cast.f64<-s64 arg(0)
+b :: 4;

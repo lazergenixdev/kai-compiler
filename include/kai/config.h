@@ -1,6 +1,15 @@
 #ifndef KAI_CONFIG_H
 #define KAI_CONFIG_H
 
+/*
+ * CONVENTIONS:
+ *
+ * Types:           begin with "Kai_"
+ * Functions:       begin with "kai_"
+ * Enums/Macros:    begin with "KAI_"
+ *
+ */
+
 // I literally don't care that `__` identifiers are reserved,
 //   use them anyway.
 #ifdef __cplusplus

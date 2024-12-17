@@ -1,9 +1,20 @@
 #ifndef TOKEN_H
 #include <kai/parser.h>
 
+// usage: token.type = TT2("->");
+#define TT2(S) ( \
+        ((Kai_u32)((S)[1]) << 8) \
+    |   ((Kai_u32)((S)[0])     ))
+
+// usage: token.type = TT3("---");
+#define TT3(S) ( \
+        ((Kai_u32)((S)[2]) << 16) \
+    |   ((Kai_u32)((S)[1]) <<  8) \
+    |   ((Kai_u32)((S)[0])      ))
+
 #define KEYWORD_START 0x80
 
-#define XTOKEN_KEYWORDS \
+#define X_TOKEN_KEYWORDS \
 X(break   , KEYWORD_START | 0) \
 X(cast    , KEYWORD_START | 1) \
 X(continue, KEYWORD_START | 2) \
@@ -24,23 +35,23 @@ enum Token_Enum {
     T_STRING     = 0xC0 | 2,
     T_NUMBER     = 0xC0 | 3,
 #define X(NAME,ID) T_KW_ ## NAME = ID,
-    XTOKEN_KEYWORDS
+    X_TOKEN_KEYWORDS
 #undef X
 };
 
-#define XTOKEN_SYMBOLS \
-X('->') \
-X('=>') \
-X('==') \
-X('!=') \
-X('<=') \
-X('>=') \
-X('&&') \
-X('||') \
-X('<<') \
-X('>>') \
-X('..') \
-X('---')
+#define X_TOKEN_SYMBOLS \
+X(TT2("->"), '->') \
+X(TT2("=>"), '=>') \
+X(TT2("=="), '==') \
+X(TT2("!="), '!=') \
+X(TT2("<="), '<=') \
+X(TT2(">="), '>=') \
+X(TT2("&&"), '&&') \
+X(TT2("||"), '||') \
+X(TT2("<<"), '<<') \
+X(TT2(">>"), '>>') \
+X(TT2(".."), '..') \
+X(TT3("---"), '---')
 
 #define token_is_keyword(TOKEN_TYPE) \
     ((TOKEN_TYPE) < T_IDENTIFIER && (TOKEN_TYPE) >= KEYWORD_START)

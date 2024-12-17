@@ -1,4 +1,6 @@
-﻿#include <Windows.h>
+﻿#define PLATFORM 0
+
+//#include <Windows.h>
 #include "kai/kai.h"
 #include "kai/memory.h"
 #include "kai/debug.h"
@@ -72,44 +74,57 @@ void _kai_print_impl(Kai_str s) {
 	std::cout << view(s) << '\n';
 }
 
-//#define FILENAME "test.kai"
-#define FILENAME "constants.kai"
-//#define FILENAME "generated.kai"
-//#define FILENAME "simple.kai"
-//#define FILENAME "fibo.kai"
+void print_source(Kai_str s) {
+    int line_number = 1;
+    printf("%3i │ \x1b[1;97m", line_number);
+    for (int i = 0; i < s.count; ++i) {
+        char c = s.data[i];
+        putchar(c);
+        if (c == '\n') {
+            printf("\x1b[0m%3i │ \x1b[1;97m", ++line_number);
+        }
+    }
+	printf("\x1b[0m");
+}
 
-#define FILEPATH "scripts/" FILENAME
-
-int main() {
+int main(int argc, char* argv[]) {
 	/////////////////////////////////////////////////
 	// Setup
-	SetConsoleOutputCP( CP_UTF8 );
-	setlocale( LC_ALL, ".UTF8" );
+	//SetConsoleOutputCP(CP_UTF8);
+	setlocale(LC_ALL, ".UTF8");
 
-	std::cout << kai_get_version_string().data;
+    if (argc <= 1) {
+        std::cout << "error: No input files\n";
+        return -1;
+    }
+
+	std::cout << view(kai_get_version_string());
 	std::cout << '\n';
 
 	/////////////////////////////////////////////////
 	// Load Source File
-	File source_file = read_entire_file(FILEPATH);
+	File source_file = read_entire_file(argv[1]);
 
 	if (source_file.data == nullptr) {
-		std::cout << "failed to read file: \"" << FILEPATH << "\"\n";
+		std::cout << "failed to read file: \"" << argv[1] << "\"\n";
 		exit(0);
 	}
+
 	Kai_str source_code;
 	source_code.data = (Kai_u8*)source_file.data;
 	source_code.count = (Kai_int)source_file.size;
-	std::cout << '\n' << view(source_code) << '\n';
-	
 
+	std::cout << "\n-------------------------------< Source File >-------------------------------\n";
+    print_source(source_code);
+	
 	/////////////////////////////////////////////////
 	// Create Abstract Syntax Tree
+	std::cout << "\n--------------------------------< Parse Tree >-------------------------------\n";
 	kai::Memory memory;
 	Kai_Result result;
 	Kai_AST tree;
-	tree.source_filename.data = (Kai_u8*)FILEPATH;
-	tree.source_filename.count = sizeof(FILEPATH) - 1;
+	tree.source_filename.data = (Kai_u8*)argv[1];
+	tree.source_filename.count = strlen(argv[1]);
 	Kai_Error error = {};
 	{
 		timer t;
@@ -128,17 +143,19 @@ int main() {
 
 	/////////////////////////////////////////////////
 	// Print some statistics
-	std::cout << "\nParsing took: " << time_took_ms << " ms\n";
+	std::cout << "\nParsing took: " << time_took_ms << " ms";
 	std::cout << "\nMemory Usage: " << kai_memory_usage(&memory) << " bytes\n";
 
-//	return 0;
+
+	std::cout << "\n------------------------------< Compile Program >------------------------------\n";
 
 	auto print_ref = Kai_Native_Procedure {
-		.address = reinterpret_cast<void*>(&_kai_print_impl),
-		.name = KAI_STR("print"),
+		.address   = reinterpret_cast<void*>(&_kai_print_impl),
+		.name      = KAI_STR("print"),
 		.signature = KAI_STR("(str)")
 	};
 
+    std::cout.flush();
 
 	/////////////////////////////////////////////////
 	// Create program
@@ -159,8 +176,10 @@ int main() {
 	if (KAI_FAILED(result)) {
 		auto n = &error;
 		while (n != nullptr) {
+            // TODO: Hard-Coded to only work with one file, this is bad
 			n->location.source    = source_code.data;
 			n->location.file_name = tree.source_filename;
+            // ***
 			n = n->next;
 		}
 		kai_debug_write_error(kai_debug_clib_writer(), &error);

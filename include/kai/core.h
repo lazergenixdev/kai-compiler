@@ -18,28 +18,24 @@ enum {
 	KAI_FALSE = 0,
 	KAI_TRUE  = 1,
 };
-typedef uint8_t   Kai_bool;
 
+typedef uint8_t   Kai_bool;
 typedef int8_t    Kai_s8;
 typedef int16_t   Kai_s16;
 typedef int32_t   Kai_s32;
 typedef int64_t   Kai_s64;
-
 typedef uint8_t   Kai_u8;
 typedef uint16_t  Kai_u16;
 typedef uint32_t  Kai_u32;
 typedef uint64_t  Kai_u64;
-
-typedef Kai_s64   Kai_int;
-
 typedef double    Kai_f64;
 typedef float     Kai_f32;
-
 typedef void*     Kai_ptr;
+typedef Kai_s64   Kai_int;
 
 typedef struct Kai_Type_Info* Kai_Type;
 
-// TODO: Add vector, matrix, quaternion types
+// TODO: Add vector, matrix, ... types
 //typedef Kai_f32 kai_f32x2[2];
 //typedef Kai_f32 kai_f32x3[3];
 //typedef Kai_f32 kai_f32x4[4];
@@ -73,7 +69,6 @@ typedef struct {
 	Kai_s32 patch;
 } Kai_Version;
 
-// .version: [out]
 KAI_API(void)
 	kai_get_version(Kai_Version* Version);
 
@@ -83,7 +78,7 @@ KAI_API(Kai_str)
 
 // ==============================> Type Info <=================================
 
-typedef enum {
+enum {
 	KAI_TYPE_TYPE      = 0, // No Type_Info struct for this.
 	KAI_TYPE_INTEGER   = 1,
 	KAI_TYPE_FLOAT     = 2,
@@ -92,7 +87,7 @@ typedef enum {
 	KAI_TYPE_ARRAY     = 5,
 	KAI_TYPE_STRING    = 6,
 	KAI_TYPE_STRUCT    = 7,
-} KAI_TYPE_;
+};
 
 typedef struct Kai_Type_Info {
 	Kai_u8 type;
@@ -136,13 +131,9 @@ KAI_API(Kai_bool)
 
 // ================================> Memory <==================================
 
-// Allocate "Byte_Count" number of bytes
 typedef Kai_ptr (*Kai_P_Allocate_Memory)(Kai_ptr User, Kai_int Byte_Count);
 
 typedef struct {
-	// There is NO "free" function
-	//   Memory "object" is required to keep track of all the memory
-	//   it allocates and free it when the compiler is no longer using it.
 	Kai_P_Allocate_Memory alloc;
 	Kai_ptr temperary;
 	Kai_u64 temperary_size;

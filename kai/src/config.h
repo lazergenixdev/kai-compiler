@@ -1,11 +1,13 @@
 #ifndef CONFIG_H
 #include <kai/core.h>
 #include <string.h>  // --> memset, memcpy
+#include <stdio.h>   // --> printf
 
 // ==============================<< Shortcuts >>===============================
 
 #define for_n(N)  for (Kai_int i = 0; i < (Kai_int)(N); ++i)
 #define for_(I,N) for (Kai_int I = 0; I < (Kai_int)(N); ++I)
+#define count_(ARR) (sizeof(ARR)/sizeof(ARR[0]))
 #define zero_memory(P) memset(P, 0, sizeof(*P))
 
 
@@ -28,7 +30,6 @@
 #define TRACE_LEVEL 1
 
 #if TRACE_LEVEL > 0
-#    include <stdio.h> // --> printf
 #    define D_INFO(...) log("info", FUNCTION, __LINE__, __VA_ARGS__)
 #    define panic_with_message(...) print_location(), printf(__VA_ARGS__), panic()
 #else
@@ -52,7 +53,7 @@
     printf(__VA_ARGS__), \
     putchar('\n')
 
-#define print_location() printf("in (" __FUNCTION__ ":%i)\n", __LINE__)
+#define print_location() printf("in (%s:%i)\n", __FUNCTION__, __LINE__)
 
 extern void panic();
 
