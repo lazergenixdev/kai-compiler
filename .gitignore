@@ -10,15 +10,10 @@
 **.vcxproj
 **.vcxproj.user
 **.vcxproj.filters
-# Complement to resource files
 **.aps
 
-# get tf outta here "Visual Studio Code"
+# Visual Studio Code files
 **.vscode
 
-# Make
-**/Makefile
-
 # Build Binaries
-bin/
-bin-int/
+build/

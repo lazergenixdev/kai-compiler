@@ -1,6 +1,0 @@
-fibonacci :: (n: int) {
-    if n <= 2 ret 1;
-    ret fibonacci(n-1) + fibonacci(n-2);
-}
-
-int :: s64;

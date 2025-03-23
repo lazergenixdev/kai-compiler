@@ -1,0 +1,12 @@
+
+//print :: (value: str) -> void #native;
+//
+//main :: (x: s64) -> s64 {
+//    x := 400
+//	print("goodbye world");
+//	ret 0x45;
+//}
+
+add :: (a: s32, b: s32) -> s32 {
+	ret a + b;
+}
