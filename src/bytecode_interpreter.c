@@ -101,7 +101,8 @@ call:
     asm ( "blr %0"      :: "r" (address) : "x30" );
     asm ( "mov %0, x0"  : "=r" (result) );
 #else
-#   error "Dynamic call not implemented for this architecture!"
+    bc__debug_log("what is this now?");
+//#   error "Dynamic call not implemented for this architecture!"
 #endif
     return result;
 }
@@ -173,19 +174,42 @@ int bci_create(Bc_Interpreter* interp, Bc_Interpreter_Setup* info)
     return 0;
 }
 
-void bci_reset_from_stream(Bc_Interpreter* interp, Bc_Stream* stream)
+void bci_load_from_stream(Bc_Interpreter* interp, Bc_Stream* stream)
 {
     interp->bytecode = stream->data;
     interp->count    = stream->count;
 }
 
+void bci_load_from_memory(Bc_Interpreter* interp, void* code, uint32_t size)
+{	
+    interp->bytecode = code;
+    interp->count    = size;
+}
+
 void bci_reset(Bc_Interpreter* interp, uint32_t location)
 {
-    interp->flags = 0;
     interp->pc = location;
-    interp->call_stack_count = 1; // setup stack for execution
+    interp->flags = 0;
     interp->return_registers_count = 0;
+	interp->frame_max_register_written = 0;
+	interp->stack_size = 0;
+
+	// setup stack for execution
+    interp->call_stack_count = 1;
+	interp->call_stack[0].base_register = 0;
+	interp->call_stack[0].return_address = 0; // final return will end exection, not used.
 }
+
+void bci_set_input(Bc_Interpreter* interp, uint32_t index, Bc_Value value)
+{
+	interp->registers[index] = value;
+}
+
+void bci_push_output(Bc_Interpreter* interp, Bc_Reg reg)
+{
+	interp->return_registers[interp->return_registers_count++] = 0;
+}
+
 
 #define BC_X_INSTRUCTIONS  \
     X(BC_OP_NOP          ) \
@@ -276,25 +300,25 @@ int bci_step(Bc_Interpreter* interp)
         Bc_Reg dst;
         uint8_t type;
         uint8_t comp;
-
+		
         if (bci__next_reg(interp, &dst)) return 0;
         if (bci__next_u8(interp, &type)) return 0;
         if (bci__next_u8(interp, &comp)) return 0;
-
+		
         uint8_t is_value = type & 0x80;
         type &= 0x7F;
-
+		
         Bc_Value va, vb;
         {
-            uint32_t a;
+			uint32_t a;
             if (bci__next_reg(interp, &a)) return 0;
             if (bci__read_register(interp, a, &va)) return 0;
         }
-
+		
         if (is_value) {
-            if (bci__next_value(interp, type, &vb)) return 0;
+			if (bci__next_value(interp, type, &vb)) return 0;
         } else {
-            uint32_t b;
+			uint32_t b;
             if (bci__next_reg(interp, &b)) return 0;
             if (bci__read_register(interp, b, &vb)) return 0;
         }

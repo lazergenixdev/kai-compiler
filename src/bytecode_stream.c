@@ -34,7 +34,7 @@ int bcs__ensure_space(Bc_Stream* stream, uint32_t added_count) {
 #define bcs__push_address(stream, value) *(uintptr_t*)(stream->data + stream->count) = (uintptr_t)value, stream->count += sizeof(uintptr_t)
 static void bcs__push_value(Bc_Stream* stream, Bc_Type type, Bc_Value value) {
     uint32_t size = bc__type_to_size[type];
-    for (int i = 0; i < size; ++i) {
+    for (uint32_t i = 0; i < size; ++i) {
         stream->data[stream->count + i] = ((uint8_t*)&value)[i];
     }
     stream->count += size;

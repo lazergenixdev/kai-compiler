@@ -11,10 +11,12 @@
 #define BC__LOG_LEVEL 0
 #endif
 
-#if BC__LOG_LEVEL > 0 && !defined(bc__debug_log)
-#   define bc__debug_log(...) printf(__VA_ARGS__), putchar('\n')
-#else
-#   define bc__debug_log(...) (void)0
+#ifndef bc__debug_log
+#	if BC__LOG_LEVEL > 0
+#	   define bc__debug_log(...) printf(__VA_ARGS__), putchar('\n')
+#	else
+#	   define bc__debug_log(...) (void)0
+#	endif
 #endif
 
 #define BC_X_PRIMITIVE_TYPES \
@@ -114,7 +116,7 @@ typedef struct {
     uint32_t              return_registers_count;
     uint32_t              max_return_values_count;
     
-    // Native :)
+    // Native Functions
     Bc_Native_Procedure * native_procedures;
     uint32_t              native_procedure_count;
 
@@ -184,8 +186,10 @@ uint32_t bci_required_memory_size(Bc_Interpreter_Setup* info);
 int bci_create(Bc_Interpreter* interp, Bc_Interpreter_Setup* info);
 int bci_step(Bc_Interpreter* interp);
 void bci_reset(Bc_Interpreter* interp, uint32_t location);
-void bci_reset_from_stream(Bc_Interpreter* interp, Bc_Stream* stream);
-void bci_reset_from_memory(Bc_Interpreter* interp, void* code, uint32_t size);
+void bci_set_input(Bc_Interpreter* interp, uint32_t index, Bc_Value value);
+void bci_push_output(Bc_Interpreter* interp, Bc_Reg reg);
+void bci_load_from_stream(Bc_Interpreter* interp, Bc_Stream* stream);
+void bci_load_from_memory(Bc_Interpreter* interp, void* code, uint32_t size);
 
 void bc_convert_to_string(Bc_Def* def, Bc_Writer_Proc* writer, void* user);
 void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user);

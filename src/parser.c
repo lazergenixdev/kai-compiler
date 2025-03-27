@@ -30,7 +30,7 @@ typedef struct {
 
 Kai_u8 hack__delete_me[1024];
     
-extern inline Kai_Expr alloc_type(Parser* p, Kai_u64 size, Kai_u8 id) {
+extern inline Kai_Expr alloc_type(Parser* p, Kai_u32 size, Kai_u8 id) {
     Kai_Expr expr = kai__arena_allocate(&p->arena, size);
     expr->id = id;
     return expr;
@@ -642,7 +642,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         if (p->type != ':') goto parse_expression_statement;
         
         Kai_str name = t->string;
-        Kai_int line_number = t->line_number;
+        Kai_u32 line_number = t->line_number;
         p_next(); // current = peeked
         p_next(); // see what is after current
 
@@ -694,7 +694,7 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
     };
     Parser* const parser = &p;
     
-    kai__create_dynamic_arena_allocator(&p.arena, &info->memory);
+    kai__create_dynamic_arena_allocator(&p.arena, &info->allocator);
 
     // setup first token
     Token* token = p_next();
@@ -715,7 +715,7 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
     tree->root.id = KAI_STMT_COMPOUND;
     tree->root.head = head;
 
-    if (KAI_FAILED(p.error.result)) {
+    if (p.error.result != KAI_SUCCESS) {
         if (info->error) {
             *info->error = p.error;
             info->error->location.file_name = tree->source_filename;

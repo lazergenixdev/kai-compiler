@@ -6,15 +6,21 @@
 #include <stdio.h>   // --> printf
 
 #define MACRO_PRAGMA(X) _Pragma(#X)
-#define DISABLE_WARNING(WARNING) MACRO_PRAGMA(GCC diagnostic ignored WARNING)
 
-//#if defined(_MSC_VER)
-//#   define KAI_DISABLE_WARNING(WARNING)  MACRO_PRAGMA(warning(disable: WARNING))
-//#elif defined(__clang__)  || defined(__GNUC__) || defined(__GNUG__)
-//#   define KAI_DISABLE_WARNING(WARNING)  MACRO_PRAGMA(GCC diagnostic ignored WARNING)
-//#endif
+#if defined(KAI__COMPILER_MSVC)
+#    define KAI__MSVC_DISABLE_WARNING(WARNING) MACRO_PRAGMA(warning(disable : WARNING))
+#else
+#    define KAI__MSVC_DISABLE_WARNING(WARNING)
+#endif
 
-DISABLE_WARNING("-Wmultichar") // I know what i'm doing 😎
+#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
+#    define KAI__CLANG_DISABLE_WARNING(WARNING) MACRO_PRAGMA(GCC diagnostic ignored WARNING)
+#else
+#    define KAI__CLANG_DISABLE_WARNING(WARNING)
+#endif
+
+KAI__CLANG_DISABLE_WARNING("-Wmultichar")
+
 
 // ==============================<< Shortcuts >>===============================
 
@@ -58,9 +64,9 @@ extern void panic(void);
 
 // Must have a buffer declared as "char temp[..]"
 #define kai__write_format(...) {                                                              \
-    Kai_int count = snprintf(temp, sizeof(temp), __VA_ARGS__);                            \
-    count = count < sizeof(temp)-1? count : sizeof(temp)-1;                               \
-    writer->write_string(writer->user, (Kai_str){.count = count, .data = (Kai_u8*)temp}); \
+    int count = snprintf(temp, sizeof(temp), __VA_ARGS__);                            \
+    count = (count < sizeof(temp)-1) ? count : sizeof(temp)-1;                               \
+    writer->write_string(writer->user, (Kai_str){.count = (Kai_u32)count, .data = (Kai_u8*)temp}); \
 } (void)0
 
 #define str_insert_string(Dest, String) \

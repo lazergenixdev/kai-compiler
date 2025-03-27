@@ -3,14 +3,14 @@
 int parser() {
     TEST();
 
-    Kai_Memory_Allocator memory = {0};
-    kai_create_memory(&memory);
+    Kai_Memory_Allocator allocator = {0};
+    kai_create_memory(&allocator);
 
     Kai_Error error = {0};
     Kai_Syntax_Tree tree = {0};
     Kai_Syntax_Tree_Create_Info info = {
         .error = &error,
-        .memory = memory,
+        .allocator = allocator,
         .source_code = KAI_STRING(
             "E0 :: identifier;\n"
             "E1 :: **unary;\n"
@@ -39,7 +39,7 @@ int parser() {
     }
 
     kai_destroy_syntax_tree(&tree);
-    kai_destroy_memory(&memory);
+    kai_destroy_memory(&allocator);
 
     return (result != KAI_SUCCESS) ? FAIL : PASS;
 }

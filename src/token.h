@@ -58,7 +58,7 @@ typedef struct {
     Token    current_token;
     Token    peeked_token;
     Kai_str  source;
-    Kai_int  cursor;
+    Kai_u32  cursor;
     Kai_u32  line_number;
     Kai_bool peeking;
 } Tokenization_Context;

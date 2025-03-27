@@ -2,23 +2,12 @@
 #include "config.h"
 #include "stdlib.h" // -> malloc, free
 
-#define KAI_PLATFORM_UNIX     0
-#define KAI_PLATFORM_WINDOWS  1
-
-#if defined(_WIN32)
-#   define KAI_CURRENT_PLATFORM  KAI_PLATFORM_WINDOWS
-#elif defined(__linux__) || defined(__APPLE__)
-#   define KAI_CURRENT_PLATFORM  KAI_PLATFORM_UNIX
-#else
-#   error "unknown platform"
-#endif
-
 typedef struct {
     Kai_u32 debug_level;
     Kai_u32 total_allocated;
 } Kai__Memory_Internal;
 
-#if KAI_CURRENT_PLATFORM == KAI_PLATFORM_UNIX
+#if defined(KAI__PLATFORM_LINUX) || defined(KAI__PLATFORM_APPLE)
 #include <sys/mman.h> // -> mmap
 #include <unistd.h>   // -> getpagesize
 
@@ -55,22 +44,22 @@ void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 acc
 
 #define kai__page_size() sysconf(_SC_PAGESIZE)
 
-#elif KAI_CURRENT_PLATFORM == KAI_PLATFORM_WINDOWS
+#elif defined(KAI__PLATFORM_WINDOWS)
 typedef unsigned long  DWORD;
 typedef int            BOOL;
 typedef DWORD         *PDWORD;
 typedef void          *LPVOID;
 typedef uintptr_t      SIZE_T;
 #define WINAPI __stdcall
-
-LPVOID WINAPI VirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect);
-BOOL WINAPI VirtualProtect(LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, PDWORD lpflOldProtect);
-BOOL WINAPI VirtualFree(LPVOID lpAddress, SIZE_T dwSize, DWORD dwFreeType);
 typedef struct {
 	DWORD dwOemId;
 	DWORD dwPageSize;
 	void* padding[8];
 } SYSTEM_INFO;
+
+LPVOID WINAPI VirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect);
+BOOL WINAPI VirtualProtect(LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, PDWORD lpflOldProtect);
+BOOL WINAPI VirtualFree(LPVOID lpAddress, SIZE_T dwSize, DWORD dwFreeType);
 void GetSystemInfo(SYSTEM_INFO* lpSystemInfo);
 
 void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
@@ -109,7 +98,7 @@ Kai_u32 kai__page_size()
 
 #endif
 
-void kai_create_memory(Kai_Memory_Allocator* Memory)
+Kai_Result kai_create_memory(Kai_Memory_Allocator* Memory)
 {
     Memory->allocate = kai__memory_allocate;
     Memory->free = kai__memory_free;
@@ -118,22 +107,25 @@ void kai_create_memory(Kai_Memory_Allocator* Memory)
     Memory->user = malloc(sizeof(Kai__Memory_Internal));
 
     if (!Memory->user) {
-        panic_with_message("malloc failed!");
+		return KAI_MEMORY_ERROR_OUT_OF_MEMORY;
     }
 
     Kai__Memory_Internal* internal = Memory->user;
     internal->debug_level = KAI_MEMORY_DEBUG_OFF;
     internal->total_allocated = 0;
+	return KAI_SUCCESS;
 }
 
-void kai_destroy_memory(Kai_Memory_Allocator* Memory)
+Kai_Result kai_destroy_memory(Kai_Memory_Allocator* Memory)
 {
     Kai__Memory_Internal* internal = Memory->user;
-    if (internal->total_allocated) {
-        panic_with_message("Some allocations were not freed! (amount=%u B)", internal->total_allocated);
+    if (internal->total_allocated != 0) {
+		//  panic_with_message("Some allocations were not freed! (amount=%u B)", internal->total_allocated);
+		return KAI_MEMORY_ERROR_MEMORY_LEAK;
     }
     free(Memory->user);
-    *Memory = (Kai_Memory_Allocator) {};
+    *Memory = (Kai_Memory_Allocator) {0};
+	return KAI_SUCCESS;
 }
 
 void kai_memory_set_debug(Kai_Memory_Allocator* Memory, Kai_u32 debug_level)

@@ -4,8 +4,8 @@
 
 int run(Bc_Interpreter* interp, Kai_s32 value, Kai_s32* out) {
     bci_reset(interp, 0);
-    interp->return_registers[interp->return_registers_count++] = 0;
-    interp->registers[0].S32 = value;
+	bci_set_input(interp, 0, (Bc_Value) {.S32 = value});
+	bci_push_output(interp, 0);
 
     int i = 0, max_step_count = 1000;
     while(bci_step(interp) && i++ < max_step_count);
@@ -90,7 +90,7 @@ int bytecode() {
         interp_info.memory = malloc(bci_required_memory_size(&interp_info));
         bci_create(&interp, &interp_info);
     }
-    bci_reset_from_stream(&interp, &stream);
+    bci_load_from_stream(&interp, &stream);
 
     Kai_s32 expected[] = { 1, 1, 2, 3, 5, 8, 13, 21 };
 

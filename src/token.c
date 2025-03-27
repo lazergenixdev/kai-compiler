@@ -35,7 +35,7 @@ void insert_token_type_string(Kai_str* out, Kai_u32 type) {
 }
 
 Kai_str keyword_map[] = {
-#define X(NAME, ID) KAI_STRING(#NAME),
+#define X(NAME, ID) {#NAME, sizeof(#NAME) - 1},
     X_TOKEN_KEYWORDS
 #undef X
 };
@@ -177,13 +177,15 @@ Token generate_token(Tokenization_Context* context) {
             token.string.count = 0;
             ++cursor;
             ++token.string.data;
-            Kai_int start = cursor;
+            Kai_u32 start = cursor;
             while (cursor < source.count) {
-                if (source.data[cursor++] == '\"') {
+                if (source.data[cursor] == '\"') {
                     break;
                 }
+                cursor += 1;
             }
-            token.string.count = cursor - start - 1;
+            token.string.count = (Kai_u32)(cursor - (Kai_uint)start);
+			cursor += 1;
             return token;
         }
 
@@ -197,13 +199,13 @@ Token generate_token(Tokenization_Context* context) {
                 if (source.data[cursor] == 'b') {
                     ++cursor;
                     parse_number_bin(context, &token.number.Whole_Part);
-                    token.string.count = (source.data + cursor) - token.string.data;
+                    token.string.count = (Kai_u32)((Kai_uint)(source.data + cursor) - (Kai_uint)token.string.data);
                     return token;
                 }
                 if (source.data[cursor] == 'x') {
                     ++cursor;
                     parse_number_hex(context, &token.number.Whole_Part);
-                    token.string.count = (source.data + cursor) - token.string.data;
+                    token.string.count = (Kai_u32)((Kai_uint)(source.data + cursor) - (Kai_uint)token.string.data);
                     return token;
                 }
             }
@@ -236,7 +238,7 @@ Token generate_token(Tokenization_Context* context) {
                 else                token.number.Exp_Part = factor * (Kai_s32)n;
             }
 
-            token.string.count = (source.data + cursor) - token.string.data;
+            token.string.count = (Kai_u32)((source.data + cursor) - token.string.data);
             return token;
         }
 

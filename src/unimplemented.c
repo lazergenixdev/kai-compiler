@@ -7,20 +7,12 @@ kai_destroy_program(Kai_Program Program)
 	UNIMPLEMENTED(Program);
 }
 
-Kai_int __test(Kai_array args) {
-    for (int i = 0; i < args.count; ++i) {
-        Kai_str str = ((Kai_str*)args.data)[i];
-        printf("arg %i: %*s\n", i, (int)str.count, (char*)str.data);
-    }
-    return 0;
-}
-
 void*
 kai_find_procedure(Kai_Program Program, char const* Name, char const* Type)
 {
 //    Kai_Type type = kai__parse_type(Type);
 //    return kai__program_find(Program, Name, type);
-    return &__test;
+    return NULL;
 }
 
 void
@@ -51,7 +43,7 @@ Kai_bool is_convertible(Kai_Type from, Kai_Type to) {
             return KAI_FALSE;
         } break;
 
-        case KAI_TYPE_ARRAY: {
+        case KAI_TYPE_SLICE: {
             return KAI_FALSE;
         } break;
 
@@ -66,6 +58,7 @@ Kai_bool is_convertible(Kai_Type from, Kai_Type to) {
     }
 }
 
+#if 0
 void __branching_examples() {
     int EXPR;
     // if (EXPR) { A } else { B }
@@ -99,3 +92,4 @@ endwhile__0:
     // BYTECODE_OP_JUMP
     (void)0;
 }
+#endif

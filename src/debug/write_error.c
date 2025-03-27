@@ -103,7 +103,7 @@ write_error_message:
     for_n(digits) kai__write_char(' ');
     kai__write("  |\n");
 
-    kai__write_format(" %" PRIi32, error->location.line);
+    kai__write_format(" %" PRIu32, error->location.line);
     kai__write(" | ");
 
     Kai_u8 const* begin = kai__advance_to_line(error->location.source, error->location.line);

@@ -13,21 +13,24 @@ static Kai_Type_Info_Integer kai__type_info_u64  = { .type = KAI_TYPE_INTEGER, .
 static Kai_Type_Info_Float   kai__type_info_f32  = { .type = KAI_TYPE_FLOAT, .bits = 32 };
 static Kai_Type_Info_Float   kai__type_info_f64  = { .type = KAI_TYPE_FLOAT, .bits = 64 };
 
+#define __temp(X) \
+  { X, sizeof(X) - 1 }
+
 static struct {
     Kai_str  name;
     Kai_Type info;
 } builtin_types [] = {
-    { .name = KAI_STRING("Type"), .info = (Kai_Type)&kai__type_info_type },
-    { .name = KAI_STRING("s8"),   .info = (Kai_Type)&kai__type_info_s8   },
-    { .name = KAI_STRING("s16"),  .info = (Kai_Type)&kai__type_info_s16  },
-    { .name = KAI_STRING("s32"),  .info = (Kai_Type)&kai__type_info_s32  },
-    { .name = KAI_STRING("s64"),  .info = (Kai_Type)&kai__type_info_s64  },
-    { .name = KAI_STRING("u8"),   .info = (Kai_Type)&kai__type_info_u8   },
-    { .name = KAI_STRING("u16"),  .info = (Kai_Type)&kai__type_info_u16  },
-    { .name = KAI_STRING("u32"),  .info = (Kai_Type)&kai__type_info_u32  },
-    { .name = KAI_STRING("u64"),  .info = (Kai_Type)&kai__type_info_u64  },
-    { .name = KAI_STRING("f32"),  .info = (Kai_Type)&kai__type_info_f32  },
-    { .name = KAI_STRING("f64"),  .info = (Kai_Type)&kai__type_info_f64  },
+    { .name = __temp("Type"), .info = (Kai_Type)&kai__type_info_type },
+    { .name = __temp("s8"),   .info = (Kai_Type)&kai__type_info_s8   },
+    { .name = __temp("s16"),  .info = (Kai_Type)&kai__type_info_s16  },
+    { .name = __temp("s32"),  .info = (Kai_Type)&kai__type_info_s32  },
+    { .name = __temp("s64"),  .info = (Kai_Type)&kai__type_info_s64  },
+    { .name = __temp("u8"),   .info = (Kai_Type)&kai__type_info_u8   },
+    { .name = __temp("u16"),  .info = (Kai_Type)&kai__type_info_u16  },
+    { .name = __temp("u32"),  .info = (Kai_Type)&kai__type_info_u32  },
+    { .name = __temp("u64"),  .info = (Kai_Type)&kai__type_info_u64  },
+    { .name = __temp("f32"),  .info = (Kai_Type)&kai__type_info_f32  },
+    { .name = __temp("f64"),  .info = (Kai_Type)&kai__type_info_f64  },
 };
 
 #endif // BUILTIN_TYPES_H

@@ -5,10 +5,17 @@
 #include <inttypes.h>
 
 char const* const branches[4] = {
-    "\u2503   ",
-    "\u2523\u2501\u2501 ",
+#if 1
+    u8"\u2503   ",
+    u8"\u2523\u2501\u2501 ",
+    u8"    ",
+    u8"\u2517\u2501\u2501 ",
+#else
+    "|   ",
+    "|\u23AF\u23AF ",
     "    ",
-    "\u2517\u2501\u2501 ",
+    "\u2517\u23AF\u23AF ",
+#endif
 };
 
 typedef struct { 
@@ -328,8 +335,6 @@ kai_debug_write_syntax_tree(Kai_Debug_String_Writer* writer, Kai_Syntax_Tree* tr
         .stack_count = 0,
         .writer = writer,
     };
-    char temp[32];
-
     kai__write("Top Level\n");
     _explore(&context, (Kai_Stmt)&tree->root, 1, KAI_TRUE);
 }

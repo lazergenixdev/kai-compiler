@@ -9,6 +9,31 @@ kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program) {
 	return KAI_ERROR_FATAL;
 }
 
+Kai_Result kai_create_program_from_source(
+	Kai_str               Source,
+	Kai_Memory_Allocator* Allocator,
+	Kai_Error*            out_Error,
+	Kai_Program*          out_Program)
+{
+	Kai_Result result;
+	Kai_Syntax_Tree syntax_tree = {0};
+	{
+		Kai_Syntax_Tree_Create_Info info = {
+			.source_code = Source,
+			.error = out_Error,
+			.allocator = *Allocator,
+		};
+		result = kai_create_syntax_tree(&info, &syntax_tree);
+	}
+
+	if (result != KAI_SUCCESS) {
+		return result;
+	}
+
+	*out_Program = NULL;
+	return KAI_SUCCESS;
+}
+
 #if 0
 
 // TODO: DEBUG ONLY

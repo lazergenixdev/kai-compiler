@@ -4,7 +4,7 @@
 #define KAI_USE_CPP_API
 #include "../include/kai/kai.h"
 
-using P_main = Kai_s32(Kai_array);
+using P_main = Kai_s32(Kai_slice);
 
 namespace exports {
     extern "C" void print(Kai_s32 x) {
@@ -29,9 +29,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Kai_array args {
+    Kai_slice args {
+        .data  = Kai_ptr(argv + 2),
         .count = Kai_u32(argc - 2),
-        .data = Kai_ptr(argv + 2),
     };
     return main_proc(args);
 }

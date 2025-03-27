@@ -59,5 +59,5 @@ int compile_simple_add() {
 
     kai_destroy_memory_allocator(&allocator);
 
-    return KAI_FAILED(result) ? FAIL : PASS;
+    return (result != KAI_SUCCESS) ? FAIL : PASS;
 }
