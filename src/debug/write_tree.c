@@ -5,17 +5,10 @@
 #include <inttypes.h>
 
 char const* const branches[4] = {
-#if 1
-    u8"\u2503   ",
-    u8"\u2523\u2501\u2501 ",
-    u8"    ",
-    u8"\u2517\u2501\u2501 ",
-#else
-    "|   ",
-    "|\u23AF\u23AF ",
-    "    ",
-    "\u2517\u23AF\u23AF ",
-#endif
+    KAI_UTF8("\u2503   "),
+    KAI_UTF8("\u2523\u2501\u2501 "),
+    KAI_UTF8("    "),
+    KAI_UTF8("\u2517\u2501\u2501 "),
 };
 
 typedef struct { 

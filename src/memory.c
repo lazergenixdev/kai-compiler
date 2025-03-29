@@ -98,13 +98,30 @@ Kai_u32 kai__page_size()
 
 #endif
 
+static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size)
+{
+    void* ptr = NULL;
+    if (new_size == 0) {
+        free(old_ptr);
+    } else {
+        kai__assert(old_ptr != NULL || old_size == 0);
+        ptr = realloc(old_ptr, new_size);
+    }
+    Kai__Memory_Internal* internal = user;
+    internal->total_allocated += new_size;
+    internal->total_allocated -= old_size;
+    return ptr;
+}
+
 Kai_Result kai_create_memory(Kai_Memory_Allocator* Memory)
 {
-    Memory->allocate = kai__memory_allocate;
-    Memory->free = kai__memory_free;
-    Memory->set_access = kai__memory_set_access;
-    Memory->page_size = kai__page_size();
-    Memory->user = malloc(sizeof(Kai__Memory_Internal));
+    kai__assert(Memory != NULL);
+    Memory->allocate      = kai__memory_allocate;
+    Memory->free          = kai__memory_free;
+    Memory->heap_allocate = kai__memory_heap_allocate;
+    Memory->set_access    = kai__memory_set_access;
+    Memory->page_size     = kai__page_size();
+    Memory->user          = malloc(sizeof(Kai__Memory_Internal));
 
     if (!Memory->user) {
 		return KAI_MEMORY_ERROR_OUT_OF_MEMORY;
@@ -120,7 +137,6 @@ Kai_Result kai_destroy_memory(Kai_Memory_Allocator* Memory)
 {
     Kai__Memory_Internal* internal = Memory->user;
     if (internal->total_allocated != 0) {
-		//  panic_with_message("Some allocations were not freed! (amount=%u B)", internal->total_allocated);
 		return KAI_MEMORY_ERROR_MEMORY_LEAK;
     }
     free(Memory->user);

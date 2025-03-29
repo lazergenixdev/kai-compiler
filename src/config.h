@@ -21,25 +21,32 @@
 
 KAI__CLANG_DISABLE_WARNING("-Wmultichar")
 
-
 // ==============================<< Shortcuts >>===============================
 
 #define for_n(N)  for (Kai_int i = 0; i < (Kai_int)(N); ++i)
 #define for_(I,N) for (Kai_int I = 0; I < (Kai_int)(N); ++I)
-#define count_(ARR) (sizeof(ARR)/sizeof(ARR[0]))
-
+#define count_of(ARR) (sizeof(ARR)/sizeof(ARR[0]))
 
 // =============================<< MACROS >>===================================
 
-#if   defined(_MSC_VER)
-#    define FUNCTION __FUNCSIG__
-#    define debug_break() __debugbreak()
-#elif defined(__GNUC__)
-#    define FUNCTION __PRETTY_FUNCTION__
-#    define debug_break() __builtin_trap()
+#if defined(KAI_DISABLE_ASSERTS)
+#   define kai__assert(EXPR)
 #else
-#    error "what compiler???"
-#endif // Compiler Detect
+#   define kai__assert(EXPR) \
+        if (!(EXPR)) printf("%s:%i: \x1b[91mAssertion Failed\x1b[0m (\x1b[94m%s\x1b[0m)\n", __FILE__, __LINE__, #EXPR), exit(1)
+#endif
+
+#if defined(KAI__COMPILER_MSVC)
+#    define FUNCTION __FUNCSIG__
+#else
+#    define FUNCTION __PRETTY_FUNCTION__
+#endif
+
+#if defined(KAI__COMPILER_MSVC)
+#   define KAI_CONSTANT_STRING(S) {(Kai_u8*)(S), sizeof(S)-1}
+#else
+#   define KAI_CONSTANT_STRING(S) KAI_STRING(S)
+#endif
 
 #define panic_with_message(...) print_location(), printf(__VA_ARGS__), panic()
 

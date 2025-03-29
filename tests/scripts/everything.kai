@@ -69,7 +69,8 @@ main :: (using env: Environment) {
 //    capacity : u32;
 //    callback : (*u8) -> str;
 //}
-// bs := Bytecode_Stream.(data = file.data, count = file.length);
+//bs := Bytecode_Stream.(data = file.data, count = file.length);
+bs := Bytecode_Stream.(file.data);
 
 //cstdlib :: #import("cstdlib", option = 3);
 //

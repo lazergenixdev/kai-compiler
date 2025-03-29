@@ -7,6 +7,7 @@
 
 extern int bytecode();
 extern int parser();
+extern int hash_table();
 extern int compile_simple_add();
 
 Kai_Debug_String_Writer error_writer;
@@ -22,6 +23,7 @@ int main(int argc, char** argv) {
 
     test parser();
     test bytecode();
+    test hash_table();
     test compile_simple_add();
 
     kai_debug_close_file_writer(&error_writer);

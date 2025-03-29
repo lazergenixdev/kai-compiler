@@ -3,20 +3,29 @@
 #include "builtin_types.h"
 #include "bytecode.h"
 #include <stdlib.h>
+#include "program.h"
 
 Kai_Result
 kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program) {
-	return KAI_ERROR_FATAL;
+	*info->error = (Kai_Error) {
+		.message = KAI_STRING("kai_create_program not implemented"),
+		.result = KAI_ERROR_INTERNAL,
+	};
+	return KAI_ERROR_INTERNAL;
 }
 
+#define kai__check(RESULT) if (RESULT != KAI_SUCCESS) goto cleanup;
 Kai_Result kai_create_program_from_source(
 	Kai_str               Source,
 	Kai_Memory_Allocator* Allocator,
 	Kai_Error*            out_Error,
 	Kai_Program*          out_Program)
 {
-	Kai_Result result;
-	Kai_Syntax_Tree syntax_tree = {0};
+	Kai_Result            result           = KAI_SUCCESS;
+	Kai_Syntax_Tree       syntax_tree      = {0};
+	Kai__Dependency_Graph dependency_graph = {0};
+	Kai__Bytecode         bytecode         = {0};
+
 	{
 		Kai_Syntax_Tree_Create_Info info = {
 			.source_code = Source,
@@ -25,13 +34,119 @@ Kai_Result kai_create_program_from_source(
 		};
 		result = kai_create_syntax_tree(&info, &syntax_tree);
 	}
+	kai__check(result);
+	
+	{
+		Kai__Dependency_Graph_Create_Info info = {
+			.trees = &syntax_tree,
+			.tree_count = 1,
+			.allocator = *Allocator,
+			.error = out_Error,
+		};
+		result = kai__create_dependency_graph(&info, &dependency_graph);
+	}
+	kai__check(result);
 
-	if (result != KAI_SUCCESS) {
-		return result;
+	{
+		result = kai__determine_compilation_order(&dependency_graph, out_Error);
+	}
+	kai__check(result);
+
+	{
+		Kai__Bytecode_Create_Info info = {
+			.error = out_Error,
+		};
+		result = kai__generate_bytecode(&info, &bytecode);
+	}
+	kai__check(result);
+
+	{
+		Kai__Program_Create_Info info = {
+			.bytecode = &bytecode,
+			.error = out_Error,
+		};
+		result = kai__create_program(&info, out_Program);
+	}
+	kai__check(result);
+
+cleanup:
+	kai_destroy_syntax_tree(&syntax_tree);
+	kai__destroy_dependency_graph(&dependency_graph);
+	kai__destroy_bytecode(&bytecode);
+	return result;
+}
+#undef kai__check
+
+Kai_Result kai__create_dependency_graph(
+	Kai__Dependency_Graph_Create_Info* Info,
+	Kai__Dependency_Graph*             out_Graph)
+{
+	out_Graph->compilation_order = NULL;
+	kai__array_reserve(&out_Graph->nodes,  128, &Info->allocator);
+	kai__array_reserve(&out_Graph->scopes,  64, &Info->allocator);
+	out_Graph->allocator = Info->allocator;
+
+	for (int i = 0; i < count_of(kai__builtin_types); ++i) {
+		out_Graph->nodes.elements[out_Graph->nodes.count++] = (Kai__DG_Node) {
+			.type  = &kai__type_info_type,
+			.value = { .type = kai__builtin_types[i].type },
+			.value_flags = KAI__DG_NODE_EVALUATED,
+			.type_flags = KAI__DG_NODE_EVALUATED,
+			.name = kai__builtin_types[i].name,
+			.scope_index = KAI__GLOBAL_SCOPE_INDEX,
+		};
 	}
 
-	*out_Program = NULL;
+	for (int i = 0; i < out_Graph->nodes.count; ++i) {
+		Kai__DG_Node* node = out_Graph->nodes.elements+i;
+		printf("Node \"%*s\" type: ", node->name.count, node->name.data);
+		kai_debug_write_type(kai_debug_stdout_writer(), node->type);
+		printf(" value: ");
+		if (node->type->type == KAI_TYPE_TYPE) {
+			kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
+		}
+		putchar('\n');
+	}
+
 	return KAI_SUCCESS;
+}
+
+Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Error* out_Error)
+{
+	*out_Error = (Kai_Error) {
+		.message = KAI_STRING("kai__determine_compilation_order not implemented"),
+		.result = KAI_ERROR_INTERNAL,
+	};
+	return KAI_ERROR_INTERNAL;
+}
+
+Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode* out_Bytecode)
+{
+	*Info->error = (Kai_Error) {
+		.message = KAI_STRING("kai__generate_bytecode not implemented"),
+		.result = KAI_ERROR_INTERNAL,
+	};
+	return KAI_ERROR_INTERNAL;
+}
+
+Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_Program)
+{
+	*Info->error = (Kai_Error) {
+		.message = KAI_STRING("kai__create_program not implemented"),
+		.result = KAI_ERROR_INTERNAL,
+	};
+	return KAI_ERROR_INTERNAL;
+}
+
+void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
+{
+	kai__destroy_array(&Graph->nodes, &Graph->allocator);
+	kai__destroy_array(&Graph->scopes, &Graph->allocator);
+}
+
+void kai__destroy_bytecode(Kai__Bytecode* Bytecode)
+{
+
 }
 
 #if 0
@@ -333,55 +448,6 @@ error:
 
 Kai_Result
 kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program) {
-#if 0
-	u8 bytes [1000];
-	u32 count = 0;
-
-	bytes[count++] = BYTECODE_OPERATION_LOAD;
-	bytes[count++] = BYTECODE_TYPE_S32;
-	*((u32*)(bytes+count)) = 0;    count += 4;
-	*((s32*)(bytes+count)) = 0x22; count += 4;
-
-	bytes[count++] = BYTECODE_OPERATION_LOAD;
-	bytes[count++] = BYTECODE_TYPE_S32;
-	*((u32*)(bytes+count)) = 1;    count += 4;
-	*((s32*)(bytes+count)) = 0x23; count += 4;
-
-	bytes[count++] = BYTECODE_OPERATION_ADD;
-	bytes[count++] = BYTECODE_TYPE_S32;
-	*((u32*)(bytes+count)) = 2; count += 4;
-	*((u32*)(bytes+count)) = 0; count += 4;
-	*((u32*)(bytes+count)) = 1; count += 4;
-
-	#if 0
-	Bytecode_Stream stream;
-
-	bytecode_stream_create(&stream);
-	/*
-	001		%0 <- (s32) 0x22
-	002		%1 <- (s32) 0x23
-	003		%2 <- add.s32 %0, %1
-	004     branch [+1] %2
-	005		jump   [-2]
-	*/
-	bytecode_stream_insert_load(&stream, BYTECODE_TYPE_S32, 0, (Bytecode_Value) {.value_s32 = 0x22});
-	bytecode_stream_insert_load(&stream, BYTECODE_TYPE_S32, 0, (Bytecode_Value) {.value_s32 = 0x23});
-	bytecode_stream_insert_add(&stream, BYTECODE_TYPE_S32, 2, 0, 1);
-	#endif
-
-	//for (int i = 0; i < count; ++i) printf("%2d ", i); putchar('\n');
-	//for (int i = 0; i < count; ++i) printf("%02x ", bytes[i]); putchar('\n');
-
-	Bytecode_Interpreter interpreter = {
-		.bytecode = bytes,
-		.count = count,
-	};
-
-	while (interp_step(&interpreter));
-
-	//printf("flags = %x\n", interpreter.flags);
-	printf("finished with value = %i\n", interpreter.registers[2].value_s32);
-#endif
 	return KAI_ERROR_FATAL;
 	
 	Compiler_Context context = {

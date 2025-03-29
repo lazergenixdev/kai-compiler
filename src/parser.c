@@ -2,6 +2,18 @@
 #include "token.h"
 #include "allocator.h"
 
+// Optimization Idea:
+// 2 pass parser,
+//   first pass to check for errors and calcuate memory required.
+//   then allocate memory required.
+//   second pass to store syntax tree.
+// (also enables smaller syntax tree size, everything in
+//    one memory allocation, so could use 32 bit pointers)
+// Would make parser slower, but could
+//   save space/be more cache friendly for later stages.
+// .. But this would require a lot of duplicate code,
+//     so not going to implement.
+
 typedef struct {
     Tokenization_Context tokenizer;
     Kai__Dynamic_Arena_Allocator arena;

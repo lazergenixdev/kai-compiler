@@ -1,4 +1,5 @@
-#ifndef BUILTIN_TYPES_H
+#ifndef BUILTIN_TYPES__H
+#define BUILTIN_TYPES__H
 #include "config.h"
 
 static Kai_Type_Info         kai__type_info_type = { .type = KAI_TYPE_TYPE };
@@ -13,24 +14,21 @@ static Kai_Type_Info_Integer kai__type_info_u64  = { .type = KAI_TYPE_INTEGER, .
 static Kai_Type_Info_Float   kai__type_info_f32  = { .type = KAI_TYPE_FLOAT, .bits = 32 };
 static Kai_Type_Info_Float   kai__type_info_f64  = { .type = KAI_TYPE_FLOAT, .bits = 64 };
 
-#define __temp(X) \
-  { X, sizeof(X) - 1 }
-
 static struct {
     Kai_str  name;
-    Kai_Type info;
-} builtin_types [] = {
-    { .name = __temp("Type"), .info = (Kai_Type)&kai__type_info_type },
-    { .name = __temp("s8"),   .info = (Kai_Type)&kai__type_info_s8   },
-    { .name = __temp("s16"),  .info = (Kai_Type)&kai__type_info_s16  },
-    { .name = __temp("s32"),  .info = (Kai_Type)&kai__type_info_s32  },
-    { .name = __temp("s64"),  .info = (Kai_Type)&kai__type_info_s64  },
-    { .name = __temp("u8"),   .info = (Kai_Type)&kai__type_info_u8   },
-    { .name = __temp("u16"),  .info = (Kai_Type)&kai__type_info_u16  },
-    { .name = __temp("u32"),  .info = (Kai_Type)&kai__type_info_u32  },
-    { .name = __temp("u64"),  .info = (Kai_Type)&kai__type_info_u64  },
-    { .name = __temp("f32"),  .info = (Kai_Type)&kai__type_info_f32  },
-    { .name = __temp("f64"),  .info = (Kai_Type)&kai__type_info_f64  },
+    Kai_Type type;
+} kai__builtin_types [] = {
+    { KAI_CONSTANT_STRING("Type"), (Kai_Type)&kai__type_info_type },
+    { KAI_CONSTANT_STRING("s8"),   (Kai_Type)&kai__type_info_s8   },
+    { KAI_CONSTANT_STRING("s16"),  (Kai_Type)&kai__type_info_s16  },
+    { KAI_CONSTANT_STRING("s32"),  (Kai_Type)&kai__type_info_s32  },
+    { KAI_CONSTANT_STRING("s64"),  (Kai_Type)&kai__type_info_s64  },
+    { KAI_CONSTANT_STRING("u8"),   (Kai_Type)&kai__type_info_u8   },
+    { KAI_CONSTANT_STRING("u16"),  (Kai_Type)&kai__type_info_u16  },
+    { KAI_CONSTANT_STRING("u32"),  (Kai_Type)&kai__type_info_u32  },
+    { KAI_CONSTANT_STRING("u64"),  (Kai_Type)&kai__type_info_u64  },
+    { KAI_CONSTANT_STRING("f32"),  (Kai_Type)&kai__type_info_f32  },
+    { KAI_CONSTANT_STRING("f64"),  (Kai_Type)&kai__type_info_f64  },
 };
 
-#endif // BUILTIN_TYPES_H
+#endif // BUILTIN_TYPES__H

@@ -35,7 +35,7 @@ void insert_token_type_string(Kai_str* out, Kai_u32 type) {
 }
 
 Kai_str keyword_map[] = {
-#define X(NAME, ID) {#NAME, sizeof(#NAME) - 1},
+#define X(NAME, ID) KAI_CONSTANT_STRING(#NAME),
     X_TOKEN_KEYWORDS
 #undef X
 };

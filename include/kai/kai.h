@@ -60,16 +60,22 @@
 #   error "[KAI] Platform not recognized!"
 #endif
 
-#ifdef __cplusplus
+#if defined(__cplusplus)
 #    define KAI_STRUCT(X) X
 #else
 #    define KAI_STRUCT(X) (X)
 #endif
 
+#if defined(KAI__COMPILER_MSVC)
+#	define KAI_UTF8(STRING) u8##STRING
+#else
+#	define KAI_UTF8(STRING) STRING
+#endif
+
 #define KAI_API(RETURN_TYPE) extern RETURN_TYPE
 
 #define KAI_EMPTY_STRING    KAI_STRUCT(Kai_str){0}
-#define KAI_STRING(LITERAL) KAI_STRUCT(Kai_str){.count = sizeof(LITERAL)-1, .data = (Kai_u8*)(LITERAL)}
+#define KAI_STRING(LITERAL) KAI_STRUCT(Kai_str){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
 
 #ifdef __cplusplus
 extern "C" {
@@ -207,16 +213,18 @@ enum {
 	KAI_MEMORY_ACCESS_READ_WRITE = KAI_MEMORY_ACCESS_READ | KAI_MEMORY_ACCESS_WRITE,
 };
 
-typedef void* Kai_P_Memory_Allocate   (Kai_ptr User, Kai_u32 Num_Bytes, Kai_u32 access);
-typedef void  Kai_P_Memory_Free       (Kai_ptr User, Kai_ptr Ptr, Kai_u32 Num_Bytes);
-typedef void  Kai_P_Memory_Set_Access (Kai_ptr User, Kai_ptr Ptr, Kai_u32 Num_Bytes, Kai_u32 access);
+typedef void* Kai_P_Memory_Allocate      (void* User, Kai_u32 Num_Bytes, Kai_u32 access);
+typedef void  Kai_P_Memory_Free          (void* User, void* Ptr, Kai_u32 Num_Bytes);
+typedef void* Kai_P_Memory_Heap_Allocate (void* User, void* Ptr, Kai_u32 New_Size, Kai_u32 Old_Size);
+typedef void  Kai_P_Memory_Set_Access    (void* User, void* Ptr, Kai_u32 Num_Bytes, Kai_u32 access);
 
 typedef struct {
-	Kai_P_Memory_Allocate*   allocate;
-	Kai_P_Memory_Free*       free;
-	Kai_P_Memory_Set_Access* set_access;
-	Kai_ptr                  user;
-	Kai_u32                  page_size;
+	Kai_P_Memory_Allocate*      allocate;
+	Kai_P_Memory_Free*          free;
+	Kai_P_Memory_Set_Access*    set_access;
+	Kai_P_Memory_Heap_Allocate* heap_allocate;
+	void*                       user;
+	Kai_u32                     page_size;
 } Kai_Memory_Allocator;
 
 enum {
@@ -264,6 +272,31 @@ typedef struct {
     Kai_u32              bucket_size;
     Kai_Memory_Allocator allocator;
 } Kai__Dynamic_Arena_Allocator;
+
+#define KAI__ARRAY(T) \
+struct {              \
+	Kai_u32 count;    \
+	Kai_u32 capacity; \
+	T*      elements; \
+}
+
+#define KAI__HASH_TABLE_SLOT(T) \
+struct {                        \
+    Kai_u64 hash;               \
+    Kai_str key;                \
+    T value;                    \
+}
+
+#define KAI__HASH_TABLE(T) \
+struct {                   \
+	Kai_u32 count;         \
+	Kai_u32 capacity;      \
+	struct {               \
+        Kai_u64 hash;      \
+    	Kai_str key;       \
+    	T value;           \
+	}* elements;           \
+}
 
 #endif
 #ifndef KAI__SECTION_SYNTAX_TREE
@@ -435,7 +468,12 @@ typedef struct {
 	Kai_u32               native_procedure_count;
 } Kai_Program_Create_Info;
 
-typedef struct Kai_Program_Impl* Kai_Program;
+typedef struct {
+	void* platform_machine_code;
+	Kai_u32 code_size;
+	KAI__HASH_TABLE(void*) procedure_table;
+	Kai_Memory_Allocator allocator;
+} Kai_Program;
 
 #endif
 #ifndef KAI__SECTION_CORE_API
@@ -455,12 +493,14 @@ KAI_API (void) kai_get_version(Kai_u32* out_Major, Kai_u32* out_Minor, Kai_u32* 
 
 KAI_API (Kai_str) kai_get_version_string(void);
 
+//! @note: Must call `kai_destroy_syntax_tree` on output syntax tree
 KAI_API (Kai_Result) kai_create_syntax_tree(
 	Kai_Syntax_Tree_Create_Info* Info,
-	Kai_Syntax_Tree*             Syntax_Tree);
+	Kai_Syntax_Tree*             out_Syntax_Tree);
 
 KAI_API (void) kai_destroy_syntax_tree(Kai_Syntax_Tree* Syntax_Tree);
 
+//! @note: output program only non-null on success
 KAI_API (Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Program* out_Program);
 
 KAI_API (Kai_Result) kai_create_program_from_source(
@@ -472,6 +512,37 @@ KAI_API (Kai_Result) kai_create_program_from_source(
 KAI_API (void) kai_destroy_program(Kai_Program Program);
 
 KAI_API (void*) kai_find_procedure(Kai_Program Program, char const* Name, char const* opt_Type);
+
+// INTERNAL
+
+/* OUT_ARRAY: *Array, SIZE: u32, ALLOCATOR: *Memory_Allocator */
+#define kai__array_reserve(OUT_ARRAY, SIZE, ALLOCATOR) \
+	do { \
+		if (SIZE <= (OUT_ARRAY)->capacity) continue; \
+		(OUT_ARRAY)->elements = (ALLOCATOR)->heap_allocate( \
+			(ALLOCATOR)->user, \
+			(OUT_ARRAY)->elements, \
+			sizeof((OUT_ARRAY)->elements[0]) * SIZE, \
+			sizeof((OUT_ARRAY)->elements[0]) * (OUT_ARRAY)->capacity \
+		); \
+		(OUT_ARRAY)->capacity = SIZE; \
+	} while (0)
+
+/* OUT_ARRAY: *Array, ALLOCATOR: *Memory_Allocator */
+#define kai__destroy_array(OUT_ARRAY, ALLOCATOR) \
+	do { \
+		if ((OUT_ARRAY)->capacity <= 0) continue; \
+		(ALLOCATOR)->heap_allocate( \
+			(ALLOCATOR)->user, \
+			(OUT_ARRAY)->elements, \
+			0, \
+			sizeof((OUT_ARRAY)->elements[0]) * (OUT_ARRAY)->capacity \
+		); \
+	} while (0)
+
+#define kai__create_hash_table(TABLE) kai__create_hash_table_stride(TABLE, sizeof((TABLE)->elements[0]))
+KAI_API (void*) kai__create_hash_table_stride(void* Table, Kai_u32 stride);
+KAI_API (void*) kai__destroy_hash_table(void* Table);
 
 #endif
 #ifdef KAI_USE_MEMORY_API
