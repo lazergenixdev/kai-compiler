@@ -24,6 +24,16 @@ Running the code (compilation under development)
 ./bin/kai --parse-only ../tests/scripts/fibo.kai
 ```
 
+# Example Code
+```
+fibonacci :: (n: int) {
+    if n <= 2 ret 1;
+    ret fibonacci(n-2) + fibonacci(n-1);
+}
+
+int :: s32;
+```
+
 # Example Usage (C++ API)
 ```C
 #include <cstdio>
