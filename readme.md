@@ -2,66 +2,65 @@
 # WIP Experimental Scripting language made for real-time applications.
 
 - Strict static type checking
+- Written in C with **no external dependencies**
+- Language is most similar to WASM in execution model
 - Compile-then-execute model (no JIT/Interpreter)
-	- *there will be an bytecode interpreter for compile-time execution
-- Compiler API written in C, and implemented in C++
-- Runtime Safety will be achieved with runtime checks (will be able to be toggled off for faster performance)
+	- *there is a bytecode interpreter for compile-time execution
+- Runtime Safety will be achieved with runtime checks (able to be toggled off for faster performance)
 - Kai is a place-holder name, I an have no idea what to call this language
 - My first compiler, so don't expect anything crazy
 
-Notes:
-- only works on Windows (because costum allocator uses VirtualAlloc to reserve multiple pages at a time).
-- will use re2c to parse keywords in lexer, I think it is better than using a hash table, but this will need to be tested.
-- will use AsmJit for machine code generation, as it will speed up development time significantly.
-- will need dyncall for compile-time execution of bytecode
+# Building & Running
+Code is built to work with MSVC and Clang and GCC.
+Build is managed with CMake, so compiling is straightforward
+```sh
+mkdir build
+cd build
+cmake ..
+```
 
-# Example Usage
+Running the code (compilation under development)
+```sh
+./bin/kai --parse-only ../tests/scripts/fibo.kai
+```
+
+# Example Usage (C++ API)
 ```C
-void example() {
-	Kai_str source_code = ...;
-	Kai_Result result;
+#include <cstdio>
+#define KAI_USE_DEBUG_API
+#define KAI_USE_MEMORY_API
+#define KAI_USE_CPP_API
+#include "../include/kai/kai.h"
 
-    Kai_Memory memory;
-    kai_create_memory(&memory);
+using P_main = Kai_s32(Kai_slice);
 
-    Kai_Error error = {0};
+namespace exports {
+    extern "C" void print(Kai_s32 x) {
+        printf("%d", x);
+    }
+}
 
-    Kai_Syntax_Tree tree;
-    {
-		Kai_Syntax_Tree_Create_Info info = {
-			.error = &error,
-			.memory = memory,
-			.source_code = source_code,
-		};
-		result = kai_create_syntax_tree(&info, &tree);
-	}
+// ./kai "main.kai" arg1 arg2 ...
+int main(int argc, char* argv[]) {
+    if (argc < 2) return 0;
 
-    if (KAI_FAILED(result)) handle_error(&error);
+    Kai::Program program;
+    program.add_native_procedure("print", (void*)&exports::print);
 
-	Kai_Program program;
-	{
-		Kai_Program_Create_Info info = {
-			.trees      = &tree;
-			.tree_count = 1;
-			.memory     = memory;
-			.error      = &error;
-		}
-		result = kai_create_program(&info, &program);
-	}
+    if (program.compile_from_file("scripts/main.js") != Kai::Success) {
+        program.error.print();
+        return 1;
+    }
 
-    if (KAI_FAILED(result)) handle_error(&error);
+    P_main* main_proc = program.find_procedure<P_main>("main");
+    if (!main_proc) {
+        return 1;
+    }
 
-    kai_destroy_memory(&memory);
-
-	// Now we get the main procedure from our script
-	typedef Kai_int(*Proc)(Kai_int, Kai_ptr);
-	Proc script_main = kai_find_procedure(program, "main", "(int, *u8) -> int");
-
-	if (script_main == NULL) error("main not found!");
-
-	Kai_int r = script_main(6, "hello!");
-	printf("script_main returned %i\n", r);
-
-	kai_destroy_memory(&memory);
-	kai_destroy_program(program);
+    Kai_slice args {
+        .data  = Kai_ptr(argv + 2),
+        .count = Kai_u32(argc - 2),
+    };
+    return main_proc(args);
+}
 ```
