@@ -819,7 +819,7 @@ Kai_Result kai__create_dependency_graph(
 	}
 
 #if defined(DEBUG_DEPENDENCY_GRAPH)
-	for (int i = 0; i < out_Graph->nodes.count; ++i) {
+	for (Kai_u32 i = 0; i < out_Graph->nodes.count; ++i) {
 		Kai__DG_Node* node = out_Graph->nodes.elements+i;
 
 		printf("Node %2d \"", i);

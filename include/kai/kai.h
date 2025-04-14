@@ -595,7 +595,6 @@ static void kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* Ptr_Alloca
 static Kai_u64 kai__hash_djb2(Kai_str In)
 {
     Kai_u64 hash = 5381;
-    int c;
     for (Kai_u32 i = 0; i < In.count; ++i)
         hash = ((hash << 5) + hash) + In.data[i]; /* hash * 33 + c */
     return hash;
@@ -631,8 +630,8 @@ static Kai_u32 kai__hash_table_insert_key_stride(void* raw_table, Kai_u64 Stride
 {
     KAI__HASH_TABLE(int)* table = raw_table;
     Kai_u64 hash = KAI__HASH_TABLE_OCCUPIED_BIT | kai__hash(key);
-    Kai_u64 start_index = hash % table->capacity;
-    for (Kai_u64 i = start_index;; i = (i + 1) % table->capacity) {
+    Kai_u32 start_index = (Kai_u32)(hash % table->capacity);
+    for (Kai_u32 i = start_index;; i = (i + 1) % table->capacity) {
         KAI__HASH_TABLE_SLOT(int)* element_header = (void*)((Kai_u8*)table->elements + Stride * i);
 
         //printf("hash[%i] -> %016llx\n", (int)i, element_header->hash);
