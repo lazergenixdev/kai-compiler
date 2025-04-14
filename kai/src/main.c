@@ -28,7 +28,7 @@ int load_file(const char* file_path, Kai_str* out) {
 
 typedef Kai_s32 Main_Proc(Kai_slice);
 
-void parse(char const* file, Kai_str source_code, Kai_Memory_Allocator* allocator);
+void parse(char const* file, Kai_str source_code, Kai_Allocator* allocator);
 
 int main(int argc, char** argv) {
     int exit_value = 1;
@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	Kai_Memory_Allocator allocator;
+	Kai_Allocator allocator;
 	kai_create_memory(&allocator);
 
     if (options.parse_only) {
@@ -88,7 +88,14 @@ int main(int argc, char** argv) {
     printf("Compilation Took: %.4f ms\n", elapsed_ms);
 
     if (result != KAI_SUCCESS) {
-		error.location.file_name = kai_str_from_cstring(file);
+        Kai_Error* curr = &error;
+        int i = 0;
+        while (curr && i < 10) {
+		    curr->location.file_name = kai_str_from_cstring(file);
+            curr->location.source = source_code.data;
+            curr = curr->next;
+            i += 1;
+        }
         kai_debug_write_error(kai_debug_stdout_writer(), &error);
         goto cleanup;
     }
@@ -124,7 +131,7 @@ cleanup:
 	return exit_value;
 }
 
-void parse(char const* file, Kai_str source_code, Kai_Memory_Allocator* allocator) {
+void parse(char const* file, Kai_str source_code, Kai_Allocator* allocator) {
     Kai_Error error = {0};
     Kai_Syntax_Tree_Create_Info info = {
         .allocator = *allocator,

@@ -3,7 +3,7 @@
 int parser() {
     TEST();
 
-    Kai_Memory_Allocator allocator = {0};
+    Kai_Allocator allocator = {0};
     kai_create_memory(&allocator);
 
     Kai_Error error = {0};

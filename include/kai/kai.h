@@ -76,6 +76,7 @@
 
 #define KAI_EMPTY_STRING    KAI_STRUCT(Kai_str){0}
 #define KAI_STRING(LITERAL) KAI_STRUCT(Kai_str){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
+#define KAI_BOOL(EXPR)      ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
 
 #ifdef __cplusplus
 extern "C" {
@@ -191,8 +192,8 @@ typedef struct {
 
 typedef struct {
 	Kai_u8    type;
-	Kai_u16   param_count;
-	Kai_u16   ret_count;
+	Kai_u16   in_count;
+	Kai_u16   out_count;
 	Kai_Type* input_output; // list of parameters types, then return types
 } Kai_Type_Info_Procedure;
 
@@ -225,7 +226,7 @@ typedef struct {
 	Kai_P_Memory_Heap_Allocate* heap_allocate;
 	void*                       user;
 	Kai_u32                     page_size;
-} Kai_Memory_Allocator;
+} Kai_Allocator;
 
 enum {
 	KAI_SUCCESS = 0,
@@ -260,7 +261,7 @@ typedef struct Kai_Error {
 } Kai_Error;
 
 #endif
-#ifndef KAI__SECTION_INTERNAL_API_STRUCTS
+#ifndef KAI__SECTION_INTERNAL_STRUCTS
 
 typedef struct Kai__Arena_Bucket {
     struct Kai__Arena_Bucket* prev;
@@ -270,15 +271,18 @@ typedef struct {
     Kai__Arena_Bucket*   current_bucket;
     Kai_u32              current_allocated;
     Kai_u32              bucket_size;
-    Kai_Memory_Allocator allocator;
+    Kai_Allocator        allocator;
 } Kai__Dynamic_Arena_Allocator;
 
+//! TODO: small array optimization (store first element in `elements` pointer)
 #define KAI__ARRAY(T) \
 struct {              \
 	Kai_u32 count;    \
 	Kai_u32 capacity; \
 	T*      elements; \
 }
+
+#define KAI__HASH_TABLE_OCCUPIED_BIT 0x8000000000000000
 
 #define KAI__HASH_TABLE_SLOT(T) \
 struct {                        \
@@ -445,9 +449,9 @@ typedef struct {
 } Kai_Syntax_Tree;
 
 typedef struct {
-    Kai_str               source_code; // input
-    Kai_Memory_Allocator  allocator;   // input
-    Kai_Error*            error;       // output [optional]
+    Kai_str        source_code; // input
+    Kai_Allocator  allocator;   // input
+    Kai_Error*     error;       // output [optional]
 } Kai_Syntax_Tree_Create_Info;
 
 #endif
@@ -462,7 +466,7 @@ typedef struct {
 typedef struct {
 	Kai_Syntax_Tree*      trees;
 	Kai_u32               tree_count;
-	Kai_Memory_Allocator  memory;
+	Kai_Allocator         allocator;
 	Kai_Error*            error;
 	Kai_Native_Procedure* native_procedures;
 	Kai_u32               native_procedure_count;
@@ -472,26 +476,16 @@ typedef struct {
 	void* platform_machine_code;
 	Kai_u32 code_size;
 	KAI__HASH_TABLE(void*) procedure_table;
-	Kai_Memory_Allocator allocator;
+	Kai_Allocator allocator;
 } Kai_Program;
 
 #endif
 #ifndef KAI__SECTION_CORE_API
 
-// ------ Core Library of some sort? ----------------------------------------------------
-
-KAI_API(Kai_bool)        kai_string_equals    (Kai_str A, Kai_str B);
-KAI_API(Kai_str)         kai_string_slice     (Kai_str String, Kai_u32 offset, Kai_u32 end);
-KAI_API(Kai_vector3_f32) kai_color_rgb_to_hsv (Kai_vector3_f32 RGB);
-KAI_API(Kai_vector3_f32) kai_color_hsv_to_rgb (Kai_vector3_f32 HSV);
-
-// --------------------------------------------------------------------------------------
-
-KAI_API (Kai_str) kai_str_from_cstring(char const* String);
-
-KAI_API (void) kai_get_version(Kai_u32* out_Major, Kai_u32* out_Minor, Kai_u32* out_Patch);
-
-KAI_API (Kai_str) kai_get_version_string(void);
+KAI_API (Kai_bool)        kai_string_equals(Kai_str A, Kai_str B);
+KAI_API (Kai_str)         kai_str_from_cstring(char const* String);
+KAI_API (Kai_vector3_u32) kai_get_version(void);
+KAI_API (Kai_str)         kai_get_version_string(void);
 
 //! @note: Must call `kai_destroy_syntax_tree` on output syntax tree
 KAI_API (Kai_Result) kai_create_syntax_tree(
@@ -502,47 +496,188 @@ KAI_API (void) kai_destroy_syntax_tree(Kai_Syntax_Tree* Syntax_Tree);
 
 //! @note: output program only non-null on success
 KAI_API (Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Program* out_Program);
-
 KAI_API (Kai_Result) kai_create_program_from_source(
-	Kai_str               Source,
-	Kai_Memory_Allocator* Allocator,
-	Kai_Error*            out_Error,
-	Kai_Program*          out_Program);
+	Kai_str        Source,
+	Kai_Allocator* Allocator,
+	Kai_Error*     out_Error,
+	Kai_Program*   out_Program);
 
-KAI_API (void) kai_destroy_program(Kai_Program Program);
-
+KAI_API (void)  kai_destroy_program(Kai_Program Program);
 KAI_API (void*) kai_find_procedure(Kai_Program Program, char const* Name, char const* opt_Type);
 
-// INTERNAL
+#endif
+#ifndef KAI__SECTION_INTERNAL_API
 
-/* OUT_ARRAY: *Array, SIZE: u32, ALLOCATOR: *Memory_Allocator */
-#define kai__array_reserve(OUT_ARRAY, SIZE, ALLOCATOR) \
+// Annoying to always have to pass allocator around,
+//  so macros assume variable defined `allocator` exists
+//  and is of type `Kai_Allocator*`
+
+#define kai__array_reserve(Ptr_Array, Size) \
+	kai__array_reserve_stride(Ptr_Array, Size, allocator, sizeof((Ptr_Array)->elements[0]))
+
+#define kai__array_destroy(Ptr_Array) \
+	kai__array_destroy_stride(Ptr_Array, allocator, sizeof((Ptr_Array)->elements[0]))
+
+#define kai__array_append(Ptr_Array, ...) \
+	kai__array_grow_stride(Ptr_Array, (Ptr_Array)->count + 1, allocator, sizeof((Ptr_Array)->elements[0])), \
+	(Ptr_Array)->elements[(Ptr_Array)->count++] = (__VA_ARGS__)
+
+#define kai__hash kai__hash_djb2
+
+#define kai__hash_table_create(Table) \
+	kai__create_hash_table_stride(Table, sizeof((Table)->elements[0]), allocator)
+
+#define kai__hash_table_destroy(Table) \
+	kai__destroy_hash_table_stride(Table, sizeof((Table)->elements[0]), allocator)
+
+#define kai__hash_table_find(Table, Key) \
+	kai__hash_table_find_stride(&(Table), sizeof(Table.elements[0]), Key)
+
+#define kai__hash_table_get(Table, Key, out_Value) \
+    kai__hash_table_get_stride(&(Table), sizeof(Table.elements[0]), Key, out_Value, sizeof(*out_Value))
+
+#define kai__hash_table_get_str(Table, Key, out_Value) \
+    kai__hash_table_get_stride(&(Table), sizeof(Table.elements[0]), KAI_STRING(Key), out_Value, sizeof(*out_Value))
+
+#define kai__hash_table_insert(Table, KEY, ...) \
 	do { \
-		if (SIZE <= (OUT_ARRAY)->capacity) continue; \
-		(OUT_ARRAY)->elements = (ALLOCATOR)->heap_allocate( \
-			(ALLOCATOR)->user, \
-			(OUT_ARRAY)->elements, \
-			sizeof((OUT_ARRAY)->elements[0]) * SIZE, \
-			sizeof((OUT_ARRAY)->elements[0]) * (OUT_ARRAY)->capacity \
-		); \
-		(OUT_ARRAY)->capacity = SIZE; \
+		Kai_u32 __index__ = kai__hash_table_insert_key_stride(&(Table), sizeof((Table).elements[0]), KEY); \
+    	(Table).elements[__index__].value = (__VA_ARGS__); \
 	} while (0)
 
-/* OUT_ARRAY: *Array, ALLOCATOR: *Memory_Allocator */
-#define kai__destroy_array(OUT_ARRAY, ALLOCATOR) \
-	do { \
-		if ((OUT_ARRAY)->capacity <= 0) continue; \
-		(ALLOCATOR)->heap_allocate( \
-			(ALLOCATOR)->user, \
-			(OUT_ARRAY)->elements, \
-			0, \
-			sizeof((OUT_ARRAY)->elements[0]) * (OUT_ARRAY)->capacity \
-		); \
-	} while (0)
+static void kai__array_reserve_stride(void* Ptr_Array, Kai_u32 Size, Kai_Allocator* Ptr_Allocator, Kai_u32 Stride)
+{
+	KAI__ARRAY(int)* array = Ptr_Array;
+	if (Size <= array->capacity) return;
+	array->elements = Ptr_Allocator->heap_allocate(
+		Ptr_Allocator->user,
+		array->elements,
+		Stride * Size,
+		Stride * array->capacity
+	);
+	array->capacity = Size;
+}
 
-#define kai__create_hash_table(TABLE) kai__create_hash_table_stride(TABLE, sizeof((TABLE)->elements[0]))
-KAI_API (void*) kai__create_hash_table_stride(void* Table, Kai_u32 stride);
-KAI_API (void*) kai__destroy_hash_table(void* Table);
+static void kai__array_grow_stride(void* Ptr_Array, Kai_u32 Min_Size, Kai_Allocator* Ptr_Allocator, Kai_u32 Stride)
+{
+	KAI__ARRAY(int)* array = Ptr_Array;
+	if (Min_Size <= array->capacity) return;
+	Kai_u32 new_capacity = (Min_Size * 3) / 2;
+	array->elements = Ptr_Allocator->heap_allocate(
+		Ptr_Allocator->user,
+		array->elements,
+		Stride * new_capacity,
+		Stride * array->capacity
+	);
+	array->capacity = new_capacity;
+}
+
+static void kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* Ptr_Allocator, Kai_u32 Stride)
+{
+	KAI__ARRAY(int)* array = Ptr_Array;
+	if (array->capacity <= 0) return;
+	Ptr_Allocator->heap_allocate(
+		Ptr_Allocator->user,
+		array->elements,
+		0,
+		Stride * array->capacity
+	);
+	array->elements = 0;
+	array->capacity = 0;
+	array->count = 0;
+}
+
+// http://www.cse.yorku.ca/~oz/hash.html
+// " this algorithm (k=33) was first reported by dan bernstein many years ago in comp.lang.c.
+// " another version of this algorithm (now favored by bernstein) uses xor:
+// " hash(i) = hash(i - 1) * 33 ^ str[i]; the magic of number 33
+// " (why it works better than many other constants, prime or not) has never been adequately explained. 
+static Kai_u64 kai__hash_djb2(Kai_str In)
+{
+    Kai_u64 hash = 5381;
+    int c;
+    for (Kai_u32 i = 0; i < In.count; ++i)
+        hash = ((hash << 5) + hash) + In.data[i]; /* hash * 33 + c */
+    return hash;
+}
+
+static void* kai__create_hash_table_stride(void* Table, Kai_u32 Stride, Kai_Allocator* Ptr_Allocator)
+{
+    KAI__HASH_TABLE(int)* base = Table;
+    base->count = 0;
+	base->elements = Ptr_Allocator->heap_allocate(
+		Ptr_Allocator->user,
+		base->elements,
+		Stride * 100,
+		Stride * base->capacity
+	);
+    base->capacity = 100;
+    return 0;
+}
+
+static void* kai__destroy_hash_table_stride(void* Table, Kai_u32 Stride, Kai_Allocator* Ptr_Allocator)
+{
+    KAI__HASH_TABLE(int)* base = Table;
+	Ptr_Allocator->heap_allocate(
+		Ptr_Allocator->user,
+		base->elements,
+		0,
+		Stride * base->capacity
+	);
+    return 0;
+}
+
+static Kai_u32 kai__hash_table_insert_key_stride(void* raw_table, Kai_u64 Stride, Kai_str key)
+{
+    KAI__HASH_TABLE(int)* table = raw_table;
+    Kai_u64 hash = KAI__HASH_TABLE_OCCUPIED_BIT | kai__hash(key);
+    Kai_u64 start_index = hash % table->capacity;
+    for (Kai_u64 i = start_index;; i = (i + 1) % table->capacity) {
+        KAI__HASH_TABLE_SLOT(int)* element_header = (void*)((Kai_u8*)table->elements + Stride * i);
+
+        //printf("hash[%i] -> %016llx\n", (int)i, element_header->hash);
+
+        if ((element_header->hash >> 63) == 0) {
+            element_header->hash = hash;
+            element_header->key = key;
+			table->count += 1;
+            return i;
+        }
+    }
+}
+
+static void* kai__hash_table_find_stride(void* raw_table, Kai_u64 Stride, Kai_str key)
+{
+    KAI__HASH_TABLE(int)* table = raw_table;
+    Kai_u64 hash = KAI__HASH_TABLE_OCCUPIED_BIT | kai__hash(key);
+    Kai_u64 start_index = hash % table->capacity;
+    for (Kai_u64 i = start_index;; i = (i + 1) % table->capacity) {
+        KAI__HASH_TABLE_SLOT(char)* element_header = (void*)((Kai_u8*)table->elements + Stride * i);
+
+        //printf("hash[%i] -> %016llx\n", (int)i, element_header->hash);
+
+        if ((element_header->hash >> 63) == 0) {
+            return 0;
+        }
+        if (element_header->hash == hash) {
+            if (kai_string_equals(element_header->key, key)) {
+                return &element_header->value;
+            }
+        }
+    }
+}
+
+static Kai_bool kai__hash_table_get_stride(void* raw_table, Kai_u64 Stride, Kai_str key, void* out_Value, Kai_u32 value_size)
+{
+    void* ptr = kai__hash_table_find_stride(raw_table, Stride, key);
+    if (ptr) {
+		char* dst = out_Value;
+		char* src = ptr;
+		for (Kai_u32 i = 0; i < value_size; ++i)
+			dst[i] = src[i];
+	}
+    return ptr != 0;
+}
 
 #endif
 #ifdef KAI_USE_MEMORY_API
@@ -557,10 +692,10 @@ enum {
 	KAI_MEMORY_ERROR_MEMORY_LEAK    = 2, //! @see kai_destroy_memory implementation
 };	
 
-KAI_API (Kai_Result) kai_create_memory(Kai_Memory_Allocator* out_Allocator);
-KAI_API (Kai_Result) kai_destroy_memory(Kai_Memory_Allocator* Allocator);
-KAI_API (void) kai_memory_set_debug(Kai_Memory_Allocator* Allocator, Kai_u32 Debug_Level);
-KAI_API (Kai_u32) kai_memory_usage(Kai_Memory_Allocator* Allocator);
+KAI_API (Kai_Result) kai_create_memory(Kai_Allocator* out_Allocator);
+KAI_API (Kai_Result) kai_destroy_memory(Kai_Allocator* Allocator);
+KAI_API (void) kai_memory_set_debug(Kai_Allocator* Allocator, Kai_u32 Debug_Level);
+KAI_API (Kai_u32) kai_memory_usage(Kai_Allocator* Allocator);
 
 #endif
 #ifdef KAI_USE_DEBUG_API
@@ -625,7 +760,7 @@ namespace Kai {
 	
 #ifdef KAI_USE_MEMORY_API
 #	define KAI_ALLOCATOR_SET_DEFAULT = Default_Allocator
-	struct Default_Allocator : public Kai_Memory_Allocator {
+	struct Default_Allocator : public Kai_Allocator {
 		Default_Allocator() {
             kai_create_memory(this);
 		}
@@ -655,12 +790,13 @@ namespace Kai {
 
 		}
 
-        Result compile_from_file(String path) {
-			std::ifstream f { path.string() };
+        Result compile_from_file(std::string const& path) {
+			std::ifstream f { path };
 			f.seekg(0, std::ios::end);
 			auto size = f.tellg();
 			f.seekg(0, std::ios::beg);
 			std::string source(size, '\0');
+			f.read(source.data(), source.size());
             return (Result)kai_create_program_from_source(String(source), &allocator, &error, &handle);
         }
 

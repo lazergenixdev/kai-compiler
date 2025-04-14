@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include "program.h"
 
+#define DEBUG_DEPENDENCY_GRAPH
+
 Kai_Result
 kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program) {
 	*info->error = (Kai_Error) {
@@ -16,10 +18,10 @@ kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program) {
 
 #define kai__check(RESULT) if (RESULT != KAI_SUCCESS) goto cleanup;
 Kai_Result kai_create_program_from_source(
-	Kai_str               Source,
-	Kai_Memory_Allocator* Allocator,
-	Kai_Error*            out_Error,
-	Kai_Program*          out_Program)
+	Kai_str        Source,
+	Kai_Allocator* Allocator,
+	Kai_Error*     out_Error,
+	Kai_Program*   out_Program)
 {
 	Kai_Result            result           = KAI_SUCCESS;
 	Kai_Syntax_Tree       syntax_tree      = {0};
@@ -35,6 +37,8 @@ Kai_Result kai_create_program_from_source(
 		result = kai_create_syntax_tree(&info, &syntax_tree);
 	}
 	kai__check(result);
+
+    //kai_debug_write_syntax_tree(kai_debug_stdout_writer(), &syntax_tree);
 	
 	{
 		Kai__Dependency_Graph_Create_Info info = {
@@ -77,38 +81,793 @@ cleanup:
 }
 #undef kai__check
 
+Kai__DG_Node_Index* kai__recursive_scope_find(
+	Kai__Dependency_Graph* Graph,
+	Kai_u32                Scope_Index,
+	Kai_str                Identifier)
+{
+	do {
+		Kai__DG_Scope* scope = Graph->scopes.elements + Scope_Index;
+		Kai__DG_Node_Index* node_index = kai__hash_table_find(scope->identifiers, Identifier);
+		if (node_index != NULL) {
+			return node_index;
+		}
+		Scope_Index = scope->parent;
+	} while (Scope_Index != KAI__SCOPE_NO_PARENT);
+	return NULL;
+}
+
+Kai_u8 delete_me [128];
+
+Kai_Result kai__error_redefinition(
+	Kai_Error* out_Error,
+	Kai_str string,
+	Kai_u32 line_number,
+	Kai_str original_name,
+	Kai_u32 original_line_number)
+{
+	*out_Error = (Kai_Error) {
+		.result = KAI_ERROR_SEMANTIC,
+		.location = {
+			.line = line_number,
+			.string = string,
+		},
+		.message = {
+			.data = delete_me,
+		},
+	};
+
+	// TODO: if identifier is too long, then truncate 
+    str_insert_string(out_Error->message, "indentifier \"");
+    str_insert_str   (out_Error->message, string);
+    str_insert_string(out_Error->message, "\" is already declared");
+
+    u8* end = delete_me + out_Error->message.count;
+    Kai_Error* info = (Kai_Error*)end;
+    end += sizeof(Kai_Error);
+    out_Error->next = info;
+
+	*info = (Kai_Error) {
+		.result = KAI_ERROR_INFO,
+		.location = {
+			.line = original_line_number,
+			.string = original_name,
+		},
+		.message = {
+			.data = end,
+		}
+	};
+
+    str_insert_string(info->message, "see original definition");
+
+	return KAI_ERROR_SEMANTIC;
+}
+
+Kai_Result kai__error_not_declared(
+	Kai_Error* out_Error,
+	Kai_str string,
+	Kai_u32 line_number)
+{
+    *out_Error = (Kai_Error) {
+		.result = KAI_ERROR_SEMANTIC,
+		.location = {
+			.string = string,
+			.line = line_number,
+		},
+		.message = {
+			.data = delete_me,
+		},
+	};
+    str_insert_string(out_Error->message, "indentifier \"");
+    str_insert_str   (out_Error->message, string);
+    str_insert_string(out_Error->message, "\" not declared");
+    return KAI_ERROR_SEMANTIC;
+}
+
+void add_dependency(
+	Kai__Dependency_Graph*    Graph,
+	Kai__DG_Dependency_Array* out_Dependency_Array,
+	Kai__DG_Node_Index        Reference)
+{
+	Kai_Allocator* allocator = &Graph->allocator;
+	for (Kai_int i = 0; i < out_Dependency_Array->count; ++i) {
+		Kai__DG_Node_Index node_index = out_Dependency_Array->elements[i];
+		if (node_index.flags == Reference.flags
+		&&  node_index.value == Reference.value)
+			return;
+	}
+	kai__array_append(out_Dependency_Array, Reference);
+}
+
+Kai_Result kai__dg_create_nodes_from_statement(
+	Kai__Dependency_Graph* Graph,
+	Kai_Stmt               Stmt,
+	Kai_u32                Scope_Index,
+	Kai_bool               In_Procedure,
+	Kai_bool               From_Procedure)
+{
+	Kai_Result result = KAI_SUCCESS;
+	Kai_Allocator* allocator = &Graph->allocator;
+	void* base = Stmt;
+
+    switch (Stmt->id)
+	{
+	case KAI_EXPR_PROCEDURE: {
+		Kai_Expr_Procedure* node = base;
+
+		u32 new_scope_index = Graph->scopes.count;
+		kai__array_append(&Graph->scopes, (Kai__DG_Scope) {
+			.parent = Scope_Index,
+			.is_proc_scope = KAI_TRUE,
+		});
+		kai__hash_table_create(&Graph->scopes.elements[new_scope_index].identifiers);
+
+		node->_scope = new_scope_index;
+		return kai__dg_create_nodes_from_statement(Graph, node->body, new_scope_index, KAI_TRUE, KAI_TRUE);
+	} break;
+
+    case KAI_STMT_IF: {
+        Kai_Stmt_If* node = base;
+
+		result = kai__dg_create_nodes_from_statement(Graph, node->body, Scope_Index, In_Procedure, KAI_FALSE);
+		if (result != KAI_SUCCESS)
+			return result;
+
+		if (node->else_body) {
+			result = kai__dg_create_nodes_from_statement(Graph, node->else_body, Scope_Index, In_Procedure, KAI_FALSE);
+			if (result != KAI_SUCCESS)
+				return result;
+		}
+    } break;
+
+    case KAI_STMT_FOR: {
+        Kai_Stmt_For* node = base;
+
+		return kai__dg_create_nodes_from_statement(Graph, node->body, Scope_Index, In_Procedure, KAI_FALSE);
+    } break;
+
+    case KAI_STMT_DECLARATION: {
+		Kai_Stmt_Declaration* node = base;
+
+		if (In_Procedure && !(node->flags & KAI_DECL_FLAG_CONST))
+			return result;
+
+		Kai__DG_Scope* scope = Graph->scopes.elements + Scope_Index;
+
+		// Does this declaration already exist for this Scope?
+		Kai__DG_Node_Index* node_index = kai__hash_table_find(scope->identifiers, node->name);
+		if (node_index != NULL) {
+			Kai__DG_Node* existing = &Graph->nodes.elements[node_index->value];
+			return kai__error_redefinition(
+				Graph->error,
+				node->name,
+				node->line_number,
+				existing->name,
+				existing->line_number
+			);
+		}
+
+		{
+			Kai__DG_Node_Index index = {
+				.value = Graph->nodes.count
+			};
+
+			Kai__DG_Node dg_node = {
+				.name = node->name,
+				.expr = node->expr,
+				.line_number = node->line_number,
+				.scope_index = Scope_Index,			
+			};
+
+			kai__array_append(&dg_node.value_dependencies, (Kai__DG_Node_Index) {
+				.flags = KAI__DG_NODE_TYPE,
+				.value = index.value,
+			});
+
+			kai__array_append(&Graph->nodes, dg_node);
+			kai__hash_table_insert(scope->identifiers, node->name, index);
+		}
+
+		if (node->expr) {
+			return kai__dg_create_nodes_from_statement(
+				Graph,
+				node->expr,
+				Scope_Index,
+				In_Procedure,
+				KAI_FALSE
+			);
+		}
+	} break;
+
+	case KAI_STMT_COMPOUND: {
+		Kai_Stmt_Compound* node = base;
+		u32 new_scope_index = Scope_Index;
+
+		if (!From_Procedure) {
+			new_scope_index = Graph->scopes.count;
+			kai__array_append(&Graph->scopes, (Kai__DG_Scope) {
+				.parent = Scope_Index,
+				.is_proc_scope = KAI_TRUE,
+			});
+			kai__hash_table_create(&Graph->scopes.elements[new_scope_index].identifiers);
+		}
+
+		node->_scope = new_scope_index;
+
+		Kai_Stmt current = node->head;
+		while (current) {
+			result = kai__dg_create_nodes_from_statement(Graph, current, new_scope_index, In_Procedure, KAI_FALSE);
+			if (result != KAI_SUCCESS)
+				return result;
+			current = current->next;
+		}
+	} break;
+	}
+	return result;
+}
+
+Kai__DG_Node_Index* kai__dg_resolve_dependency_node(
+	Kai__Dependency_Graph* Graph,
+	Kai_str                Name,
+	u32                    Scope_Index,
+	Kai_bool               In_Procedure)
+{
+    Kai_bool allow_locals = KAI_TRUE;
+    while (1) {
+        Kai__DG_Scope* scope = Graph->scopes.elements + Scope_Index;
+		Kai__DG_Node_Index* node_index = kai__hash_table_find(scope->identifiers, Name);
+
+        if (node_index != NULL) {
+            Kai_bool is_local = KAI_BOOL(node_index->flags & KAI__DG_NODE_LOCAL_VARIABLE);
+            if (In_Procedure && is_local) {
+                if (allow_locals) {
+					return node_index;
+                }
+            }
+            else {
+				return node_index;
+            }
+		}
+
+        if (Scope_Index == KAI__SCOPE_GLOBAL_INDEX)
+            return NULL;
+        
+        // Do not allow Local variables from higher procedure scopes
+        if (scope->is_proc_scope)
+            allow_locals = KAI_FALSE;
+
+        Scope_Index = scope->parent;
+    }
+}
+
+void kai__remove_local_variables(Kai__DG_Scope* Scope) {
+	for (Kai_u32 i = 0; i < Scope->identifiers.capacity; ++i) {
+		Kai_u64 hash = Scope->identifiers.elements[i].hash;
+		if (!(hash & KAI__HASH_TABLE_OCCUPIED_BIT))
+			continue;
+		Kai__DG_Node_Index node_index = Scope->identifiers.elements[i].value;
+		if (!(node_index.flags & KAI__DG_NODE_LOCAL_VARIABLE))
+			continue;
+		Scope->identifiers.elements[i].hash = 0; // remove item
+	}
+}
+
+Kai_Result kai__dg_insert_value_dependencies(
+    Kai__Dependency_Graph*    Graph,
+	Kai__DG_Dependency_Array* out_Dependency_Array,
+    u32                       Scope_Index,
+    Kai_Expr                  Expr,
+    Kai_bool                  In_Procedure)
+{
+	Kai_Allocator* allocator = &Graph->allocator;
+	Kai_Result result = KAI_SUCCESS;
+	void* base = Expr;
+    if (Expr == NULL) { panic_with_message("null expression\n"); return 0; }
+
+    switch (Expr->id)
+    {
+    default: {
+		panic_with_message("undefined expr [insert_value_dependencies] (id = %d)\n", Expr->id);
+	} break;
+
+    case KAI_EXPR_IDENTIFIER: {
+		Kai__DG_Node_Index* node_index = kai__dg_resolve_dependency_node(
+			Graph,
+			Expr->source_code,
+			Scope_Index,
+			In_Procedure
+		);
+
+		if (node_index == NULL) {
+			return kai__error_not_declared(Graph->error, Expr->source_code, Expr->line_number);
+		}
+
+        // DO NOT depend on local variables
+        if (In_Procedure && (node_index->flags & KAI__DG_NODE_LOCAL_VARIABLE))
+            break;
+		
+		add_dependency(Graph, out_Dependency_Array, *node_index);
+    } break;
+
+    case KAI_EXPR_NUMBER: {} break;
+    case KAI_EXPR_STRING: {} break;
+
+    case KAI_EXPR_UNARY: {
+        Kai_Expr_Unary* node = base;
+		return kai__dg_insert_value_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->expr,
+			In_Procedure
+		);
+    } break;
+
+    case KAI_EXPR_BINARY: {
+        Kai_Expr_Binary* node = base;
+		result = kai__dg_insert_value_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->left,
+			In_Procedure
+		);
+		if (result != KAI_SUCCESS)
+            return result;
+
+		return kai__dg_insert_value_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->right,
+			In_Procedure
+		);
+    } break;
+
+    case KAI_EXPR_PROCEDURE_CALL: {
+        Kai_Expr_Procedure_Call* node = base;
+
+		// Procedure calls in procedures are fine, we only need to know the type to generate the bytecode
+		// TODO: possible bug for nested procedures
+        if (In_Procedure) {
+			result = kai__dg_insert_type_dependencies(
+				Graph,
+				out_Dependency_Array,
+				Scope_Index,
+				node->proc
+			);
+        }
+        else {
+			result = kai__dg_insert_value_dependencies(
+				Graph,
+				out_Dependency_Array,
+				Scope_Index,
+				node->proc,
+				In_Procedure
+			);
+        }
+		if (result != KAI_SUCCESS)
+			return result;
+
+		Kai_Expr current = node->arg_head;
+        while (current != NULL) {
+			result = kai__dg_insert_value_dependencies(
+				Graph,
+				out_Dependency_Array,
+				Scope_Index,
+				current,
+				In_Procedure
+			);
+			if (result != KAI_SUCCESS)
+				return result;
+			current = current->next;
+        }
+    } break;
+
+    case KAI_EXPR_PROCEDURE_TYPE: {
+        //Kai_Expr_Procedure_Type* proc = base;
+		panic_with_message("procedure type\n");
+    } break;
+
+    case KAI_EXPR_PROCEDURE: {
+        Kai_Expr_Procedure* node = base;
+		Kai__DG_Scope* local_scope = Graph->scopes.elements + node->_scope;
+
+		// Insert procedure input names to local scope
+		Kai_Expr current = node->in_out_expr;
+        for (int i = 0; i < (int)node->in_count; ++i) {
+			Kai__DG_Node_Index* node_index = kai__hash_table_find(local_scope->identifiers, current->name);
+			
+			if (node_index != NULL) {
+				Kai__DG_Node* original = &Graph->nodes.elements[node_index->value];
+				return kai__error_redefinition(
+					Graph->error,
+					current->name,
+					node->line_number,
+					original->name,
+					original->line_number
+				);
+			}
+
+			kai__hash_table_insert(local_scope->identifiers, current->name, (Kai__DG_Node_Index) {
+				.flags = KAI__DG_NODE_LOCAL_VARIABLE,
+			});
+        }
+
+		result = kai__dg_insert_value_dependencies(
+			Graph,
+			out_Dependency_Array,
+			node->_scope,
+			node->body,
+			KAI_TRUE
+		);
+
+		kai__remove_local_variables(local_scope);
+    } break;
+
+    //break; case KAI_STMT_DECLARATION: {
+    //    if (In_Procedure) {
+    //        Kai_Stmt_Declaration* node = base;
+    //        // Already has a dependency node
+    //        if (node->flags & KAI_DECL_FLAG_CONST)
+	//			return KAI_SUCCESS;
+    //        Scope* scope = scopes.data + scope_index;
+    //        // Insert into local scope (if not already defined)
+    //        u32 it = scope_find(scope, decl->name);
+    //        if (it != NONE && scope->identifiers.data[it].index != LOCAL_VARIABLE_INDEX)
+    //            return c_error_redefinition(decl->name, decl->line_number, nodes.data + it);
+	//		Named_Node_Ref local = {.name = decl->name, .index = LOCAL_VARIABLE_INDEX};
+	//	    array_reserve(scope->identifiers, scope->identifiers.count + 1);
+	//		array_push_back(scope->identifiers, local);
+    //        // Look into it's definition to find possible dependencies
+    //        return c_insert_value_dependencies(deps, scope_index, decl->expr, KAI_TRUE);
+    //    }
+    //    else panic_with_message("invalid declaration\n");
+    //}
+
+    //break; case KAI_STMT_ASSIGNMENT: {
+    //    if (In_Procedure) {
+    //        Kai_Stmt_Assignment* assignment = base;
+    //        return c_insert_value_dependencies(deps, scope_index, assignment->expr, KAI_TRUE);
+    //    }
+    //    else panic_with_message("invalid assignment\n");
+    //}
+
+    case KAI_STMT_RETURN: {
+		Kai_Stmt_Return* node = base;
+        if (In_Procedure) {
+			return kai__dg_insert_value_dependencies(
+				Graph,
+				out_Dependency_Array,
+				Scope_Index,
+				node->expr,
+				KAI_TRUE
+			);
+        }
+		else panic_with_message("invalid return\n");
+    } break;
+
+    break; case KAI_STMT_IF: {
+		Kai_Stmt_If* node = base;
+		result = kai__dg_insert_value_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->body,
+			In_Procedure
+		);
+		if (result != KAI_SUCCESS)
+			return result;
+		if (node->else_body != NULL) {
+			return kai__dg_insert_value_dependencies(
+				Graph,
+				out_Dependency_Array,
+				Scope_Index,
+				node->else_body,
+				In_Procedure
+			);
+		}
+    }
+
+    break; case KAI_STMT_COMPOUND: {
+        if (In_Procedure) {
+            Kai_Stmt_Compound* node = base;
+			Kai_Expr current = node->head;
+            while (current != NULL) {
+				result = kai__dg_insert_value_dependencies(
+					Graph,
+					out_Dependency_Array,
+					node->_scope,
+					current,
+					KAI_TRUE
+				);
+				if (result != KAI_SUCCESS)
+					return result;
+				current = current->next;
+            }
+            Kai__DG_Scope* scope = Graph->scopes.elements + node->_scope;
+            kai__remove_local_variables(scope);
+        }
+        else panic_with_message("invalid compound statement\n");
+    }
+
+    //break; case KAI_STMT_FOR: {
+    //    Kai_Stmt_For* node = base;
+    //    if (c_insert_value_dependencies(deps, scope_index, node->body, in_procedure))
+    //        return KAI_TRUE;
+    //}
+
+    break;
+    }
+
+	return KAI_SUCCESS;
+}
+
+Kai_Result kai__dg_insert_type_dependencies(
+    Kai__Dependency_Graph*    Graph,
+	Kai__DG_Dependency_Array* out_Dependency_Array,
+    u32                       Scope_Index,
+    Kai_Expr                  Expr)
+{
+	Kai_Allocator* allocator = &Graph->allocator;
+	Kai_Result result = KAI_SUCCESS;
+	void* base = Expr;
+    if (Expr == NULL) { panic_with_message("null expression\n"); return KAI_FALSE; }
+
+    switch (Expr->id)
+    {
+    default:
+    break; case KAI_EXPR_IDENTIFIER: {
+		// TODO: why true?
+		Kai__DG_Node_Index* node_index = kai__dg_resolve_dependency_node(
+			Graph,
+			Expr->source_code,
+			Scope_Index,
+			KAI_TRUE
+		);
+
+        if (node_index == NULL)
+            return kai__error_not_declared(Graph->error, Expr->source_code, Expr->line_number);
+
+        // DO NOT depend on local variables
+        if (node_index->flags & KAI__DG_NODE_LOCAL_VARIABLE)
+            return result;
+
+		add_dependency(Graph, out_Dependency_Array, (Kai__DG_Node_Index) {
+			.flags = KAI__DG_NODE_TYPE,
+			.value = node_index->value,
+		});
+    }
+
+    break; case KAI_EXPR_UNARY: {
+        Kai_Expr_Unary* node = base;
+        return kai__dg_insert_type_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->expr
+		);
+    }
+
+    break; case KAI_EXPR_BINARY: {
+        Kai_Expr_Binary* node = base;
+        result = kai__dg_insert_type_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->left
+		);
+		if (result != KAI_SUCCESS)
+			return result;
+        return kai__dg_insert_type_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->right
+		);
+    }
+
+    break; case KAI_EXPR_PROCEDURE_CALL: {
+        Kai_Expr_Procedure_Call* node = base;
+
+        result = kai__dg_insert_type_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->proc
+		);
+		if (result != KAI_SUCCESS)
+			return result;
+
+		Kai_Expr current = node->arg_head;
+		while (current != NULL) {
+			result = kai__dg_insert_value_dependencies(
+				Graph,
+				out_Dependency_Array,
+				Scope_Index,
+				current,
+				KAI_FALSE // TODO: possible bug here ??
+			);
+			if (result != KAI_SUCCESS)
+				return result;
+			current = current->next;
+        }
+    }
+
+    break; case KAI_EXPR_PROCEDURE_TYPE: {
+        panic_with_message("procedure type\n");
+    }
+
+    break; case KAI_EXPR_PROCEDURE: {
+        Kai_Expr_Procedure* node = base;
+		Kai_Expr current = node->in_out_expr;
+        while (current != NULL) {
+			result = kai__dg_insert_value_dependencies(
+				Graph,
+				out_Dependency_Array,
+				Scope_Index,
+				current,
+				KAI_FALSE // TODO: possible bug here ??
+			);
+			if (result != KAI_SUCCESS)
+				return result;
+			current = current->next;
+        }
+    }
+
+    break; case KAI_STMT_DECLARATION: {
+		// What do we do here exactly?
+        panic_with_message("declaration\n");
+    }
+
+    break; case KAI_STMT_RETURN: {
+        Kai_Stmt_Return* node = base;
+        return kai__dg_insert_type_dependencies(
+			Graph,
+			out_Dependency_Array,
+			Scope_Index,
+			node->expr
+		);
+    }
+
+    break; case KAI_STMT_COMPOUND: {
+        panic_with_message("compound\n");
+    }
+
+    break;
+    }
+	
+    return result;
+}
+
 Kai_Result kai__create_dependency_graph(
 	Kai__Dependency_Graph_Create_Info* Info,
 	Kai__Dependency_Graph*             out_Graph)
 {
+	Kai_Result result = KAI_SUCCESS;
+	Kai_Allocator* allocator = &Info->allocator;
 	out_Graph->compilation_order = NULL;
-	kai__array_reserve(&out_Graph->nodes,  128, &Info->allocator);
-	kai__array_reserve(&out_Graph->scopes,  64, &Info->allocator);
 	out_Graph->allocator = Info->allocator;
+	out_Graph->error = Info->error;
 
+	// Initialize Global Scope
+	kai__array_append(&out_Graph->scopes, (Kai__DG_Scope) {
+		.is_proc_scope = KAI_FALSE,
+		.parent = KAI__SCOPE_NO_PARENT,
+	});
+	Kai__DG_Scope* global = &out_Graph->scopes.elements[KAI__SCOPE_GLOBAL_INDEX];
+	kai__hash_table_create(&global->identifiers);
+
+	// Insert builtin types
 	for (int i = 0; i < count_of(kai__builtin_types); ++i) {
-		out_Graph->nodes.elements[out_Graph->nodes.count++] = (Kai__DG_Node) {
-			.type  = &kai__type_info_type,
-			.value = { .type = kai__builtin_types[i].type },
+		kai__array_append(&out_Graph->nodes, (Kai__DG_Node) {
+			.type        = &kai__type_info_type,
+			.value       = { .type = kai__builtin_types[i].type },
 			.value_flags = KAI__DG_NODE_EVALUATED,
-			.type_flags = KAI__DG_NODE_EVALUATED,
-			.name = kai__builtin_types[i].name,
-			.scope_index = KAI__GLOBAL_SCOPE_INDEX,
-		};
+			.type_flags  = KAI__DG_NODE_EVALUATED,
+			.name        = kai__builtin_types[i].name,
+			.scope_index = KAI__SCOPE_GLOBAL_INDEX,
+		});
+		kai__hash_table_insert(global->identifiers,
+			kai__builtin_types[i].name,
+			(Kai__DG_Node_Index) {
+				.value = i
+			}
+		);
 	}
 
+	// Insert nodes from syntax tree
+	for (Kai_u32 i = 0; i < Info->tree_count; ++i) {
+		Kai_Syntax_Tree* tree = Info->trees + i;
+		result = kai__dg_create_nodes_from_statement(
+			out_Graph,
+			(Kai_Stmt)&tree->root,
+			KAI__SCOPE_GLOBAL_INDEX,
+			KAI_FALSE,
+			KAI_FALSE
+		);
+		if (result != KAI_SUCCESS)
+			return result;
+	}
+
+	// Insert dependencies for each node
+	for (Kai_u32 i = 0; i < out_Graph->nodes.count; ++i) {
+		Kai__DG_Node* node = out_Graph->nodes.elements + i;
+
+		if (!(node->value_flags&KAI__DG_NODE_EVALUATED)) {
+			result = kai__dg_insert_value_dependencies(
+				out_Graph,
+				&node->value_dependencies,
+				node->scope_index,
+				node->expr,
+				KAI_FALSE
+			);
+            if (result != KAI_SUCCESS)
+				return result;
+		}
+
+		if (!(node->type_flags&KAI__DG_NODE_EVALUATED)) {
+			result = kai__dg_insert_type_dependencies(
+				out_Graph,
+				&node->type_dependencies,
+				node->scope_index,
+				node->expr
+			);
+            if (result != KAI_SUCCESS)
+				return result;
+		}
+	}
+
+#if defined(DEBUG_DEPENDENCY_GRAPH)
 	for (int i = 0; i < out_Graph->nodes.count; ++i) {
 		Kai__DG_Node* node = out_Graph->nodes.elements+i;
-		printf("Node \"%*s\" type: ", node->name.count, node->name.data);
-		kai_debug_write_type(kai_debug_stdout_writer(), node->type);
-		printf(" value: ");
-		if (node->type->type == KAI_TYPE_TYPE) {
-			kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
+
+		printf("Node %2d \"", i);
+		kai_debug_stdout_writer()->write_string(NULL, node->name);
+		putchar('"');
+		if (node->type_flags & KAI__DG_NODE_EVALUATED) {
+			printf(" type: ");
+			kai_debug_write_type(kai_debug_stdout_writer(), node->type);
+		}
+		if (node->value_flags & KAI__DG_NODE_EVALUATED) {
+			printf(" value: ");
+			if (node->type->type == KAI_TYPE_TYPE) {
+				kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
+			}
 		}
 		putchar('\n');
-	}
 
-	return KAI_SUCCESS;
+		if (node->value_dependencies.count) {
+			printf("    V deps: ");
+			for (Kai_u32 i = 0; i < node->value_dependencies.count; ++i) {
+				Kai__DG_Node_Index node_index = node->value_dependencies.elements[i];
+				if (node_index.flags & KAI__DG_NODE_TYPE) {
+					printf("T(%d) ", node_index.value);
+				}
+				else {
+					printf("V(%d) ", node_index.value);
+				}
+			}
+			putchar('\n');
+		}
+
+		if (node->type_dependencies.count) {
+			printf("    T deps: ");
+			for (Kai_u32 i = 0; i < node->type_dependencies.count; ++i) {
+				Kai__DG_Node_Index node_index = node->type_dependencies.elements[i];
+				if (node_index.flags & KAI__DG_NODE_TYPE) {
+					printf("T(%d) ", node_index.value);
+				}
+				else {
+					printf("V(%d) ", node_index.value);
+				}
+			}
+			putchar('\n');
+		}
+	}
+#endif // DEBUG_DEPENDENCY_GRAPH
+
+	return result;
 }
 
 Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Error* out_Error)
@@ -140,8 +899,18 @@ Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_
 
 void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
 {
-	kai__destroy_array(&Graph->nodes, &Graph->allocator);
-	kai__destroy_array(&Graph->scopes, &Graph->allocator);
+	Kai_Allocator* allocator = &Graph->allocator;
+	for (Kai_u32 i = 0; i < Graph->nodes.count; ++i) {
+		Kai__DG_Node* node = &Graph->nodes.elements[i];
+		kai__array_destroy(&node->value_dependencies);
+		kai__array_destroy(&node->type_dependencies);
+	}
+	kai__array_destroy(&Graph->nodes);
+	for (Kai_u32 i = 0; i < Graph->scopes.count; ++i) {
+		Kai__DG_Scope* scope = &Graph->scopes.elements[i];
+		kai__hash_table_destroy(&scope->identifiers);
+	}
+	kai__array_destroy(&Graph->scopes);
 }
 
 void kai__destroy_bytecode(Kai__Bytecode* Bytecode)
@@ -175,8 +944,7 @@ void reserve(void** base, u32* capacity, u32 new_capacity, u32 stride);
 #define array_reserve(A, NEW_CAPACITY) reserve((void**)&A.data, &A.capacity, NEW_CAPACITY, sizeof(A.data[0]))
 #define array_push_back(A, VALUE) A.data[A.count++] = VALUE
 
-#define c_error_redefinition(NAME, LINE, NODE) \
-	error_redefinition(context, NAME, LINE, NODE)
+#define c_error_redefinition(NAME, LINE, NODE) error_redefinition(context, NAME, LINE, NODE)
 
 Kai_bool error_redefinition(
 	Compiler_Context* context,
@@ -184,50 +952,7 @@ Kai_bool error_redefinition(
 	Kai_u32 line_number,
 	Node* original
 ) {
-#define err context->error
-    err.result = KAI_ERROR_SEMANTIC;
-    err.location.string = string;
-    err.location.line = line_number;
-    err.message.count = 0;
-	err.message.data = (u8*)context->memory.temperary; // uses temperary memory
-
-    str_insert_string(err.message, "indentifier \"");
-    str_insert_str   (err.message, string);
-    str_insert_string(err.message, "\" is already declared");
-
-    u8* end = (u8*)context->memory.temperary + err.message.count;
-    Kai_Error* info = (Kai_Error*)end;
-    end += sizeof(Kai_Error);
-    err.next = info;
-
-    info->result = KAI_ERROR_INFO;
-    info->location.string = original->name;
-    info->location.line = original->line_number;
-    info->message = (Kai_str){.count = 0,.data = end}; // uses temperary memory
-
-    str_insert_string(info->message, "see original definition");
-
     return KAI_TRUE;
-#undef err
-}
-
-#define c_error_not_declared(NAME, LINE) \
-	error_not_declared(context, NAME, LINE)
-
-Kai_bool error_not_declared(Compiler_Context* context, Kai_str string, Kai_int line_number) {
-#define err context->error
-    err.result = KAI_ERROR_SEMANTIC;
-    err.location.string = string;
-    err.location.line = line_number;
-    err.message.count = 0;
-	err.message.data = (u8*)context->memory.temperary; // uses temperary memory
-
-    str_insert_string(err.message, "indentifier \"");
-    str_insert_str   (err.message, string);
-    str_insert_string(err.message, "\" not declared");
-
-    return KAI_TRUE;
-#undef err
 }
 
 #define c_error_circular_dependency(REF) \
@@ -602,60 +1327,10 @@ Kai_bool insert_node_for_statement(
 	Kai_bool           in_procedure,
 	Kai_bool           from_procedure // came from procdure
 ) {
-    switch (statement->id)
-	{
-	default:
-    break; case KAI_STMT_IF: {
-        Kai_Stmt_If* ifs = (Kai_Stmt_If*)statement;
-		if (c_insert_node_for_statement(ifs->body, scope_index, in_procedure, KAI_FALSE))
-			return KAI_TRUE;
-		if (ifs->else_body &&
-			c_insert_node_for_statement(ifs->else_body, scope_index, in_procedure, KAI_FALSE))
-			return KAI_TRUE;
-    }
-    break; case KAI_STMT_FOR: {
-        Kai_Stmt_For* fors = (Kai_Stmt_For*)statement;
-		if (c_insert_node_for_statement(fors->body, scope_index, in_procedure, KAI_FALSE))
-			return KAI_TRUE;
-        // TODO: do we need to check the expression of the for statement? 
-    }
-    break; case KAI_STMT_DECLARATION: {
-		Kai_Stmt_Declaration* decl = (Kai_Stmt_Declaration*)statement;
-		if (c_insert_node_for_declaration(decl, in_procedure, scope_index))
-			return KAI_TRUE;
-	}
-	break; case KAI_STMT_COMPOUND: {
-		Kai_Stmt_Compound* comp = (Kai_Stmt_Compound*)statement;
-
-		u32 new_scope_index = scope_index;
-
-		if (!from_procedure) {
-			new_scope_index = scopes.count;
-			Scope new_scope = {
-				.parent = scope_index,
-				.is_proc_scope = KAI_TRUE,
-			};
-			array_reserve(scopes, scopes.count + 1);
-			array_push_back(scopes, new_scope);
-		}
-
-		comp->_scope = new_scope_index;
-
-		for_n(comp->count) {
-			if (c_insert_node_for_statement(comp->statements[i], new_scope_index, in_procedure, KAI_FALSE))
-				return KAI_TRUE;
-		}
-	}
-	break;
-	}
 	return KAI_FALSE;
 }
 
 u32 scope_find(Scope* scope, Kai_str name) {
-	for_n (scope->identifiers.count) {
-		if (kai_string_equals(scope->identifiers.data[i].name, name))
-			return i;
-	}
 	return NONE;
 }
 
@@ -665,119 +1340,10 @@ Kai_bool insert_node_for_declaration(
 	Kai_bool in_proc,
 	u32 scope_index
 ) {
-    if (in_proc && !(decl->flags & KAI_DECL_FLAG_CONST))
-		return KAI_FALSE;
-
-	Scope* scope = scopes.data + scope_index;
-
-	// Does this declaration already exist for this Scope?
-	u32 it = scope_find(scope, decl->name);
-	if (it != NONE) {
-		return c_error_redefinition(decl->name, decl->line_number, nodes.data + it);
-	}
-
-	// Add node to dependency graph
-	{
-		u32 index = nodes.count;
-
-		u32 first_dependency = dependencies.count;
-		array_reserve(dependencies, dependencies.count + 1);
-		array_push_back(dependencies, index | TYPE_BIT);
-
-		Node node = {
-			.value_dependencies = {.offset = first_dependency, .count = 1},
-			.name = decl->name,
-			.expr = decl->expr,
-			.line_number = decl->line_number,
-			.scope = scope_index,			
-		};
-
-		Named_Node_Ref node_ref = {
-			.name  = decl->name,
-			.index = index,
-		};
-
-		array_reserve(scope->identifiers, scope->identifiers.count + 1);
-		array_push_back(scope->identifiers, node_ref);
-
-		array_reserve(nodes, nodes.count + 1);
-		array_push_back(nodes, node);
-	}
-
-	switch (decl->expr->id)
-	{
-	default:
-   break; case KAI_EXPR_PROCEDURE: {
-		Kai_Expr_Procedure* proc = (Kai_Expr_Procedure*)decl->expr;
-        (void)proc;
-
-		u32 new_scope_index = scopes.count;
-		Scope new_scope = {
-			.parent = scope_index,
-			.is_proc_scope = KAI_TRUE,
-		};
-		array_reserve(scopes, scopes.count + 1);
-		array_push_back(scopes, new_scope);
-
-		proc->_scope = new_scope_index;
-		return c_insert_node_for_statement(proc->body, new_scope_index, KAI_TRUE, KAI_TRUE);
-	}
-	}
-
 	return KAI_FALSE;
 }
 
 #define LOCAL_VARIABLE_INDEX ((u32)-1)
-
-void remove_all_locals(Scope* scope) {
-	Named_Node_Ref* data = scope->identifiers.data;
-	u32 count = scope->identifiers.count;
-	u32 end = 0;
-	for_n (count) {
-		if (data[i].index == LOCAL_VARIABLE_INDEX) continue;
-		if (i != end) data[end] = data[i];
-		++end;
-	}
-	scope->identifiers.count = end;
-}
-
-#define c_resolve_dependency_node(NAME, OUT_INDEX, SCOPE_INDEX, IN_PROC) \
-	resolve_dependency_node(context, NAME, OUT_INDEX, SCOPE_INDEX, IN_PROC)
-Kai_bool resolve_dependency_node(
-	Compiler_Context* context,
-	Kai_str name, Named_Node_Ref* out_ref, u32 scope_index, Kai_bool const in_proc
-) {
-    Kai_bool allow_locals = KAI_TRUE;
-    Scope* scope = NULL;
-    while (1) {
-        scope = scopes.data + scope_index;
-
-		u32 it = scope_find(scope, name);
-
-        if (it != NONE) {
-            Kai_bool is_local = scope->identifiers.data[it].index == LOCAL_VARIABLE_INDEX;
-            if (in_proc && is_local) {
-                if (allow_locals) {
-					*out_ref = scope->identifiers.data[it];
-					return KAI_TRUE;
-                }
-            }
-            else {
-				*out_ref = scope->identifiers.data[it];
-				return KAI_TRUE;
-            }
-		}
-
-        if (scope_index == GLOBAL_SCOPE)
-            return KAI_FALSE;
-        
-        // Do not allow Local variables from higher procedure scopes
-        if (scope->is_proc_scope)
-            allow_locals = KAI_FALSE;
-
-        scope_index = scope->parent;
-    }
-}
 
 #define c_add_dependency(RANGE, REF) \
 	add_dependency(context, RANGE, REF)
@@ -806,291 +1372,6 @@ void add_dependency(Compiler_Context* context, Kai_range* range, Node_Ref ref) {
 	dependencies.data[pos] = ref;
 	dependencies.count += 1;
 	range->count += 1;
-}
-
-Kai_bool insert_value_dependencies(
-    Compiler_Context* context,
-	Kai_range*        deps,
-    u32               scope_index,
-    Kai_Expr          expr,
-    Kai_bool          in_procedure
-) {
-    if (expr == NULL) { panic_with_message("null expression\n"); return 0; }
-
-    switch (expr->id)
-    {
-    default: {
-		panic_with_message("undefined expr [insert_value_dependencies] (id = %d)\n", expr->id);
-	}
-
-    break; case KAI_EXPR_IDENTIFIER: {
-		Named_Node_Ref dependency;
-		Kai_bool result = c_resolve_dependency_node(expr->source_code, &dependency, scope_index, in_procedure);
-
-		if (result == KAI_FALSE)
-			return c_error_not_declared(expr->source_code, expr->line_number);
-
-        // DO NOT depend on local variables
-        if (in_procedure && dependency.index == LOCAL_VARIABLE_INDEX)
-            break;
-		
-		c_add_dependency(deps, dependency.index);
-    }
-
-    break; case KAI_EXPR_NUMBER:
-    break; case KAI_EXPR_STRING:
-
-    break; case KAI_EXPR_UNARY: {
-        Kai_Expr_Unary* unary = (Kai_Expr_Unary*)expr;
-		return c_insert_value_dependencies(deps, scope_index, unary->expr, in_procedure);
-    }
-
-    break; case KAI_EXPR_BINARY: {
-        Kai_Expr_Binary* binary = (Kai_Expr_Binary*)expr;
-		if (c_insert_value_dependencies(deps, scope_index, binary->left, in_procedure))
-            return KAI_TRUE;
-        return c_insert_value_dependencies(deps, scope_index, binary->right, in_procedure);
-    }
-
-    break; case KAI_EXPR_PROCEDURE_CALL: {
-        Kai_Expr_Procedure_Call* call = (Kai_Expr_Procedure_Call*)expr;
-
-		// Procedure calls in procedures are fine, we only need to know the type to generate the bytecode
-		// TODO: possible bug for nested procedures
-        if (in_procedure) {
-            if (c_insert_type_dependencies(deps, scope_index, call->proc))
-                return KAI_TRUE;
-        }
-        else {
-            if (c_insert_value_dependencies(deps, scope_index, call->proc, in_procedure))
-                return KAI_TRUE;
-        }
-
-        for (u32 i = 0; i < call->arg_count; ++i) {
-			if(c_insert_value_dependencies(deps, scope_index, call->arguments[i], in_procedure))
-                return KAI_TRUE;
-        }
-    }
-
-    break; case KAI_EXPR_PROCEDURE_TYPE: {
-        Kai_Expr_Procedure_Type* proc = (Kai_Expr_Procedure_Type*)expr;
-        (void)proc;
-		panic_with_message("procedure type\n");
-    }
-
-    break; case KAI_EXPR_PROCEDURE: {
-        Kai_Expr_Procedure* proc = (Kai_Expr_Procedure*)expr;
-		Scope* local_scope = scopes.data + proc->_scope;
-
-		// Insert procedure input names to local scope
-        for (int i = 0; i < proc->param_count; ++i) {
-			Kai_Expr_Procedure_Parameter* parameter = proc->input_output + i;
-
-			u32 it = scope_find(local_scope, parameter->name);
-			if (it != NONE)
-				return c_error_redefinition(parameter->name, proc->line_number, nodes.data + it);
-
-			Named_Node_Ref local = {.name = parameter->name, .index = LOCAL_VARIABLE_INDEX};
-
-			array_reserve(local_scope->identifiers, local_scope->identifiers.count + 1);
-			array_push_back(local_scope->identifiers, local);
-        }
-
-		if (c_insert_value_dependencies(deps, proc->_scope, proc->body, KAI_TRUE))
-			return KAI_TRUE;
-
-		remove_all_locals(local_scope);
-    }
-
-    break; case KAI_STMT_DECLARATION: {
-        if (in_procedure) {
-            Kai_Stmt_Declaration* decl = (Kai_Stmt_Declaration*)expr;
-
-            // Already has a dependency node
-            if (decl->flags & KAI_DECL_FLAG_CONST) return KAI_FALSE;
-
-            Scope* scope = scopes.data + scope_index;
-
-            // Insert into local scope (if not already defined)
-            u32 it = scope_find(scope, decl->name);
-            if (it != NONE && scope->identifiers.data[it].index != LOCAL_VARIABLE_INDEX)
-                return c_error_redefinition(decl->name, decl->line_number, nodes.data + it);
-
-			Named_Node_Ref local = {.name = decl->name, .index = LOCAL_VARIABLE_INDEX};
-		    array_reserve(scope->identifiers, scope->identifiers.count + 1);
-			array_push_back(scope->identifiers, local);
-
-            // Look into it's definition to find possible dependencies
-            return c_insert_value_dependencies(deps, scope_index, decl->expr, KAI_TRUE);
-        }
-        else panic_with_message("invalid declaration\n");
-    }
-
-    break; case KAI_STMT_ASSIGNMENT: {
-        if (in_procedure) {
-            Kai_Stmt_Assignment* assignment = (Kai_Stmt_Assignment*)expr;
-            return c_insert_value_dependencies(deps, scope_index, assignment->expr, KAI_TRUE);
-        }
-        else panic_with_message("invalid assignment\n");
-    }
-
-    break; case KAI_STMT_RETURN: {
-        if (in_procedure) {
-            Kai_Stmt_Return* ret = (Kai_Stmt_Return*)expr;
-            return c_insert_value_dependencies(deps, scope_index, ret->expr, KAI_TRUE);
-        }
-		else panic_with_message("invalid return\n");
-    }
-
-    break; case KAI_STMT_IF: {
-		Kai_Stmt_If* ifs = (Kai_Stmt_If*)expr;
-		if(c_insert_value_dependencies(deps, scope_index, ifs->body, in_procedure))
-			return KAI_TRUE;
-		if(ifs->else_body && c_insert_value_dependencies(deps, scope_index, ifs->else_body, in_procedure))
-			return KAI_TRUE;
-    }
-
-    break; case KAI_STMT_COMPOUND: {
-        if (in_procedure) {
-            Kai_Stmt_Compound* comp = (Kai_Stmt_Compound*)expr;
-
-            u32 const n = comp->count;
-            for_n(n) {
-                if(c_insert_value_dependencies(deps, comp->_scope, comp->statements[i], KAI_TRUE))
-                    return KAI_TRUE;
-            }
-
-            Scope* scope = scopes.data + comp->_scope;
-            remove_all_locals(scope);
-        }
-        else panic_with_message("invalid compound statement\n");
-    }
-
-    break; case KAI_STMT_FOR: {
-        Kai_Stmt_For* for_ = (Kai_Stmt_For*)expr;
-        if (c_insert_value_dependencies(deps, scope_index, for_->body, in_procedure))
-            return KAI_TRUE;
-    }
-
-    break;
-    }
-
-	return KAI_FALSE;
-}
-
-Kai_bool insert_type_dependencies(
-	Compiler_Context* context,
-    Kai_range* deps,
-    u32 scope_index,
-    Kai_Expr expr
-) {
-    if (expr == NULL) { panic_with_message("null expression\n"); return KAI_FALSE; }
-
-    switch (expr->id)
-    {
-    default:
-    break; case KAI_EXPR_IDENTIFIER: {
-		Named_Node_Ref dependency;
-		// TODO: why true?
-		Kai_bool result = c_resolve_dependency_node(expr->source_code, &dependency, scope_index, KAI_TRUE);
-
-        if (result == KAI_FALSE)
-            return c_error_not_declared(expr->source_code, expr->line_number);
-
-        // DO NOT depend on local variables
-        if (dependency.index == LOCAL_VARIABLE_INDEX)
-            return KAI_FALSE;
-
-		c_add_dependency(deps, dependency.index | TYPE_BIT);
-    }
-
-    break; case KAI_EXPR_UNARY: {
-        Kai_Expr_Unary* unary = (Kai_Expr_Unary*)expr;
-        return c_insert_type_dependencies(deps, scope_index, unary->expr);
-    }
-
-    break; case KAI_EXPR_BINARY: {
-        Kai_Expr_Binary* binary = (Kai_Expr_Binary*)expr;
-        if (c_insert_type_dependencies(deps, scope_index, binary->left))
-            return KAI_TRUE;
-        return c_insert_type_dependencies(deps, scope_index, binary->right);
-    }
-
-    break; case KAI_EXPR_PROCEDURE_CALL: {
-        Kai_Expr_Procedure_Call* call = (Kai_Expr_Procedure_Call*)expr;
-
-        if (c_insert_type_dependencies(deps, scope_index, call->proc))
-            return KAI_TRUE;
-
-        for (Kai_u32 i = 0; i < call->arg_count; ++i) {
-            if (c_insert_value_dependencies(deps, scope_index, call->arguments[i], KAI_FALSE))
-                return KAI_TRUE;
-        }
-    }
-
-    break; case KAI_EXPR_PROCEDURE_TYPE: {
-        //Kai_Expr_Procedure_Type* proc = (Kai_Expr_Procedure_Type*)expr;
-        panic_with_message("procedure type\n");
-        //kai_int total = proc->parameter_count + proc->ret_count;
-        //for (int i = 0; i < total; ++i) {
-        //    print_tree(ctx, proc->types[i]);
-        //}
-    }
-
-    break; case KAI_EXPR_PROCEDURE: {
-        Kai_Expr_Procedure* proc = (Kai_Expr_Procedure*)expr;
-        for_n(proc->param_count + proc->ret_count) {
-            Kai_Expr_Procedure_Parameter* param = proc->input_output + i;
-			//_write_string(param->name);
-			//_write(" --- ");
-			//kai_debug_write_expression(writer, param->type);
-            if (c_insert_value_dependencies(deps, scope_index, param->type, KAI_FALSE))
-                return KAI_TRUE;
-        }
-    }
-
-    break; case KAI_STMT_DECLARATION: {
-        //Kai_Stmt_Declaration* decl = (Kai_Stmt_Declaration*)expr;
-        panic_with_message("declaration\n");
-
-        //// Already has a dependency node
-        //if (decl->flags & kai_Decl_Flag_Const) return false;
-
-        //auto name = SV(decl->name);
-        //auto& s = dg.scopes[scope];
-
-        //// Insert into local scope (if not already defined)
-        //auto it = s.map.find(name);
-        //if (it != s.map.end())
-        //	return error_redefinition(decl->name, decl->line_number);
-        //s.map.emplace(name, LOCAL_VARIABLE_INDEX);
-
-        //// Look into it's definition to find possible dependencies
-        //return insert_value_dependencies_proc(deps, scope, decl->expr);
-    }
-
-    break; case KAI_STMT_RETURN: {
-        Kai_Stmt_Return* ret = (Kai_Stmt_Return*)expr;
-        return c_insert_type_dependencies(deps, scope_index, ret->expr);
-    }
-
-    break; case KAI_STMT_COMPOUND: {
-        panic_with_message("compound\n");
-        //auto comp = (kai_Stmt_Compound*)expr;
-
-        //auto const n = comp->count;
-        //for_n(n) {
-        //	catch_and_throw(insert_type_dependencies(deps, comp->_scope, comp->statements[i]));
-        //}
-
-        //Scope& s = dg.scopes[comp->_scope];
-        //remove_all_locals(s);
-    }
-
-    break;
-    }
-	
-    return KAI_FALSE;
 }
 
 Kai_bool compile_value(Compiler_Context* context, u32 index) {

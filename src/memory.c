@@ -113,7 +113,7 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
     return ptr;
 }
 
-Kai_Result kai_create_memory(Kai_Memory_Allocator* Memory)
+Kai_Result kai_create_memory(Kai_Allocator* Memory)
 {
     kai__assert(Memory != NULL);
     Memory->allocate      = kai__memory_allocate;
@@ -133,24 +133,24 @@ Kai_Result kai_create_memory(Kai_Memory_Allocator* Memory)
 	return KAI_SUCCESS;
 }
 
-Kai_Result kai_destroy_memory(Kai_Memory_Allocator* Memory)
+Kai_Result kai_destroy_memory(Kai_Allocator* Memory)
 {
     Kai__Memory_Internal* internal = Memory->user;
     if (internal->total_allocated != 0) {
 		return KAI_MEMORY_ERROR_MEMORY_LEAK;
     }
     free(Memory->user);
-    *Memory = (Kai_Memory_Allocator) {0};
+    *Memory = (Kai_Allocator) {0};
 	return KAI_SUCCESS;
 }
 
-void kai_memory_set_debug(Kai_Memory_Allocator* Memory, Kai_u32 debug_level)
+void kai_memory_set_debug(Kai_Allocator* Memory, Kai_u32 debug_level)
 {
     Kai__Memory_Internal* internal = Memory->user;
     internal->debug_level = debug_level;
 }
 
-Kai_u32 kai_memory_usage(Kai_Memory_Allocator* Memory)
+Kai_u32 kai_memory_usage(Kai_Allocator* Memory)
 {
     Kai__Memory_Internal* internal = Memory->user;
     return internal->total_allocated;

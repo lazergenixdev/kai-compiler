@@ -1,22 +1,6 @@
-fibonacci :: (n: int) {
+fibonacci :: (n: int) -> int {
     if n <= 2 ret 1;
     ret fibonacci(n-2) + fibonacci(n-1);
 }
 
 int :: s32;
-
-/*
-next = 1;
-get_register("n") => 0;
-if (is_value("2")) => true;
-insert_compare_value(1, 0, { 2 }, GT);
-next = 2;
-insert_branch(1, &br);
-insert_statement() {
-    insert_load_value(2, 1);
-    next = 3;
-    insert_return(3);
-}
-br = location();
-...
-*/

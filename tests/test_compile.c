@@ -2,12 +2,12 @@
 #include <setjmp.h>
 
 Kai_Result
-kai_create_program_from_source(Kai_str Source, Kai_Memory_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program) {
+kai_create_program_from_source(Kai_str Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program) {
     return KAI_ERROR_FATAL;        
 }
 
-void kai_create_memory_allocator(Kai_Memory_Allocator* a) { (void)a; }
-void kai_destroy_memory_allocator(Kai_Memory_Allocator* a) { (void)a; }
+void kai_create_memory_allocator(Kai_Allocator* a) { (void)a; }
+void kai_destroy_memory_allocator(Kai_Allocator* a) { (void)a; }
 
 typedef Kai_bool Kai_P_Is_Valid_Address(Kai_ptr Address, Kai_u32 Size);
 
@@ -30,7 +30,7 @@ int check_script() {
 int compile_simple_add() {
     TEST();
 
-    Kai_Memory_Allocator allocator = {0};
+    Kai_Allocator allocator = {0};
     kai_create_memory_allocator(&allocator);
 
     Kai_Program program = {0};

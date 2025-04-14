@@ -2,11 +2,13 @@
 
 //! TODO: only panic in dev builds
 
-void kai_get_version(Kai_u32* major, Kai_u32* minor, Kai_u32* patch)
+Kai_vector3_u32 kai_get_version(void)
 {
-    *major = KAI_VERSION_MAJOR;
-    *minor = KAI_VERSION_MINOR;
-    *patch = KAI_VERSION_PATCH;
+    return (Kai_vector3_u32) {
+        .x = KAI_VERSION_MAJOR,
+        .y = KAI_VERSION_MINOR,
+        .z = KAI_VERSION_PATCH,
+    };
 }
 
 Kai_str kai_get_version_string(void)

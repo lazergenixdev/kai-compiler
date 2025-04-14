@@ -9,7 +9,7 @@ Kai_u32 kai__closest_multiple(Kai_u32 minimum, Kai_u32 m) {
     return (t*m < minimum)? t + 1 : t;
 }
 
-void kai__create_dynamic_arena_allocator(Kai__Dynamic_Arena_Allocator* arena, Kai_Memory_Allocator* allocator) {
+void kai__create_dynamic_arena_allocator(Kai__Dynamic_Arena_Allocator* arena, Kai_Allocator* allocator) {
     arena->allocator = *allocator;
     arena->bucket_size = kai__closest_multiple(KAI__MINIMUM_ARENA_BUCKET_SIZE, allocator->page_size) * allocator->page_size;
     arena->current_allocated = sizeof(Kai__Arena_Bucket*);
@@ -30,7 +30,7 @@ void kai__dynamic_arena_allocator_free_all(Kai__Dynamic_Arena_Allocator* arena) 
 void kai__destroy_dynamic_arena_allocator(Kai__Dynamic_Arena_Allocator* arena) {
     kai__dynamic_arena_allocator_free_all(arena);
     arena->bucket_size = 0;
-    arena->allocator = (Kai_Memory_Allocator) {};
+    arena->allocator = (Kai_Allocator) {};
 }
 
 void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* arena, Kai_u32 size) {    

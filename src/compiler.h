@@ -49,7 +49,7 @@ typedef struct {
 } Dependency_Graph;
 
 typedef struct {
-	Kai_Memory_Allocator memory;
+	Kai_Allocator memory;
 	Kai_Error            error;
 	Dependency_Graph     dependency_graph;
 } Compiler_Context;

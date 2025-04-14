@@ -377,8 +377,7 @@ loop_back:
         binary->left  = left;
         binary->right = right;
         left = (Kai_Expr) binary;
-        break;
-    }
+    } break;
 
     case OP_INDEX: {
         Kai_Expr right = _parse_expr(DEFAULT_PREC);
@@ -390,8 +389,7 @@ loop_back:
         binary->left  = left;
         binary->right = right;
         left = (Kai_Expr) binary;
-        break;
-    }
+    } break;
 
     case OP_PROCEDURE_CALL: {
         Kai_Expr head = NULL;
@@ -418,8 +416,7 @@ loop_back:
         call->arg_head = head;
         call->arg_count = arg_count;
         left = (Kai_Expr) call;
-        break;
-    }
+    } break;
 
     default: panic_with_message("u fucked up");
 

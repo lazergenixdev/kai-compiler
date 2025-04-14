@@ -195,3 +195,16 @@ void print_float_bits(double d) {
 	std::cout << std::bitset<11>(_d>>52) << ' ';
 	std::cout << std::bitset<52>(_d);
 }
+
+Forward + Reverse mode autodiff ???
+/*
+d_fibonacci :: #forward_diff (x: $T) -> T {
+    if n <= 2 ret 1;
+    ret fibonacci(n-2) + fibonacci(n-1);
+}
+
+d_fibonacci :: (x: #diff_type($T)) -> #diff_type(T) {
+    if n <= 2 ret {1, 0};
+    ret d_fibonacci({n-2, x.dif}) + d_fibonacci({n-1, x.dif});
+}
+*/

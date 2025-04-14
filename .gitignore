@@ -16,4 +16,4 @@
 **.vscode
 
 # Build Binaries
-build/
+build*/

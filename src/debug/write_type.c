@@ -3,6 +3,10 @@
 
 void kai_debug_write_type(Kai_Debug_String_Writer* writer, Kai_Type Type)
 {
+    if (Type == NULL) {
+        kai__write("[null]");
+        return;
+    }
     switch (Type->type) {
         default:                 { kai__write("[Unknown]"); } break;
         case KAI_TYPE_TYPE:      { kai__write("Type");      } break;
