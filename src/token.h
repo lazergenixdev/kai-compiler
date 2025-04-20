@@ -17,16 +17,8 @@ X(struct  , KEYWORD_START | 9) \
 X(using   , KEYWORD_START |10) \
 X(while   , KEYWORD_START |11) \
 
-enum Token_Enum {
-    T_END        = 0,
-    T_IDENTIFIER = 0xC0 | 0,
-    T_DIRECTIVE  = 0xC0 | 1,
-    T_STRING     = 0xC0 | 2,
-    T_NUMBER     = 0xC0 | 3,
-#define X(NAME,ID) T_KW_ ## NAME = ID,
-    X_TOKEN_KEYWORDS
-#undef X
-};
+#define token_is_keyword(TOKEN_TYPE) \
+    ((TOKEN_TYPE) < T_IDENTIFIER && (TOKEN_TYPE) >= KEYWORD_START)
 
 #define X_TOKEN_SYMBOLS \
 X('->') \
@@ -42,29 +34,37 @@ X('>>') \
 X('..') \
 X('---')
 
-#define token_is_keyword(TOKEN_TYPE) \
-    ((TOKEN_TYPE) < T_IDENTIFIER && (TOKEN_TYPE) >= KEYWORD_START)
-
-void insert_token_type_string(Kai_str* out, Kai_u32 type);
+enum {
+    T_END        = 0,
+    T_IDENTIFIER = 0xC0 | 0,
+    T_DIRECTIVE  = 0xC0 | 1,
+    T_STRING     = 0xC0 | 2,
+    T_NUMBER     = 0xC0 | 3,
+#define X(NAME,ID) T_KW_ ## NAME = ID,
+    X_TOKEN_KEYWORDS
+#undef X
+};
 
 typedef struct {
     Kai_u32 type;
     Kai_str string;
     Kai_u32 line_number;
     Kai_Number_Info number;
-} Token;
+} Kai__Token;
 
 typedef struct {
-    Token    current_token;
-    Token    peeked_token;
-    Kai_str  source;
-    Kai_u32  cursor;
-    Kai_u32  line_number;
-    Kai_bool peeking;
+    Kai__Token  current_token;
+    Kai__Token  peeked_token;
+    Kai_str     source;
+    Kai_u32     cursor;
+    Kai_u32     line_number;
+    Kai_bool    peeking;
 } Tokenization_Context;
 
-Token* next_token(Tokenization_Context* context);
-Token* peek_token(Tokenization_Context* context);
+void insert_token_type_string(Kai_str* out, Kai_u32 type);
+
+Kai__Token* kai__next_token(Tokenization_Context* context);
+Kai__Token* kai__peek_token(Tokenization_Context* context);
 
 #endif // TOKEN_H
 

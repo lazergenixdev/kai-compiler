@@ -51,39 +51,3 @@ Kai_bool is_convertible(Kai_Type from, Kai_Type to) {
         } break;
     }
 }
-
-#if 0
-void __branching_examples() {
-    int EXPR;
-    // if (EXPR) { A } else { B }
-    if (~EXPR) goto else__2;
-    {
-        // A
-    }
-    goto endif__2;
-else__2:
-    {
-        // B
-    }
-endif__2:
-    // BYTECODE_OP_COMPARE
-    // BYTECODE_OP_BRANCH
-    // ...
-    // BYTECODE_OP_JUMP
-    // ...
-
-    // while (EXPR) { A }
-while__0:
-    if (~EXPR) goto endwhile__0;
-    {
-        // A
-    }
-    goto while__0;
-endwhile__0:
-    // BYTECODE_OP_COMPARE
-    // BYTECODE_OP_BRANCH
-    // ...
-    // BYTECODE_OP_JUMP
-    (void)0;
-}
-#endif

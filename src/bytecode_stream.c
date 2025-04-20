@@ -297,7 +297,6 @@ void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
         } \
     }    
 
-    uint8_t inside_bb = 0;
     uint8_t const* bytecode = def->bytecode;
     uint32_t cursor = 0;
 
@@ -479,7 +478,7 @@ void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
         } break;
 
         case BC_OP_CALL: {
-            uint32_t location = *(uint32_t*)(bytecode + cursor);
+            //uint32_t location = *(uint32_t*)(bytecode + cursor);
             cursor += sizeof(uint32_t);
 
             uint8_t ret_count = *(uint8_t*)(bytecode + cursor);

@@ -3,6 +3,163 @@
 #include "../token.h"
 #include <stdio.h>
 #include <inttypes.h>
+#include <locale.h>
+
+Kai_int kai__max(Kai_int a, Kai_int b) {
+    return a > b? a : b;
+}
+
+static char const* const kai__result_string_map[KAI_RESULT_COUNT] = {
+    [KAI_SUCCESS]         = "Success",
+    [KAI_ERROR_SYNTAX]    = "Syntax Error",
+    [KAI_ERROR_SEMANTIC]  = "Semantic Error",
+    [KAI_ERROR_INFO]      = "Info",
+    [KAI_ERROR_FATAL]     = "Fatal Error",
+    [KAI_ERROR_INTERNAL]  = "Internal Error",
+};
+
+int kai__base10_digit_count(Kai_int x) {
+    if (x <         10) return 1;
+    if (x <        100) return 2;
+    if (x <       1000) return 3;
+    if (x <      10000) return 4;
+    if (x <     100000) return 5;
+    if (x <    1000000) return 6;
+    if (x <   10000000) return 7;
+    if (x <  100000000) return 8;
+    if (x < 1000000000) return 9;
+    return 0;
+}
+
+u8 const* kai__advance_to_line(u8 const* source, Kai_int line) {
+    --line;
+    while (line > 0) {
+        if (*source++ == '\n') --line;
+    }
+    return source;
+}
+
+void kai__write_source_code(Kai_Debug_String_Writer* writer, u8 const* src) {
+    while (*src != 0 && *src != '\n') {
+        if (*src == '\t')
+            kai__write_char(' ');
+        else
+            kai__write_char(*src);
+        ++src;
+    }
+}
+
+void kai__write_source_code_count(Kai_Debug_String_Writer* writer, u8 const* src, Kai_int count) {
+    while (*src != 0 && *src != '\n' && count != 0) {
+        kai__write_char(' ');
+        ++src;
+        --count;
+    }
+}
+
+
+void kai_debug_write_error(Kai_Debug_String_Writer* writer, Kai_Error* error) {
+    char temp[256];
+
+write_error_message:
+    if (error->result >= KAI_RESULT_COUNT) {
+        kai__write("[Invalid result value]\n");
+        return;
+    }
+    else if (error->result == KAI_SUCCESS) {
+        kai__write("[Success]\n");
+        return;
+    }
+
+    // ------------------------- Write Error Message --------------------------
+
+    kai__set_color(KAI_DEBUG_COLOR_IMPORTANT_2);
+    kai__write_string(error->location.file_name);
+    kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+#if KAI_SHOW_LINE_NUMBER_WITH_FILE
+    kai__write_char(':');
+    kai__set_color(KAI_DEBUG_COLOR_IMPORTANT_2);
+    kai__write_format("%u", error->location.line);
+    kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+#endif
+    kai__write(" --> ");
+    if (error->result != KAI_ERROR_INFO) kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
+    kai__write(kai__result_string_map[error->result]);
+    if (error->result != KAI_ERROR_INFO) kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+    kai__write(": ");
+    kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
+    kai__write_string(error->message);
+    kai__write_char('\n');
+
+    // -------------------------- Write Source Code ---------------------------
+
+    if (error->result == KAI_ERROR_FATAL || error->result == KAI_ERROR_INTERNAL)
+        goto repeat;
+
+    kai__set_color(KAI_DEBUG_COLOR_DECORATION);
+    Kai_int digits = kai__base10_digit_count(error->location.line);
+    for_n(digits) kai__write_char(' ');
+    kai__write("  |\n");
+
+    kai__write_format(" %" PRIu32, error->location.line);
+    kai__write(" | ");
+
+    Kai_u8 const* begin = kai__advance_to_line(error->location.source, error->location.line);
+
+    kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+    kai__write_source_code(writer, begin);
+    kai__write_char('\n');
+
+    kai__set_color(KAI_DEBUG_COLOR_DECORATION);
+    for_n(digits) kai__write_char(' ');
+    kai__write("  | ");
+
+    kai__write_source_code_count(writer, begin,
+        (Kai_int)(error->location.string.data - begin)
+    );
+
+    kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
+    kai__write_char('^');
+    Kai_int n = kai__max(0, error->location.string.count - 1);
+    for_n(n) kai__write_char('~');
+
+    kai__write_char(' ');
+    kai__write_string(error->context);
+
+    kai__write_char('\n');
+    kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+
+    // -------------------------------- Repeat --------------------------------
+
+repeat: 
+    if (error->next) {
+        error = error->next;
+        goto write_error_message;
+    }
+}
+
+// ****************************************************************************
+
+void kai_debug_write_type(Kai_Debug_String_Writer* writer, Kai_Type Type)
+{
+    if (Type == NULL) {
+        kai__write("[null]");
+        return;
+    }
+    switch (Type->type) {
+        default:                 { kai__write("[Unknown]"); } break;
+        case KAI_TYPE_TYPE:      { kai__write("Type");      } break;
+        case KAI_TYPE_INTEGER:   { kai__write("Integer");   } break;   
+        case KAI_TYPE_FLOAT:     { kai__write("Float");     } break; 
+        case KAI_TYPE_POINTER:   { kai__write("Pointer");   } break;   
+        case KAI_TYPE_PROCEDURE: { kai__write("Procedure"); } break;     
+        case KAI_TYPE_SLICE:     { kai__write("Slice");     } break; 
+        case KAI_TYPE_STRING:    { kai__write("String");    } break;  
+        case KAI_TYPE_STRUCT:    { kai__write("Struct");    } break;  
+    }
+}
+
+// ****************************************************************************
 
 char const* const branches[4] = {
     KAI_UTF8("\u2503   "),
@@ -341,5 +498,96 @@ kai_debug_write_expression(Kai_Debug_String_Writer* writer, Kai_Expr expr) {
     };
     
     _explore(&context, expr, KAI_TRUE, KAI_FALSE);
+}
+
+// ****************************************************************************
+
+char const* kai__term_debug_colors [KAI_DEBUG_COLOR_COUNT] = {
+    [KAI_DEBUG_COLOR_PRIMARY]     = "\x1b[0;37m",
+    [KAI_DEBUG_COLOR_SECONDARY]   = "\x1b[1;97m",
+    [KAI_DEBUG_COLOR_IMPORTANT]   = "\x1b[1;91m",
+    [KAI_DEBUG_COLOR_IMPORTANT_2] = "\x1b[1;94m",
+    [KAI_DEBUG_COLOR_DECORATION]  = "\x1b[0;90m",
+};
+
+void kai__stdout_writer_write_string(Kai_ptr user, Kai_str string) {
+    (void)user;
+    fwrite(string.data, 1, string.count, stdout);
+}
+void kai__stdout_writer_write_c_string(Kai_ptr user, char const* string) {
+    (void)user;
+    printf("%s", string);
+}
+void kai__stdout_writer_write_char(Kai_ptr user, Kai_u8 c) {
+    (void)user;
+    putchar(c);
+}
+void kai__stdout_writer_set_color(Kai_ptr user, Kai_Debug_Color color) {
+    (void)user;
+    printf("%s", kai__term_debug_colors[color]);
+}
+
+#if defined(KAI__PLATFORM_WINDOWS)
+// including Windows.h results in a compiler warning :/
+int __stdcall SetConsoleOutputCP(unsigned int wCodePageID);
+#endif
+
+Kai_Debug_String_Writer* kai_debug_stdout_writer(void)
+{
+#if defined(KAI__PLATFORM_WINDOWS)
+	SetConsoleOutputCP(65001);
+#endif
+    setlocale(LC_CTYPE, ".UTF8");
+    static Kai_Debug_String_Writer writer = {
+        .write_string   = kai__stdout_writer_write_string,
+        .write_c_string = kai__stdout_writer_write_c_string,
+        .write_char     = kai__stdout_writer_write_char,
+        .set_color      = kai__stdout_writer_set_color,
+        .user           = NULL
+    };
+    return &writer;
+}
+
+void kai__file_writer_write_string(Kai_ptr user, Kai_str string) {
+    if (user == NULL) return;
+    fwrite(string.data, 1, string.count, user);
+}
+void kai__file_writer_write_c_string(Kai_ptr user, char const* string) {
+    if (user == NULL) return;
+    fprintf(user, "%s", string);
+}
+void kai__file_writer_write_char(Kai_ptr user, Kai_u8 c) {
+    if (user == NULL) return;
+    fputc(c, user);
+}
+void kai__file_writer_set_color(Kai_ptr user, Kai_Debug_Color color) {
+    (void)user, (void)color;
+    //fprintf(user, "%s", kai__term_debug_colors[color]);
+}
+
+#if defined(KAI__COMPILER_MSVC)
+static inline FILE* stdc_file_open(char const* path, char const* mode) {
+    FILE* handle = NULL;
+    fopen_s(&handle, path, mode); // this is somehow more safe? :/
+    return handle;
+}
+#else
+#    define stdc_file_open fopen
+#endif
+
+void kai_debug_open_file_writer(Kai_Debug_String_Writer* writer, const char* path)
+{
+    *writer = (Kai_Debug_String_Writer) {
+        .write_string   = kai__file_writer_write_string,
+        .write_c_string = kai__file_writer_write_c_string,
+        .write_char     = kai__file_writer_write_char,
+        .set_color      = kai__file_writer_set_color,
+        .user           = stdc_file_open(path, "wb"),
+    };
+}
+
+void kai_debug_close_file_writer(Kai_Debug_String_Writer* writer)
+{
+    fclose(writer->user);
 }
 

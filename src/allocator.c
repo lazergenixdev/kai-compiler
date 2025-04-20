@@ -30,7 +30,7 @@ void kai__dynamic_arena_allocator_free_all(Kai__Dynamic_Arena_Allocator* arena) 
 void kai__destroy_dynamic_arena_allocator(Kai__Dynamic_Arena_Allocator* arena) {
     kai__dynamic_arena_allocator_free_all(arena);
     arena->bucket_size = 0;
-    arena->allocator = (Kai_Allocator) {};
+    arena->allocator = (Kai_Allocator) {0};
 }
 
 void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* arena, Kai_u32 size) {    

@@ -89,14 +89,14 @@ Kai_u8 lex_lookup_table[128] = {
 void parse_number_bin(Tokenization_Context* context, Kai_u64* n);
 void parse_number_dec(Tokenization_Context* context, Kai_u64* n);
 void parse_number_hex(Tokenization_Context* context, Kai_u64* n);
-void parse_multi_token(Tokenization_Context* context, Token* t, Kai_u8);
+void parse_multi_token(Tokenization_Context* context, Kai__Token* t, Kai_u8);
 
 // I forge my own "using"
 #define line    context->line_number
 #define cursor  context->cursor
 #define source  context->source
-Token generate_token(Tokenization_Context* context) {
-    Token token = (Token) {
+Kai__Token generate_token(Tokenization_Context* context) {
+    Kai__Token token = (Kai__Token) {
         .type = T_END,
         .string = {.count = 1},
         .line_number = line,
@@ -382,7 +382,7 @@ void parse_number_hex(Tokenization_Context* context, Kai_u64* n) {
     }
 }
 
-void parse_multi_token(Tokenization_Context* context, Token* t, Kai_u8 current) {
+void parse_multi_token(Tokenization_Context* context, Kai__Token* t, Kai_u8 current) {
     if(cursor >= source.count) return;
 
     switch(current)
@@ -460,7 +460,7 @@ void parse_multi_token(Tokenization_Context* context, Token* t, Kai_u8 current) 
     }
 }
 
-Token* next_token(Tokenization_Context* context) {
+Kai__Token* kai__next_token(Tokenization_Context* context) {
     if (!context->peeking) {
         context->current_token = generate_token(context);
         return &context->current_token;
@@ -470,7 +470,7 @@ Token* next_token(Tokenization_Context* context) {
     return &context->current_token;
 }
 
-Token* peek_token(Tokenization_Context* context) {
+Kai__Token* kai__peek_token(Tokenization_Context* context) {
     if (context->peeking) return &context->peeked_token;
     context->peeking = KAI_TRUE;
     context->peeked_token = generate_token(context);

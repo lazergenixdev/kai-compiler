@@ -82,6 +82,11 @@
 extern "C" {
 #endif
 
+#if defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GCC)
+#pragma GCC diagnostic ignored "-Wc11-extensions"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+
 #ifndef KAI__SECTION_BUILTIN_TYPES
 
 enum {
@@ -233,8 +238,6 @@ enum {
 
 	KAI_ERROR_SYNTAX,
 	KAI_ERROR_SEMANTIC,
-	KAI_ERROR_TYPE_CAST,
-	KAI_ERROR_TYPE_CHECK,
 	KAI_ERROR_INFO,
 
 	// 'Meta' Errors

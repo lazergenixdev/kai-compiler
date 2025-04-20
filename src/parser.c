@@ -13,6 +13,7 @@
 //   save space/be more cache friendly for later stages.
 // .. But this would require a lot of duplicate code,
 //     so not going to implement.
+// NOTE: how would that even fit in with tree rewriting??
 
 typedef struct {
     Tokenization_Context tokenizer;
@@ -67,7 +68,7 @@ void adjust_source_location(Kai_str* src, Kai_u32 type) {
     }
 }
 
-void* error_unexpected(Parser* parser, Token* token, Kai_str where, Kai_str wanted) {
+void* error_unexpected(Parser* parser, Kai__Token* token, Kai_str where, Kai_str wanted) {
     Kai_Error* e = &parser->error;
     if (e->result != KAI_SUCCESS) return NULL;
     e->result          = KAI_ERROR_SYNTAX;
@@ -92,8 +93,8 @@ void* error_unexpected(Parser* parser, Token* token, Kai_str where, Kai_str want
 #define p_expect(OK, WHERE, CONTEXT) \
     if (!(OK)) return p_error_unexpected_s(WHERE, CONTEXT)
 
-#define p_next()           next_token(&parser->tokenizer)
-#define p_peek()           peek_token(&parser->tokenizer)
+#define p_next()           kai__next_token(&parser->tokenizer)
+#define p_peek()           kai__peek_token(&parser->tokenizer)
 #define _parse_expr(PREC)  parse_expression(parser, PREC)
 #define _parse_stmt(TOP)   parse_statement(parser, TOP)
 #define _parse_proc()      parse_procedure(parser)
@@ -141,10 +142,10 @@ Op_Info operator_of_token_type(Kai_u32 t) {
 }
 
 Kai_bool is_procedurep_next(Parser* parser) {
-    Token* p = p_peek();
+    Kai__Token* p = p_peek();
     if (p->type == ')') return KAI_TRUE;
     Tokenization_Context state = parser->tokenizer;
-    Token* cur = p_next();
+    Kai__Token* cur = p_next();
     Kai_bool found = KAI_FALSE;
 
     // go until we hit ')' or END, searching for ':'
@@ -160,7 +161,7 @@ Kai_bool is_procedurep_next(Parser* parser) {
 }
 
 Kai_Expr parse_type(Parser* parser) {
-    Token* t = &parser->tokenizer.current_token;
+    Kai__Token* t = &parser->tokenizer.current_token;
     if (t->type == '[') {
         p_next(); // get token after
         
@@ -204,7 +205,7 @@ Kai_Expr parse_type(Parser* parser) {
         else return p_error_unexpected_s("in procedure type", "',' or ')' expected here");
     }
     
-    Token* peek = p_peek(); // see if we have any returns
+    Kai__Token* peek = p_peek(); // see if we have any returns
 
     ///////////////////////////////////////////////////////////////////////
     // "This code is broken as hell."
@@ -257,7 +258,7 @@ Kai_Expr parse_type(Parser* parser) {
 
 Kai_Expr parse_expression(Parser* parser, int prec) {
     Kai_Expr left = NULL;
-    Token* t = &parser->tokenizer.current_token;
+    Kai__Token* t = &parser->tokenizer.current_token;
 
     switch (t->type) {
     ////////////////////////////////////////////////////////////
@@ -357,7 +358,7 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
 
 loop_back:
     (void)0;
-    Token* p = p_peek();
+    Kai__Token* p = p_peek();
     Op_Info op_info = operator_of_token_type(p->type);
 
     // handle precedence by returning early
@@ -425,7 +426,7 @@ loop_back:
 }
 
 Kai_Expr parse_procedure(Parser* parser) {
-    Token* t = &parser->tokenizer.current_token;
+    Kai__Token* t = &parser->tokenizer.current_token;
     // sanity check
     p_expect(t->type == '(', "", "this is likely a compiler bug, sorry :c");
     p_next();
@@ -509,7 +510,7 @@ parse_parameter:
 }
 
 Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
-    Token* t = &parser->tokenizer.current_token;
+    Kai__Token* t = &parser->tokenizer.current_token;
     switch (t->type) {
     case T_END: if (is_top_level) return NULL;
     default: {
@@ -599,7 +600,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         if (!body) return NULL;
 
         // parse "else"
-        Token* p = p_peek();
+        Kai__Token* p = p_peek();
         Kai_Stmt else_body = NULL;
         if (p->type == T_KW_else) {
             p_next();
@@ -646,7 +647,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
     }
 
     case T_IDENTIFIER: {
-        Token* p = p_peek();
+        Kai__Token* p = p_peek();
         // just an expression?
         if (p->type != ':') goto parse_expression_statement;
         
@@ -706,7 +707,7 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
     kai__create_dynamic_arena_allocator(&p.arena, &info->allocator);
 
     // setup first token
-    Token* token = p_next();
+    Kai__Token* token = p_next();
 
     Kai_Stmt current = NULL;
     Kai_Stmt head = NULL;
@@ -738,5 +739,5 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
 void kai_destroy_syntax_tree(Kai_Syntax_Tree* tree)
 {
     kai__destroy_dynamic_arena_allocator(&tree->allocator);
-    *tree = (Kai_Syntax_Tree) {};
+    *tree = (Kai_Syntax_Tree) {0};
 }

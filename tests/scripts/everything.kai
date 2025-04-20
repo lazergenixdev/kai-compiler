@@ -1,3 +1,5 @@
+str :: u64;
+
 main :: (argv: [] str) -> s32 {
     
     n :: 100;
@@ -15,20 +17,17 @@ main :: (argv: [] str) -> s32 {
         print(item);
     }
 
-    position :: vector(2, 3);
+    //position : [] f32 = .{};
     position.xy = position.yx;
 
     ret 0;
 }
 
-s :: () {
-    p :: #Julie; // This will cause issues in sematic analysis
-    print(p);
-}
-
 beer :: (a: u32, b: f32) -> u32 #native;
 
-main :: (using env: Environment) {
+Environment :: u32;
+
+script_main :: (using env: Environment) {
     beer_type :: #type (u32, f32) -> u32;
 
     for info: type_info {
@@ -70,7 +69,6 @@ main :: (using env: Environment) {
 //    callback : (*u8) -> str;
 //}
 //bs := Bytecode_Stream.(data = file.data, count = file.length);
-bs := Bytecode_Stream.(file.data);
 
 //cstdlib :: #import("cstdlib", option = 3);
 //
@@ -93,6 +91,9 @@ bcs__grow_function :: (x: u32) -> u32 {
     l = cast(s32) h;
     l = h->s32;
 }
+
+Bytecode_Stream :: str;
+Bytecode_Result :: str;
 
 bcs__ensure_space :: (stream: *Bytecode_Stream, count: u32) -> Bytecode_Result {
     required_capacity := stream.count + count;

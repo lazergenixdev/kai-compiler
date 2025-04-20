@@ -56,7 +56,7 @@ KAI__CLANG_DISABLE_WARNING("-Wmultichar")
     printf(__VA_ARGS__), \
     putchar('\n')
 
-#define print_location() printf("in (%s:%i)\n", __FUNCTION__, __LINE__)
+#define print_location() printf("in (%s:%i)\n", __FILE__, __LINE__)
 
 extern void panic(void);
 
