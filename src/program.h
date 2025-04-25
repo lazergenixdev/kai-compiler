@@ -43,26 +43,27 @@ typedef struct {
 } Kai__DG_Scope;
 
 typedef struct {
-    Kai_Allocator             allocator;
 	Kai_Error*                error;
+    Kai_Allocator             allocator;
 	KAI__ARRAY(Kai__DG_Scope) scopes;
 	KAI__ARRAY(Kai__DG_Node)  nodes;
 	int*                      compilation_order;
 } Kai__Dependency_Graph;
 
 typedef struct {
-	int dummy;
+	Bc_Stream stream;
 } Kai__Bytecode;
 
 typedef struct {
+	Kai_Error* error;
 	Kai_Syntax_Tree* trees;
 	Kai_u32 tree_count;
 	Kai_Allocator allocator;
-	Kai_Error* error;
 } Kai__Dependency_Graph_Create_Info;
 
 typedef struct {
 	Kai_Error* error;
+	Kai__Dependency_Graph* dependency_graph;
 } Kai__Bytecode_Create_Info;
 
 typedef struct {
