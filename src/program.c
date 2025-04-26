@@ -1,19 +1,17 @@
 #define KAI_USE_DEBUG_API
-#include "compiler.h"
 #include "builtin_types.h"
 #include "bytecode.h"
 #include <stdlib.h>
 #include "program.h"
 
-#define DEBUG_DEPENDENCY_GRAPH
+//#define DEBUG_DEPENDENCY_GRAPH
+//#define DEBUG_COMPILATION_ORDER
 
 Kai_Result
-kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program) {
-	*info->error = (Kai_Error) {
-		.message = KAI_STRING("kai_create_program not implemented"),
-		.result = KAI_ERROR_INTERNAL,
-	};
-	return KAI_ERROR_INTERNAL;
+kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program)
+{
+	sizeof(program);
+	return kai__error_internal(info->error, KAI_STRING("kai_create_program not implemented"));
 }
 
 #define kai__check(RESULT) if (RESULT != KAI_SUCCESS) goto cleanup;
@@ -121,7 +119,7 @@ Kai_Result kai__error_redefinition(
     str_insert_str   (out_Error->message, string);
     str_insert_string(out_Error->message, "\" is already declared");
 
-    u8* end = delete_me + out_Error->message.count;
+    Kai_u8* end = delete_me + out_Error->message.count;
     Kai_Error* info = (Kai_Error*)end;
     end += sizeof(Kai_Error);
     out_Error->next = info;
@@ -194,12 +192,12 @@ Kai_Result kai__dg_create_nodes_from_statement(
 	case KAI_EXPR_PROCEDURE: {
 		Kai_Expr_Procedure* node = base;
 
-		u32 new_scope_index = Graph->scopes.count;
+		Kai_u32 new_scope_index = Graph->scopes.count;
 		kai__array_append(&Graph->scopes, (Kai__DG_Scope) {
 			.parent = Scope_Index,
 			.is_proc_scope = KAI_TRUE,
 		});
-		kai__hash_table_create(&Graph->scopes.elements[new_scope_index].identifiers);
+		//kai__hash_table_create(&Graph->scopes.elements[new_scope_index].identifiers);
 
 		node->_scope = new_scope_index;
 		if (node->body) {
@@ -270,7 +268,7 @@ Kai_Result kai__dg_create_nodes_from_statement(
 			});
 
 			kai__array_append(&Graph->nodes, dg_node);
-			kai__hash_table_insert(scope->identifiers, node->name, index);
+			kai__hash_table_emplace(scope->identifiers, node->name, index);
 		}
 
 		if (node->expr) {
@@ -286,7 +284,7 @@ Kai_Result kai__dg_create_nodes_from_statement(
 
 	case KAI_STMT_COMPOUND: {
 		Kai_Stmt_Compound* node = base;
-		u32 new_scope_index = Scope_Index;
+		Kai_u32 new_scope_index = Scope_Index;
 
 		if (!From_Procedure) {
 			new_scope_index = Graph->scopes.count;
@@ -294,7 +292,7 @@ Kai_Result kai__dg_create_nodes_from_statement(
 				.parent = Scope_Index,
 				.is_proc_scope = KAI_TRUE,
 			});
-			kai__hash_table_create(&Graph->scopes.elements[new_scope_index].identifiers);
+			//kai__hash_table_create(&Graph->scopes.elements[new_scope_index].identifiers);
 		}
 
 		node->_scope = new_scope_index;
@@ -311,15 +309,14 @@ Kai_Result kai__dg_create_nodes_from_statement(
 	return result;
 }
 
-void kai__print_scope(Kai__DG_Scope* Scope) {
-	for (Kai_u32 i = 0; i < Scope->identifiers.capacity; ++i) {
-		Kai_u64 hash = Scope->identifiers.elements[i].hash;
-		if (!(hash & KAI__HASH_TABLE_OCCUPIED_BIT))
-			continue;
-		Kai__DG_Node_Index node_index = Scope->identifiers.elements[i].value;
+void kai__print_scope(Kai__DG_Scope* Scope)
+{
+	kai__hash_table_iterate(Scope->identifiers, i)
+	{
+		Kai__DG_Node_Index node_index = Scope->identifiers.values[i];
 		if (node_index.flags & KAI__DG_NODE_LOCAL_VARIABLE)
 			putchar('L');
-		Kai_str name = Scope->identifiers.elements[i].key;
+		Kai_str name = Scope->identifiers.keys[i];
 		printf("\"%.*s\"+%i ", name.count, name.data, node_index.value);
 	}
 }
@@ -327,7 +324,7 @@ void kai__print_scope(Kai__DG_Scope* Scope) {
 Kai__DG_Node_Index* kai__dg_resolve_dependency_node(
 	Kai__Dependency_Graph* Graph,
 	Kai_str                Name,
-	u32                    Scope_Index,
+	Kai_u32                Scope_Index,
 	Kai_bool               In_Procedure)
 {
     Kai_bool allow_locals = KAI_TRUE;
@@ -358,26 +355,26 @@ Kai__DG_Node_Index* kai__dg_resolve_dependency_node(
     }
 }
 
-void kai__remove_local_variables(Kai__DG_Scope* Scope) {
-	for (Kai_u32 i = 0; i < Scope->identifiers.capacity; ++i) {
-		Kai_u64 hash = Scope->identifiers.elements[i].hash;
-		if (!(hash & KAI__HASH_TABLE_OCCUPIED_BIT))
-			continue;
-		Kai__DG_Node_Index node_index = Scope->identifiers.elements[i].value;
+void kai__remove_local_variables(Kai__DG_Scope* Scope)
+{
+	kai__hash_table_iterate(Scope->identifiers, i)
+	{
+		Kai__DG_Node_Index node_index = Scope->identifiers.values[i];
 		if (!(node_index.flags & KAI__DG_NODE_LOCAL_VARIABLE))
 			continue;
-		Scope->identifiers.elements[i].hash = 0; // remove item
+		kai__hash_table_remove_index(Scope->identifiers, i);
 	}
 }
 
 Kai_Result kai__dg_insert_value_dependencies(
     Kai__Dependency_Graph*    Graph,
 	Kai__DG_Dependency_Array* out_Dependency_Array,
-    u32                       Scope_Index,
+    Kai_u32                   Scope_Index,
     Kai_Expr                  Expr,
     Kai_bool                  In_Procedure)
 {
 	Kai_Result result = KAI_SUCCESS;
+	Kai_Allocator* allocator = &Graph->allocator;
 	void* base = Expr;
     if (Expr == NULL) { panic_with_message("null expression\n"); return 0; }
 
@@ -500,16 +497,17 @@ Kai_Result kai__dg_insert_value_dependencies(
 				return kai__error_redefinition(
 					Graph->error,
 					current->name,
-					node->line_number,
+					current->line_number,
 					original->name,
 					original->line_number
 				);
 			}
 
-			kai__hash_table_insert(local_scope->identifiers, current->name, (Kai__DG_Node_Index) {
+			kai__hash_table_emplace(local_scope->identifiers, current->name, (Kai__DG_Node_Index) {
 				.flags = KAI__DG_NODE_LOCAL_VARIABLE,
 			});
-			current = current->next;
+
+            current = current->next;
         }
 
 		if (node->body) {
@@ -546,7 +544,7 @@ Kai_Result kai__dg_insert_value_dependencies(
 				);
 			}
 
-			kai__hash_table_insert(scope->identifiers,
+			kai__hash_table_emplace(scope->identifiers,
 				node->name,
 				(Kai__DG_Node_Index) {
 					.flags = KAI__DG_NODE_LOCAL_VARIABLE,
@@ -657,7 +655,7 @@ Kai_Result kai__dg_insert_value_dependencies(
 Kai_Result kai__dg_insert_type_dependencies(
     Kai__Dependency_Graph*    Graph,
 	Kai__DG_Dependency_Array* out_Dependency_Array,
-    u32                       Scope_Index,
+    Kai_u32                   Scope_Index,
     Kai_Expr                  Expr)
 {
 	Kai_Result result = KAI_SUCCESS;
@@ -806,7 +804,7 @@ Kai_Result kai__create_dependency_graph(
 		.parent = KAI__SCOPE_NO_PARENT,
 	});
 	Kai__DG_Scope* global = &out_Graph->scopes.elements[KAI__SCOPE_GLOBAL_INDEX];
-	kai__hash_table_create(&global->identifiers);
+	//kai__hash_table_create(&global->identifiers);
 
 	// Insert builtin types
 	for (int i = 0, next = 0; i < count_of(kai__builtin_types); ++i)
@@ -819,7 +817,7 @@ Kai_Result kai__create_dependency_graph(
 			.name        = kai__builtin_types[i].name,
 			.scope_index = KAI__SCOPE_GLOBAL_INDEX,
 		});
-		kai__hash_table_insert(global->identifiers,
+		kai__hash_table_emplace(global->identifiers,
 			kai__builtin_types[i].name,
 			(Kai__DG_Node_Index) {
 				.value = next++
@@ -888,8 +886,8 @@ Kai_Result kai__create_dependency_graph(
 
 		if (node->value_dependencies.count) {
 			printf("    V deps: ");
-			for (Kai_u32 i = 0; i < node->value_dependencies.count; ++i) {
-				Kai__DG_Node_Index node_index = node->value_dependencies.elements[i];
+			for (Kai_u32 d = 0; d < node->value_dependencies.count; ++d) {
+				Kai__DG_Node_Index node_index = node->value_dependencies.elements[d];
 				Kai_str name = out_Graph->nodes.elements[node_index.value].name;
 				if (node_index.flags & KAI__DG_NODE_TYPE) {
 					printf("T(\x1b[94m%.*s\x1b[0m) ", name.count, name.data);
@@ -903,8 +901,8 @@ Kai_Result kai__create_dependency_graph(
 
 		if (node->type_dependencies.count) {
 			printf("    T deps: ");
-			for (Kai_u32 i = 0; i < node->type_dependencies.count; ++i) {
-				Kai__DG_Node_Index node_index = node->type_dependencies.elements[i];
+			for (Kai_u32 d = 0; d < node->type_dependencies.count; ++d) {
+				Kai__DG_Node_Index node_index = node->type_dependencies.elements[d];
 				Kai_str name = out_Graph->nodes.elements[node_index.value].name;
 				if (node_index.flags & KAI__DG_NODE_TYPE) {
 					printf("T(\x1b[94m%.*s\x1b[0m) ", name.count, name.data);
@@ -930,10 +928,10 @@ Kai_u32 kai__node_index_to_index(Kai__DG_Node_Index node_index)
 
 typedef struct {
 	Kai__Dependency_Graph* graph;
-    u32*       post;
-    u32*       prev;
-    Kai_bool*  visited;
-    u32        next;
+    Kai_u32*       post;
+    Kai_u32*       prev;
+    Kai_bool*      visited;
+    Kai_u32        next;
 } Kai__DFS_Context;
 
 void dfs_explore(Kai__DFS_Context* dfs, Kai__DG_Node_Index node_index)
@@ -951,8 +949,8 @@ void dfs_explore(Kai__DFS_Context* dfs, Kai__DG_Node_Index node_index)
 		deps = &node->value_dependencies;
 	}
 
-	for (int i = 0; i < deps->count; ++i) {
-		Kai__DG_Node_Index dep = deps->elements[i];
+	for (Kai_u32 d = 0; d < deps->count; ++d) {
+		Kai__DG_Node_Index dep = deps->elements[d];
 		Kai_u32 d_index = kai__node_index_to_index(dep);
 
 		if (!dfs->visited[d_index]) {
@@ -966,13 +964,14 @@ void dfs_explore(Kai__DFS_Context* dfs, Kai__DG_Node_Index node_index)
 
 Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Error* out_Error)
 {
+	(void)out_Error; // TODO: remove
 	// TODO: only one allocation necessary
 	Kai__DFS_Context dfs = { .graph = Graph, .next = 0 };
-	dfs.post    = calloc(Graph->nodes.count * 2, sizeof(u32));
-	dfs.prev    = malloc(Graph->nodes.count * 2* sizeof(u32));
+	dfs.post    = calloc(Graph->nodes.count * 2, sizeof(Kai_u32));
+	dfs.prev    = malloc(Graph->nodes.count * 2* sizeof(Kai_u32));
 	dfs.visited = calloc(Graph->nodes.count * 2, sizeof(Kai_bool));
 
-	memset(dfs.prev, 0xFF, Graph->nodes.count * 2* sizeof(u32));
+	memset(dfs.prev, 0xFF, Graph->nodes.count * 2* sizeof(Kai_u32));
 
 	// Do not waste time on builtins
 	//iterate (builtin_types) {
@@ -981,7 +980,7 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
 
 	// Perform DFS traversal
 	for_n (Graph->nodes.count) {
-		Kai__DG_Node_Index node_index = {.value = i};
+		Kai__DG_Node_Index node_index = {.value = (Kai_u32)i};
 		Kai_u32 v = kai__node_index_to_index(node_index);
 		if (!dfs.visited[v]) dfs_explore(&dfs, node_index);
 
@@ -991,14 +990,14 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
 	}
 
 	// Get compilation order  TODO: fix this O(N^2) algorithm
-	Graph->compilation_order = calloc(Graph->nodes.count * 2, sizeof(u32));
+	Graph->compilation_order = calloc(Graph->nodes.count * 2, sizeof(Kai_u32));
 	{
-		u32 next = 0;
-		u32 count = 0;
+		Kai_u32 next = 0;
+		Kai_u32 count = 0;
 		for_n (Graph->nodes.count * 2) {
 			cont:
 			if (dfs.post[i] == next) {
-				Graph->compilation_order[count++] = i;
+				Graph->compilation_order[count++] = (int)i;
 				if (count >= Graph->nodes.count * 2)
 					break;
 				++next;
@@ -1007,12 +1006,12 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
 			}
 		}
 
+		#if defined(DEBUG_COMPILATION_ORDER)
 		char temp[256];
 		Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
-#ifndef DEBUG_WRITE_COMPILATION_ORDER
 		kai__write("Compilation Order:\n");
 		for_ (i, Graph->nodes.count * 2) {
-			u32 v = Graph->compilation_order[i];
+			Kai_u32 v = Graph->compilation_order[i];
 			Kai_bool is_type = v & 1;
 			Kai_u32 index = v >> 1;
 			if (is_type) {
@@ -1090,7 +1089,7 @@ Kai__DG_Node* kai__dg_find_node(Kai__Dependency_Graph* graph, Kai_str name)
 {
 	for_n (graph->nodes.count)
 	{
-		if (kai_string_equals(graph->nodes.elements[i].name, name))
+		if (kai_str_equals(graph->nodes.elements[i].name, name))
 		{
 			return &graph->nodes.elements[i];
 		}
@@ -1103,13 +1102,25 @@ Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Create_Info* Info, Kai__DG_
 	if (node->type_flags & KAI__DG_NODE_EVALUATED)
 		return KAI_SUCCESS;
 
+	void* base = node->expr;
+
 	switch (node->expr->id) {
 		case KAI_EXPR_IDENTIFIER: {
 		 	Kai__DG_Node* d = kai__dg_find_node(Info->dependency_graph, node->expr->source_code);
-			if (d == NULL) panic_with_message("JULIE\n");
+			kai__assert(d != NULL);
 			node->type = d->type;
 			return KAI_SUCCESS;
 		} break;
+
+		case KAI_EXPR_PROCEDURE: {
+			Kai_Expr_Procedure* node = base;
+			Kai_Type_Info_Procedure type_info;
+			type_info.type = KAI_TYPE_PROCEDURE;
+			type_info.in_count = node->in_count;
+			type_info.out_count = node->out_count;
+			type_info.sub_types = NULL;
+			return KAI_SUCCESS;
+		}
 
 		default: {
 			panic_with_message("not handled %i", node->expr->id);
@@ -1148,17 +1159,12 @@ Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Create_Info* Info, Kai__DG
 	if (node->value_flags & KAI__DG_NODE_EVALUATED)
 		return KAI_SUCCESS;
 
-
-		
-	*Info->error = (Kai_Error) {
-		.message = KAI_STRING("kai__bytecode_generate_value not implemented"),
-		.result = KAI_ERROR_INTERNAL,
-	};
-	return KAI_ERROR_INTERNAL;
+	return kai__error_internal(Info->error, KAI_STRING("kai__bytecode_generate_value not implemented"));
 }
 
 Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode* out_Bytecode)
 {
+	(void)out_Bytecode; // TODO: remove
 	Kai_Result result = KAI_SUCCESS;
 	Kai__Dependency_Graph* graph = Info->dependency_graph;
 	int* order = graph->compilation_order;
@@ -1186,11 +1192,8 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 
 Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_Program)
 {
-	*Info->error = (Kai_Error) {
-		.message = KAI_STRING("kai__create_program not implemented"),
-		.result = KAI_ERROR_INTERNAL,
-	};
-	return KAI_ERROR_INTERNAL;
+	(void)out_Program; // TODO: remove
+	return kai__error_internal(Info->error, KAI_STRING("kai__create_program not implemented"));
 }
 
 void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
@@ -1204,52 +1207,17 @@ void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
 	kai__array_destroy(&Graph->nodes);
 	for (Kai_u32 i = 0; i < Graph->scopes.count; ++i) {
 		Kai__DG_Scope* scope = &Graph->scopes.elements[i];
-		kai__hash_table_destroy(&scope->identifiers);
+		kai__hash_table_destroy(scope->identifiers);
 	}
 	kai__array_destroy(&Graph->scopes);
 }
 
 void kai__destroy_bytecode(Kai__Bytecode* Bytecode)
 {
-
+	(void)Bytecode; // TODO: remove
 }
 
 #if 0
-
-// TODO: DEBUG ONLY
-char temp[1024];
-Kai_Debug_String_Writer* writer;
-int debug_index;
-
-void _debug_print_scope(Compiler_Context* context, u32 index) {
-	Scope* scope = context->dependency_graph.scopes.data + index;
-	_write_format("scope # %i\n", index);
-	for_n (scope->identifiers.count) {
-		_write(" - id: ");
-		_write_string(scope->identifiers.data[i].name);
-		_write("\n");
-	}
-}
-
-#define iterate(CONST_ARRAY) \
-	for (int i = 0; i < count_(CONST_ARRAY); ++i)
-
-void insert_builtin_types(Dependency_Graph* graph);
-void reserve(void** base, u32* capacity, u32 new_capacity, u32 stride);
-
-#define array_reserve(A, NEW_CAPACITY) reserve((void**)&A.data, &A.capacity, NEW_CAPACITY, sizeof(A.data[0]))
-#define array_push_back(A, VALUE) A.data[A.count++] = VALUE
-
-#define c_error_redefinition(NAME, LINE, NODE) error_redefinition(context, NAME, LINE, NODE)
-
-Kai_bool error_redefinition(
-	Compiler_Context* context,
-	Kai_str string,
-	Kai_u32 line_number,
-	Node* original
-) {
-    return KAI_TRUE;
-}
 
 #define c_error_circular_dependency(REF) \
 	error_circular_dependency(context, REF)
@@ -1299,166 +1267,9 @@ void* error_dependency_info(Compiler_Context* context, void* start, Node_Ref ref
 #undef err
 }
 
-Kai_bool compile_value(Compiler_Context* context, u32 index);
-Kai_bool compile_type (Compiler_Context* context, u32 index);
-
-// Convert from DFS index to node index in dependency graph
-#define node_at(X) \
-(X < context->dependency_graph.nodes.count)? X : ((X - context->dependency_graph.nodes.count)|TYPE_BIT)
-
-#define DEBUG_WRITE_COMPILATION_ORDER 1
-#define DEBUG_WRITE_NODES             1
-
-Kai_Result
-kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program) {
-	return KAI_ERROR_FATAL;
-	
-	Compiler_Context context = {
-		.memory = info->memory,
-	};
-
-    writer = kai_debug_stdout_writer();
-
-	array_reserve(context.dependency_graph.scopes,         64);
-	array_reserve(context.dependency_graph.nodes,         256);
-	array_reserve(context.dependency_graph.dependencies, 1024);
-
-    // Add global scope
-	context.dependency_graph.scopes.count += 1;
-    Scope* global_scope = context.dependency_graph.scopes.data + GLOBAL_SCOPE;
-    *global_scope = (Scope){.parent = NONE};
-    array_reserve(global_scope->identifiers, 64);
-
-	insert_builtin_types(&context.dependency_graph);
-	
-    // TODO: only look at first tree, but want to look at all trees,
-    //       all with their own scope somehow..
-	Kai_Syntax_Tree* tree = info->trees;
-
-	// Make nodes for every statement
-	for_n (tree->top_level_count) {
-		Kai_Stmt tl = tree->top_level_statements[i];
-		if (insert_node_for_statement(&context, tl, GLOBAL_SCOPE, KAI_FALSE, KAI_FALSE))
-            goto error;
-	}
-
-	// Insert dependencies for each node
-	for_n (context.dependency_graph.nodes.count) {
-		Node* node = context.dependency_graph.nodes.data + i;
-		debug_index = i;
-
-		if (!(node->value_flags&NODE_EVALUATED)
-		&& insert_value_dependencies(&context, &node->value_dependencies, node->scope, node->expr, KAI_FALSE))
-            goto error;
-
-		if (!(node->type_flags&NODE_EVALUATED)
-        && insert_type_dependencies(&context, &node->type_dependencies, node->scope, node->expr))
-        	goto error;
-	}
-
-#if DEBUG_WRITE_NODES
-	for_n (context.dependency_graph.nodes.count) {
-		Node* node = context.dependency_graph.nodes.data + i;
-
-		_write_format("%2u ", (int)i);
-		_write_char(node->value_flags & NODE_EVALUATED? 'V' : ' ');
-		_write_char(node->type_flags  & NODE_EVALUATED? 'T' : ' ');
-		_write_char(' ');
-		_write_string(node->name);
-
-		for (int i = 0; i < 12 - (int)node->name.count; ++i)
-			_write_char(' ');
-
-		Dependency_Graph* g = &context.dependency_graph;
-		for_n (node->value_dependencies.count) {
-			u32 ref = g->dependencies.data[node->value_dependencies.offset + i];
-			if (ref&TYPE_BIT) _set_color(KAI_DEBUG_COLOR_IMPORTANT_2);
-			_write_format("%u ", ref&(~TYPE_BIT));
-			if (ref&TYPE_BIT) _set_color(KAI_DEBUG_COLOR_PRIMARY);
-		}
-
-		if (node->type_dependencies.count) {
-			_write_char('(');
-			for_n (node->type_dependencies.count) {
-				u32 ref = g->dependencies.data[node->type_dependencies.offset + i];
-				if (ref&TYPE_BIT) _set_color(KAI_DEBUG_COLOR_IMPORTANT_2);
-				_write_format("%u ", ref&(~TYPE_BIT));
-				if (ref&TYPE_BIT) _set_color(KAI_DEBUG_COLOR_PRIMARY);
-			}
-			_write("\b)");
-		}
-		_write_char('\n');
-	}
-#endif
-
-	u32* order = get_compilation_order(&context);
-	if (order == NULL) goto error;
-
-	// compile in order ...
-	for_n (context.dependency_graph.nodes.count * 2) {
-		int u = order[i];
-		u = (u < context.dependency_graph.nodes.count)? u : ((u - context.dependency_graph.nodes.count)|TYPE_BIT);
-
-		Node* node = context.dependency_graph.nodes.data + (u & ~TYPE_BIT);
-
-		if (u & TYPE_BIT) {
-			if (node->value_flags & NODE_EVALUATED) continue;
-		}
-		else {
-			if (node->type_flags & NODE_EVALUATED) continue;
-		}
-
-		if (u & TYPE_BIT) {
-			if (compile_type(&context, u & ~TYPE_BIT)) goto cleanup;
-		}
-		else {
-			if (compile_value(&context, u)) goto cleanup;
-		}
-	}
-
-	cleanup:
-	free(order);
-
-	if (KAI_FAILED(context.error.result)) {
-	error:
-        if (info->error) {
-            *info->error = context.error;
-            //info->error->location.file_name = ;
-            //info->error->location.source = ;
-        }
-		return context.error.result;
-	}
-
-	info->error->message = KAI_STRING("compiler is in development :)");
-	info->error->result = KAI_ERROR_INTERNAL;
-    return KAI_ERROR_INTERNAL;
-}
-
 #define scopes       context->dependency_graph.scopes
 #define dependencies context->dependency_graph.dependencies
 #define nodes        context->dependency_graph.nodes
-
-Kai_bool compile_value(Compiler_Context* context, u32 index) {
-	Node* node = nodes.data + index;
-	Kai_Expr expr = node->expr;
-
-	_write_format("Compiling : %i, expr = %i\n", index, expr->id);
-
-	switch (expr->id)
-	{
-    default: {
-		panic_with_message("undefined expr [compile_value] (id = %d)\n", expr->id);
-	}
-
-	break; case KAI_EXPR_IDENTIFIER: {
-		_write("Got an identifier!!! --> ");
-		_write_string(expr->source_code);
-		_write_char('\n');
-	}
-	
-	}
-	return KAI_FALSE;
-}
 
 Kai_Type type_of_expression(Compiler_Context* context, Kai_Expr expr, u32 scope_index) {
 	switch (expr->id)

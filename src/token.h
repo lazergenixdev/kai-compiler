@@ -46,13 +46,6 @@ enum {
 };
 
 typedef struct {
-    Kai_u32 type;
-    Kai_str string;
-    Kai_u32 line_number;
-    Kai_Number_Info number;
-} Kai__Token;
-
-typedef struct {
     Kai__Token  current_token;
     Kai__Token  peeked_token;
     Kai_str     source;

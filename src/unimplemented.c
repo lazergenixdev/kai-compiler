@@ -8,7 +8,7 @@ kai_destroy_program(Kai_Program Program)
 }
 
 void*
-kai_find_procedure(Kai_Program Program, char const* Name, char const* Type)
+kai_find_procedure(Kai_Program Program, Kai_str Name, Kai_Type Type)
 {
 	UNIMPLEMENTED(Program, Name, Type);
     return NULL;

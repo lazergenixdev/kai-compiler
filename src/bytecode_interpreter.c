@@ -101,6 +101,7 @@ call:
     asm ( "blr %0"      :: "r" (address) : "x30" );
     asm ( "mov %0, x0"  : "=r" (result) );
 #else
+	sizeof(address, args, arg_count);
     bc__debug_log("what is this now?");
 //#   error "Dynamic call not implemented for this architecture!"
 #endif
@@ -207,7 +208,7 @@ void bci_set_input(Bc_Interpreter* interp, uint32_t index, Bc_Value value)
 
 void bci_push_output(Bc_Interpreter* interp, Bc_Reg reg)
 {
-	interp->return_registers[interp->return_registers_count++] = 0;
+	interp->return_registers[interp->return_registers_count++] = reg;
 }
 
 
@@ -409,7 +410,7 @@ int bci_step(Bc_Interpreter* interp)
     case BC_OP_NATIVE_CALL: {
         uintptr_t address;
         uint8_t use_dst;
-        Bc_Reg dst;
+        Bc_Reg dst = 0;
         uint8_t input_count;
 
         if (bci__next_address(interp, &address)) return 0;

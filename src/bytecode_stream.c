@@ -175,7 +175,7 @@ int bcs_insert_jump(Bc_Stream* stream, uint32_t* branch)
 //  CALL
 // >> [LOCATION]:32 [RET_COUNT]:8 [ARG_COUNT]:8 ([DST]:R ...) ([SRC]:R ...)
 // ---------------------------------------------------------------------
-int bcs_insert_call(Bc_Stream* stream, uint32_t* branch, uint8_t ret_count, uint32_t* reg_ret, uint32_t arg_count, uint32_t* reg_arg)
+int bcs_insert_call(Bc_Stream* stream, uint32_t* branch, uint8_t ret_count, uint32_t* reg_ret, uint8_t arg_count, uint32_t* reg_arg)
 {
     bcs__make_space(3 + sizeof(uint32_t) + sizeof(Bc_Reg) * (ret_count + arg_count));
     bcs__push_u8(stream, BC_OP_CALL);
@@ -370,11 +370,11 @@ void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
             address = *(uintptr_t*)(bytecode + cursor);
             cursor += sizeof(uintptr_t);
 
-            uint8_t use_dst;
+            uint8_t use_dst = 0;
             use_dst = *(uint8_t*)(bytecode + cursor);
             cursor += sizeof(uint8_t);
 
-            Bc_Reg dst;
+            Bc_Reg dst = 0;
             if (use_dst) {
                 dst = *(Bc_Reg*)(bytecode + cursor);
                 cursor += sizeof(Bc_Reg);

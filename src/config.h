@@ -29,13 +29,6 @@ KAI__CLANG_DISABLE_WARNING("-Wmultichar")
 
 // =============================<< MACROS >>===================================
 
-#if defined(KAI_DISABLE_ASSERTS)
-#   define kai__assert(EXPR)
-#else
-#   define kai__assert(EXPR) \
-        if (!(EXPR)) printf("%s:%i: \x1b[91mAssertion Failed\x1b[0m (\x1b[94m%s\x1b[0m)\n", __FILE__, __LINE__, #EXPR), exit(1)
-#endif
-
 #if defined(KAI__COMPILER_MSVC)
 #    define FUNCTION __FUNCSIG__
 #else
@@ -56,7 +49,22 @@ KAI__CLANG_DISABLE_WARNING("-Wmultichar")
     printf(__VA_ARGS__), \
     putchar('\n')
 
-#define print_location() printf("in (%s:%i)\n", __FILE__, __LINE__)
+static char const* kai__file(char const* cs)
+{
+	Kai_str s = kai_str_from_cstring(cs);
+	Kai_u32 i = s.count - 1;
+	while (i > 0)
+	{
+		if (cs[i] == '/' || cs[i] == '\\')
+		{
+			return cs + i + 1;
+		}
+		i -= 1;
+	}
+	return cs;
+}
+
+#define print_location() printf("in (%s:%i)\n", kai__file(__FILE__), __LINE__)
 
 extern void panic(void);
 
@@ -71,9 +79,9 @@ extern void panic(void);
 
 // Must have a buffer declared as "char temp[..]"
 #define kai__write_format(...) {                                                              \
-    int count = snprintf(temp, sizeof(temp), __VA_ARGS__);                            \
-    count = (count < sizeof(temp)-1) ? count : sizeof(temp)-1;                               \
-    writer->write_string(writer->user, (Kai_str){.count = (Kai_u32)count, .data = (Kai_u8*)temp}); \
+    int __count__ = snprintf(temp, sizeof(temp), __VA_ARGS__);                            \
+    __count__ = (__count__ < sizeof(temp)-1) ? __count__ : sizeof(temp)-1;                               \
+    writer->write_string(writer->user, (Kai_str){.count = (Kai_u32)__count__, .data = (Kai_u8*)temp}); \
 } (void)0
 
 #define str_insert_string(Dest, String) \
@@ -84,12 +92,5 @@ memcpy((Dest).data + (Dest).count, (Src).data, (Src).count), (Dest).count += (Sr
 
 #define str_insert_std(Dest, Src) \
 memcpy((Dest).data + (Dest).count, (Src).data(), (Src).size()), (Dest).count += (Src).size()
-
-// =============================<< TYPES >>====================================
-
-#define X(TYPE, NAME) typedef TYPE NAME;
-	KAI_X_PRIMITIVE_TYPES
-#undef X
-
 
 #endif // CONFIG_H

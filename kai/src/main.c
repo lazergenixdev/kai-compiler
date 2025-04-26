@@ -9,7 +9,6 @@
 void set_underline(int enable) {
     printf("\x1b[%im", enable ? 4 : 24);
 }
-
 int load_file(const char* file_path, Kai_str* out) {
     FILE* file = fopen(file_path, "rb");
     if (!file) return 1;
@@ -96,11 +95,11 @@ int main(int argc, char** argv) {
             curr = curr->next;
             i += 1;
         }
-        kai_debug_write_error(kai_debug_stdout_writer(), &error);
+        kai_debug_write_error(writer, &error);
         goto cleanup;
     }
 
-    void* main_raw = kai_find_procedure(program, "main", NULL);
+    void* main_raw = kai_find_procedure(program, KAI_STRING("main"), NULL);
     Main_Proc* main_proc = (Main_Proc*)main_raw;
     
     if (main_proc == NULL) {

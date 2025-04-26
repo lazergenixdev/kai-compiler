@@ -9,8 +9,8 @@ int hash_table() {
     kai_create_memory(&_allocator);
     Kai_Allocator* allocator = &_allocator;
 
-    KAI__HASH_TABLE(Kai_u64) table;
-    kai__hash_table_create(&table);
+    KAI__HASH_TABLE(Kai_u64) table = {0};
+    //kai__hash_table_create(&table);
 
     Kai_str keys [7] = {
         KAI_STRING("apple"),
@@ -25,7 +25,7 @@ int hash_table() {
 
     //putchar('\n');
     for (int i = 0; i < 7; ++i) {
-        kai__hash_table_insert(table, keys[i], values[i]);
+        kai__hash_table_emplace(table, keys[i], values[i]);
     }
 
     int value;
@@ -39,7 +39,7 @@ int hash_table() {
     found = kai__hash_table_get_str(table, "strawberry", &value); if (!found || value != 5) return FAIL;
     found = kai__hash_table_get_str(table, "apple", &value);      if (!found || value != 9) return FAIL;
 
-    kai__hash_table_destroy(&table);
+    kai__hash_table_destroy(table);
 
     return PASS;
 }

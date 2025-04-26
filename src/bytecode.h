@@ -171,7 +171,7 @@ int bcs_insert_branch_location(Bc_Stream* stream, uint32_t location, Bc_Reg reg_
 int bcs_insert_branch(Bc_Stream* stream, uint32_t* branch, Bc_Reg reg_src);
 int bcs_insert_jump_location(Bc_Stream* stream, uint32_t location);
 int bcs_insert_jump(Bc_Stream* stream, uint32_t* branch);
-int bcs_insert_call(Bc_Stream* stream, uint32_t* branch, uint8_t ret_count, Bc_Reg* reg_ret, uint32_t arg_count, Bc_Reg* reg_arg);
+int bcs_insert_call(Bc_Stream* stream, uint32_t* branch, uint8_t ret_count, Bc_Reg* reg_ret, uint8_t arg_count, Bc_Reg* reg_arg);
 int bcs_insert_return(Bc_Stream* stream, uint8_t count, Bc_Reg* regs);
 int bcs_insert_native_call(Bc_Stream* stream, uint8_t use_dst, Bc_Reg reg_dst, Bc_Native_Procedure* proc, Bc_Reg* reg_src);
 int bcs_insert_load(Bc_Stream* stream, Bc_Reg reg_dst, uint8_t type, Bc_Reg reg_addr, uint32_t offset);

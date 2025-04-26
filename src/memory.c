@@ -83,6 +83,7 @@ void kai__memory_free(Kai_ptr user, Kai_ptr ptr, Kai_u32 size)
 
 void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 access)
 {
+	(void)user;
     int flags = 0;
     flags |= (access & KAI_MEMORY_ACCESS_READ_WRITE)? 0x04 : 0;
     flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)?    0x10 : 0;
@@ -106,6 +107,9 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
     } else {
         kai__assert(old_ptr != NULL || old_size == 0);
         ptr = realloc(old_ptr, new_size);
+        if (ptr != NULL && old_ptr == NULL) {
+            memset(ptr, 0, new_size);
+        }
     }
     Kai__Memory_Internal* internal = user;
     internal->total_allocated += new_size;
@@ -116,6 +120,7 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
 Kai_Result kai_create_memory(Kai_Allocator* Memory)
 {
     kai__assert(Memory != NULL);
+	
     Memory->allocate      = kai__memory_allocate;
     Memory->free          = kai__memory_free;
     Memory->heap_allocate = kai__memory_heap_allocate;

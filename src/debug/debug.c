@@ -5,10 +5,6 @@
 #include <inttypes.h>
 #include <locale.h>
 
-Kai_int kai__max(Kai_int a, Kai_int b) {
-    return a > b? a : b;
-}
-
 static char const* const kai__result_string_map[KAI_RESULT_COUNT] = {
     [KAI_SUCCESS]         = "Success",
     [KAI_ERROR_SYNTAX]    = "Syntax Error",
@@ -31,7 +27,7 @@ int kai__base10_digit_count(Kai_int x) {
     return 0;
 }
 
-u8 const* kai__advance_to_line(u8 const* source, Kai_int line) {
+Kai_u8 const* kai__advance_to_line(Kai_u8 const* source, Kai_int line) {
     --line;
     while (line > 0) {
         if (*source++ == '\n') --line;
@@ -39,7 +35,7 @@ u8 const* kai__advance_to_line(u8 const* source, Kai_int line) {
     return source;
 }
 
-void kai__write_source_code(Kai_Debug_String_Writer* writer, u8 const* src) {
+void kai__write_source_code(Kai_Debug_String_Writer* writer, Kai_u8 const* src) {
     while (*src != 0 && *src != '\n') {
         if (*src == '\t')
             kai__write_char(' ');
@@ -49,7 +45,7 @@ void kai__write_source_code(Kai_Debug_String_Writer* writer, u8 const* src) {
     }
 }
 
-void kai__write_source_code_count(Kai_Debug_String_Writer* writer, u8 const* src, Kai_int count) {
+void kai__write_source_code_count(Kai_Debug_String_Writer* writer, Kai_u8 const* src, Kai_int count) {
     while (*src != 0 && *src != '\n' && count != 0) {
         kai__write_char(' ');
         ++src;
@@ -120,7 +116,7 @@ write_error_message:
 
     kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
     kai__write_char('^');
-    Kai_int n = kai__max(0, error->location.string.count - 1);
+    Kai_int n = (Kai_int)error->location.string.count - 1;
     for_n(n) kai__write_char('~');
 
     kai__write_char(' ');
@@ -281,7 +277,8 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             kai__write_string(node->source_code);
             kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
             kai__write("\"");
-            kai__write_format(" whole: %llu, frac: %llu, den: %hu", node->info.Whole_Part, node->info.Frac_Part, node->info.Frac_Denom);
+            kai__write_format(" whole: %llu, frac: %llu, den: %hu",
+				node->value.Whole_Part, node->value.Frac_Part, node->value.Frac_Denom);
             kai__write("\n");
         }
         break; case KAI_EXPR_STRING: {

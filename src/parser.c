@@ -1,6 +1,5 @@
 #include "config.h"
 #include "token.h"
-#include "allocator.h"
 
 // Optimization Idea:
 // 2 pass parser,
@@ -49,14 +48,6 @@ extern inline Kai_Expr alloc_type(Parser* p, Kai_u32 size, Kai_u8 id) {
     return expr;
 }
 
-static Kai_bool error_internal(Parser* parser, Kai_str message) {
-    parser->error.result = KAI_ERROR_INTERNAL;
-    parser->error.location.string = KAI_EMPTY_STRING;
-    parser->error.location.line = 0;
-    parser->error.message = message;
-    return KAI_TRUE;
-}
-
 void adjust_source_location(Kai_str* src, Kai_u32 type) {
     if (type == T_STRING) {
         src->data  -= 1; // strings must begin with "
@@ -83,9 +74,6 @@ void* error_unexpected(Parser* parser, Kai__Token* token, Kai_str where, Kai_str
     str_insert_str(e->message, where);
     return NULL;
 }
-
-#define p_error_internal_s(MESSAGE) \
-    error_internal(parser, KAI_STRING(MESSAGE))
 
 #define p_error_unexpected_s(WHERE, CONTEXT) \
     error_unexpected(parser, &parser->tokenizer.current_token, KAI_STRING(WHERE), KAI_STRING(CONTEXT))
@@ -308,12 +296,12 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
     ////////////////////////////////////////////////////////////
     // Handle Directives
     case T_DIRECTIVE: {
-        if (kai_string_equals(KAI_STRING("type"), t->string)) {
+        if (kai_str_equals(KAI_STRING("type"), t->string)) {
             p_next();
             left = _parse_type();
             p_expect(left, "in expression", "type");
         }
-        else if (kai_string_equals(KAI_STRING("string"), t->string)) {
+        else if (kai_str_equals(KAI_STRING("string"), t->string)) {
             //p_next();
             //tok_start_raw_string(&parser->tokenizer);
             //p_next();
@@ -324,7 +312,7 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
             //left = (Kai_Expr) str;
             return p_error_unexpected_s("", "not implemented");
         }
-        else if (kai_string_equals(KAI_STRING("Julie"), t->string)) {
+        else if (kai_str_equals(KAI_STRING("Julie"), t->string)) {
             Kai_Expr_String* str = p_alloc_node(Expr_String);
             str->line_number = t->line_number;
             str->source_code = KAI_STRING("<3");
@@ -342,7 +330,7 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
     } break;
     case T_NUMBER: {
         Kai_Expr_Number* num = p_alloc_node(Expr_Number);
-        num->info        = t->number;
+        num->value       = t->number;
         num->line_number = t->line_number;
         num->source_code = t->string;
         left = (Kai_Expr) num;
@@ -497,7 +485,7 @@ parse_parameter:
 
     Kai_Stmt body = NULL;
     if (t->type == T_DIRECTIVE &&
-        kai_string_equals(KAI_STRING("native"), t->string)) {
+        kai_str_equals(KAI_STRING("native"), t->string)) {
         p_next();
         p_expect(t->type == ';', "???", "???");
     }
@@ -656,7 +644,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         p_next(); // current = peeked
         p_next(); // see what is after current
 
-        Kai_u32 flags = 0;
+        Kai_u8 flags = 0;
         Kai_Expr type = _parse_type();
         if (type) p_next();
 
@@ -693,7 +681,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
     }
 }
 
-Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_Tree* tree)\
+Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_Tree* tree)
 {
     Parser p = {
         .tokenizer = {
@@ -704,7 +692,7 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
     };
     Parser* const parser = &p;
     
-    kai__create_dynamic_arena_allocator(&p.arena, &info->allocator);
+    kai__dynamic_arena_allocator_create(&p.arena, &info->allocator);
 
     // setup first token
     Kai__Token* token = p_next();
@@ -738,6 +726,6 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
 
 void kai_destroy_syntax_tree(Kai_Syntax_Tree* tree)
 {
-    kai__destroy_dynamic_arena_allocator(&tree->allocator);
+    kai__dynamic_arena_allocator_destroy(&tree->allocator);
     *tree = (Kai_Syntax_Tree) {0};
 }

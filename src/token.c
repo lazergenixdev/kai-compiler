@@ -141,7 +141,7 @@ Kai__Token generate_token(Tokenization_Context* context) {
             // Check if the string we just parsed is a keyword
             int hash = hash_keyword(token.string);
             int keyword_index = hash_keyword_map[hash];
-            if (kai_string_equals(keyword_map[keyword_index], token.string)) {
+            if (kai_str_equals(keyword_map[keyword_index], token.string)) {
                 token.type = KEYWORD_START | keyword_index;
                 return token;
             }

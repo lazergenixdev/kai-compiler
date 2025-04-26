@@ -16,7 +16,7 @@ Kai_str kai_get_version_string(void)
     return KAI_STRING("Kai Compiler v" KAI_VERSION_STRING);
 }
 
-Kai_bool kai_string_equals(Kai_str a, Kai_str b)
+Kai_bool kai_str_equals(Kai_str a, Kai_str b)
 {
     if (a.count != b.count) return KAI_FALSE;
         for (Kai_int i = 0; i < a.count; ++i)
@@ -35,6 +35,18 @@ Kai_str kai_str_from_cstring(char const* string)
 #include <stdlib.h>
 
 void panic(void) {
-    puts("\nPanic triggered.\nNow exiting...");
+    puts("\nPanic triggered. Now exiting...");
     exit(1);
+}
+
+void kai__fatal_error(
+	char const* Desc,
+	char const* Message,
+	char const* File,
+	int         Line)
+{
+	printf("\x1b[91m%s\x1b[0m: \"\x1b[94m%s\x1b[0m\"\nin \x1b[92m%s:%i\x1b[0m",
+		Desc, Message, File, Line
+	);
+	exit(1);
 }
