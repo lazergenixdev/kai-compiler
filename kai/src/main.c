@@ -27,7 +27,7 @@ int load_file(const char* file_path, Kai_str* out) {
 
 typedef Kai_s32 Main_Proc(Kai_slice);
 
-void parse(char const* file, Kai_str source_code, Kai_Allocator* allocator);
+void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator);
 
 int main(int argc, char** argv) {
     int exit_value = 1;
@@ -66,15 +66,16 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	Kai_Allocator allocator;
+    Kai_Error     error     = {0};
+	Kai_Allocator allocator = {0};
 	kai_create_memory(&allocator);
+    //kai_memory_set_debug(&allocator, KAI_MEMORY_DEBUG_VERBOSE);
 
     if (options.parse_only) {
-        parse(file, source_code, &allocator);
+        parse(file, source_code, &error, &allocator);
         goto cleanup;
     }
 
-    Kai_Error error = {0};
     Kai_Program program = {0};
     Kai_Result result;
     Timer timer = {0};
@@ -121,6 +122,7 @@ int main(int argc, char** argv) {
     }
 	
 cleanup:
+    kai_destroy_error(&error, &allocator);
     {
         Kai_Result result = kai_destroy_memory(&allocator);
         if (result) {
@@ -130,11 +132,10 @@ cleanup:
 	return exit_value;
 }
 
-void parse(char const* file, Kai_str source_code, Kai_Allocator* allocator) {
-    Kai_Error error = {0};
+void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator) {
     Kai_Syntax_Tree_Create_Info info = {
         .allocator = *allocator,
-        .error = &error,
+        .error = error,
         .source_code = source_code,
     };
 
@@ -142,8 +143,8 @@ void parse(char const* file, Kai_str source_code, Kai_Allocator* allocator) {
     Kai_Result result = kai_create_syntax_tree(&info, &tree);
 
     if (result != KAI_SUCCESS) {
-		error.location.file_name = kai_str_from_cstring(file);
-        kai_debug_write_error(kai_debug_stdout_writer(), &error);
+		error->location.file_name = kai_str_from_cstring(file);
+        kai_debug_write_error(kai_debug_stdout_writer(), error);
     }
     else {
         kai_debug_write_syntax_tree(kai_debug_stdout_writer(), &tree);

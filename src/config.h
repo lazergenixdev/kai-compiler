@@ -49,22 +49,7 @@ KAI__CLANG_DISABLE_WARNING("-Wmultichar")
     printf(__VA_ARGS__), \
     putchar('\n')
 
-static char const* kai__file(char const* cs)
-{
-	Kai_str s = kai_str_from_cstring(cs);
-	Kai_u32 i = s.count - 1;
-	while (i > 0)
-	{
-		if (cs[i] == '/' || cs[i] == '\\')
-		{
-			return cs + i + 1;
-		}
-		i -= 1;
-	}
-	return cs;
-}
-
-#define print_location() printf("in (%s:%i)\n", kai__file(__FILE__), __LINE__)
+#define print_location() printf("in (%s:%i)\n", __FILE__, __LINE__)
 
 extern void panic(void);
 

@@ -31,12 +31,43 @@ Kai_str kai_str_from_cstring(char const* string)
     return (Kai_str) {.data = (Kai_u8*)string, .count = len};
 }
 
+#define kai__allocate(S) allocator->heap_allocate(allocator->user, 0, S, 0)
+#define kai__free(P,S)   allocator->heap_allocate(allocator->user, P, 0, S)
+
+void kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
+{
+    while (Error)
+    {
+        Kai_Error* next = Error->next;
+        if (Error->memory.size)
+        {
+            kai__free(Error->memory.data, Error->memory.size);
+        }
+        Error = next;
+    }
+}
+
 #include <stdio.h>
 #include <stdlib.h>
 
 void panic(void) {
     puts("\nPanic triggered. Now exiting...");
     exit(1);
+}
+
+static char const* kai__file(char const* cs)
+{
+	Kai_str s = kai_str_from_cstring(cs);
+	Kai_u32 i = s.count - 1;
+	while (i > 0)
+	{
+		if (cs[i] == '/' || cs[i] == '\\')
+		{
+			return cs + i + 1;
+		}
+		i -= 1;
+	}
+	return cs;
 }
 
 void kai__fatal_error(
@@ -46,7 +77,7 @@ void kai__fatal_error(
 	int         Line)
 {
 	printf("\x1b[91m%s\x1b[0m: \"\x1b[94m%s\x1b[0m\"\nin \x1b[92m%s:%i\x1b[0m",
-		Desc, Message, File, Line
+		Desc, Message, kai__file(File), Line
 	);
 	exit(1);
 }

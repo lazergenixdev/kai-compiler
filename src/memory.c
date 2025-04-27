@@ -18,18 +18,23 @@ void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
     flags |= (access & KAI_MEMORY_ACCESS_WRITE)?   PROT_WRITE : 0;
     flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)? PROT_EXEC  : 0;
     void* ptr = mmap(NULL, size, flags, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
-    if (ptr == MAP_FAILED) {
-        return NULL;
-    }
     Kai__Memory_Internal* internal = user;
+    if (internal->debug_level == KAI_MEMORY_DEBUG_VERBOSE)
+    {
+        printf("[KAI] Allocated %i bytes\n", size);
+    }
     internal->total_allocated += size;
-    return ptr;
+    return (ptr == MAP_FAILED) ? NULL : ptr;
 }
 
 void kai__memory_free(Kai_ptr user, Kai_ptr ptr, Kai_u32 size)
 {
     munmap(ptr, size);
     Kai__Memory_Internal* internal = user;
+    if (internal->debug_level == KAI_MEMORY_DEBUG_VERBOSE)
+    {
+        printf("[KAI] Freed %i bytes\n", size);
+    }
     internal->total_allocated -= size;
 }
 
@@ -40,6 +45,11 @@ void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 acc
     flags |= (access & KAI_MEMORY_ACCESS_WRITE)?   PROT_WRITE : 0;
     flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)? PROT_EXEC  : 0;
     mprotect(ptr, size, flags);
+    Kai__Memory_Internal* internal = user;
+    if (internal->debug_level == KAI_MEMORY_DEBUG_VERBOSE)
+    {
+        printf("[KAI] Changed Access of [%p,%p) to %x\n", ptr, (Kai_u8*)ptr + size, access);
+    }
 }
 
 #define kai__page_size() sysconf(_SC_PAGESIZE)
@@ -112,6 +122,10 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
         }
     }
     Kai__Memory_Internal* internal = user;
+    if (internal->debug_level == KAI_MEMORY_DEBUG_VERBOSE)
+    {
+        printf("[KAI] Heap allocated %i bytes\n", (int)new_size - (int)old_size);
+    }
     internal->total_allocated += new_size;
     internal->total_allocated -= old_size;
     return ptr;

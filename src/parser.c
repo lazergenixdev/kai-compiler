@@ -39,8 +39,6 @@ typedef struct {
 
 #define p_alloc_node(TYPE) \
     (Kai_##TYPE*)alloc_type(parser, sizeof(Kai_##TYPE), _ID_##TYPE)
-
-Kai_u8 hack__delete_me[1024];
     
 extern inline Kai_Expr alloc_type(Parser* p, Kai_u32 size, Kai_u8 id) {
     Kai_Expr expr = kai__arena_allocate(&p->arena, size);
@@ -60,19 +58,35 @@ void adjust_source_location(Kai_str* src, Kai_u32 type) {
 }
 
 void* error_unexpected(Parser* parser, Kai__Token* token, Kai_str where, Kai_str wanted) {
-    Kai_Error* e = &parser->error;
-    if (e->result != KAI_SUCCESS) return NULL;
-    e->result          = KAI_ERROR_SYNTAX;
-    e->location.string = token->string;
-    e->location.line   = token->line_number;
-    e->context         = wanted;
-    e->message = (Kai_str){.count = 0, .data = (Kai_u8*)hack__delete_me};
-    adjust_source_location(&e->location.string, token->type);
-    str_insert_string(e->message, "unexpected ");
-    insert_token_type_string(&e->message, token->type);
-    e->message.data[e->message.count++] = ' ';
-    str_insert_str(e->message, where);
-    return NULL;
+    Kai_Allocator* allocator = &parser->arena.allocator;
+
+    if (parser->error.result != KAI_SUCCESS)
+        return NULL;
+
+    Kai__Dynamic_Buffer buffer = {0};
+    kai__dynamic_buffer_append_string(&buffer, KAI_STRING("unexpected "));
+    Kai_u8 temp [32];
+    Kai_str type = { .data = temp };
+    insert_token_type_string(&type, token->type);
+    kai__dynamic_buffer_append_string(&buffer, type);
+    kai__dynamic_buffer_append_string(&buffer, KAI_STRING(" "));
+    kai__dynamic_buffer_append_string(&buffer, where);
+    Kai_range message_range = kai__dynamic_buffer_next(&buffer);
+    Kai_Memory memory = kai__dynamic_buffer_release(&buffer);
+
+    parser->error = (Kai_Error) {
+        .result = KAI_ERROR_SYNTAX,
+        .location = {
+            .string = token->string,
+            .line = token->line_number,
+        },
+        .message = kai__range_to_string(message_range, memory),
+        .context = wanted,
+        .memory = memory,
+    };
+    adjust_source_location(&parser->error.location.string, token->type);
+
+    return 0;
 }
 
 #define p_error_unexpected_s(WHERE, CONTEXT) \

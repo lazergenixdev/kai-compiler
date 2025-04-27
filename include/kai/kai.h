@@ -208,10 +208,10 @@ typedef struct {
 	Kai_Type* sub_types; // list of parameters types, then return types
 } Kai_Type_Info_Procedure;
 
-//! TODO: implement
 typedef struct {
-	Kai_u8   type;
-	Kai_ptr  members;
+	Kai_u8     type;
+	Kai_Type*  member_types;
+	Kai_str*   member_names;
 } Kai_Type_Info_Struct;
 
 #endif
@@ -238,6 +238,11 @@ typedef struct {
 	void*                       user;
 	Kai_u32                     page_size;
 } Kai_Allocator;
+
+typedef struct {
+	void*   data;
+	Kai_u32 size;
+} Kai_Memory;
 
 enum {
 	KAI_SUCCESS = 0,
@@ -266,6 +271,7 @@ typedef struct Kai_Error {
 	Kai_Location      location;
 	Kai_str           message;
 	Kai_str           context;
+	Kai_Memory        memory;
 	struct Kai_Error* next;
 } Kai_Error;
 
@@ -277,10 +283,6 @@ typedef struct {
 	Kai_s32 Exp_Part;
 	Kai_u16 Frac_Denom;
 } Kai_Number;
-
-//! TODO: panic proc? 
-// Panic is reserved for debugging and extrodinary circumstances
-//typedef void Kai_P_Panic(Kai_str message);
 
 #endif
 #ifndef KAI__SECTION_INTERNAL_STRUCTS
@@ -322,7 +324,12 @@ typedef struct {
     Kai_Number  number;
 } Kai__Token;
 
-typedef KAI__ARRAY(Kai_u8) Kai__String_Builder;
+typedef struct {
+	Kai_u32 size;
+	Kai_u32 capacity;
+	Kai_u8* data;
+	Kai_u32 offset;
+} Kai__Dynamic_Buffer;
 
 #endif
 #ifndef KAI__SECTION_SYNTAX_TREE
@@ -505,7 +512,7 @@ KAI_API (Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Progr
 KAI_API (Kai_Result) kai_create_program_from_source(Kai_str Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program);
 KAI_API (void) kai_destroy_program(Kai_Program Program);
 KAI_API (void*) kai_find_procedure(Kai_Program Program, Kai_str Name, Kai_Type opt_Type);
-KAI_API (void) kai_destroy_error(Kai_Error* Error);
+KAI_API (void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* Allocator);
 
 #endif
 #ifndef KAI__SECTION_INTERNAL_API
@@ -896,25 +903,70 @@ static inline void kai__hash_table_destroy_stride(void* Table, Kai_Allocator* Al
 	table->values   = 0;
 }
 
-#define kai__sb_create(Builder) \
-	kai__array_reserve(Builder, 256)
+#define kai__dynamic_buffer_append_string(Builder, String) \
+	kai__dynamic_buffer_allocator_append(Builder, String.data, String.count, allocator)
 
-static void kai__sb_append(Kai__String_Builder* Builder, Kai_Allocator* Allocator, Kai_str String)
+#define kai__dynamic_buffer_append_string_max(Builder, String, Max_Count) \
+	kai__dynamic_buffer_allocator_append_max(Builder, String, Max_Count, allocator)
+
+static void kai__dynamic_buffer_allocator_append(Kai__Dynamic_Buffer* Buffer, void* Data, Kai_u32 Size, Kai_Allocator* Allocator)
 {
-	kai__array_grow_stride(Builder, Builder->count + String.count, Allocator, 1);
-	for (Kai_u32 i = 0; i < String.count; ++i)
+	kai__array_grow_stride(Buffer, Buffer->size + Size, Allocator, 1);
+	kai__memcpy(Buffer->data + Buffer->size, Data, Size);
+	Buffer->size += Size;
+}
+
+static void kai__dynamic_buffer_allocator_append_max(Kai__Dynamic_Buffer* Buffer, Kai_str String, Kai_u32 Max_Count, Kai_Allocator* Allocator)
+{
+	kai__assert(Max_Count > 3);
+	Kai_u32 size = (String.count > Max_Count) ? Max_Count : String.count;
+	kai__array_grow_stride(Buffer, Buffer->size + size, Allocator, 1);
+	if (String.count < Max_Count)
 	{
-		Builder->elements[Builder->count++] = String.data[i];
+		kai__memcpy(Buffer->data + Buffer->size, String.data, String.count);
+		Buffer->size += String.count;
+	}
+	else
+	{
+		kai__memcpy(Buffer->data + Buffer->size, String.data, Max_Count - 3);
+		kai__memcpy(Buffer->data + Buffer->size + Max_Count - 3, "...", 3);
+		Buffer->size += Max_Count;
 	}
 }
 
-static Kai_str kai__sb_done(Kai__String_Builder* Builder, Kai_Allocator* Allocator)
+#define kai__range_to_data(Range, Memory)   (void*)(((Kai_u8*)(Memory).data) + (Range).offset)
+#define kai__range_to_string(Range, Memory) KAI_STRUCT(Kai_str) { .count = (Range).count, .data = kai__range_to_data(Range, Memory) }
+
+static Kai_range kai__dynamic_buffer_next(Kai__Dynamic_Buffer* Buffer)
 {
-	kai__array_shrink_to_fit_stride(Builder, Allocator, 1);
-	return (Kai_str) {
-		.data = Builder->elements,
-		.count = Builder->count,
+	Kai_range out = {
+		.count = Buffer->size - Buffer->offset,
+		.offset = Buffer->offset
 	};
+	Buffer->offset = Buffer->size;
+	return out;
+}
+
+#define kai__dynamic_buffer_push(Buffer, Size) \
+	kai__dynamic_buffer_allocator_push(Buffer, Size, allocator)
+
+static Kai_range kai__dynamic_buffer_allocator_push(Kai__Dynamic_Buffer* Buffer, Kai_u32 Size, Kai_Allocator* Allocator)
+{
+	kai__array_grow_stride(Buffer, Buffer->size + Size, Allocator, 1);
+	Kai_range out = { .count = Size, .offset = Buffer->offset };
+	Buffer->size += Size;
+	Buffer->offset = Buffer->size;
+	return out;
+}
+
+static inline Kai_Memory kai__dynamic_buffer_release(Kai__Dynamic_Buffer* Buffer)
+{
+	Kai_Memory memory = {
+		.data = Buffer->data,
+		.size = Buffer->capacity,
+	};
+	*Buffer = (Kai__Dynamic_Buffer) {0};
+	return memory;
 }
 
 //	Kai__String_Builder* builder;

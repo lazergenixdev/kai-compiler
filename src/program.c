@@ -1,4 +1,5 @@
 #define KAI_USE_DEBUG_API
+#define KAI_USE_MEMORY_API
 #include "builtin_types.h"
 #include "bytecode.h"
 #include <stdlib.h>
@@ -10,7 +11,7 @@
 Kai_Result
 kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program)
 {
-	sizeof(program);
+	(void)(program);
 	return kai__error_internal(info->error, KAI_STRING("kai_create_program not implemented"));
 }
 
@@ -94,14 +95,13 @@ Kai__DG_Node_Index* kai__recursive_scope_find(
 	return NULL;
 }
 
-Kai_u8 delete_me [128];
-
 Kai_Result kai__error_redefinition(
-	Kai_Error* out_Error,
-	Kai_str string,
-	Kai_u32 line_number,
-	Kai_str original_name,
-	Kai_u32 original_line_number)
+	Kai_Error*     out_Error,
+	Kai_Allocator* allocator,
+	Kai_str        string,
+	Kai_u32        line_number,
+	Kai_str        original_name,
+	Kai_u32        original_line_number)
 {
 	*out_Error = (Kai_Error) {
 		.result = KAI_ERROR_SEMANTIC,
@@ -109,41 +109,52 @@ Kai_Result kai__error_redefinition(
 			.line = line_number,
 			.string = string,
 		},
-		.message = {
-			.data = delete_me,
-		},
 	};
 
-	// TODO: if identifier is too long, then truncate 
-    str_insert_string(out_Error->message, "indentifier \"");
-    str_insert_str   (out_Error->message, string);
-    str_insert_string(out_Error->message, "\" is already declared");
+	Kai__Dynamic_Buffer buffer = {0};
 
-    Kai_u8* end = delete_me + out_Error->message.count;
-    Kai_Error* info = (Kai_Error*)end;
-    end += sizeof(Kai_Error);
-    out_Error->next = info;
+	// First error message	
+	{
+		kai__dynamic_buffer_append_string(&buffer, KAI_STRING("indentifier \""));
+		kai__dynamic_buffer_append_string_max(&buffer, string, 24);
+		kai__dynamic_buffer_append_string(&buffer, KAI_STRING("\" is already declared"));
+		Kai_range range = kai__dynamic_buffer_next(&buffer);
+		out_Error->memory = kai__dynamic_buffer_release(&buffer);
+		out_Error->message = kai__range_to_string(range, out_Error->memory);
+	}
 
-	*info = (Kai_Error) {
-		.result = KAI_ERROR_INFO,
-		.location = {
-			.line = original_line_number,
-			.string = original_name,
-		},
-		.message = {
-			.data = end,
-		}
-	};
+	// Extra info
+	{
+		// Append to memory
+    	Kai_range info_range = kai__dynamic_buffer_push(&buffer, sizeof(Kai_Error));
+		kai__dynamic_buffer_append_string(&buffer, KAI_STRING("see original definition of \""));
+		kai__dynamic_buffer_append_string_max(&buffer, string, 24);
+		kai__dynamic_buffer_append_string(&buffer, KAI_STRING("\""));
+		Kai_range message_range = kai__dynamic_buffer_next(&buffer);
+		Kai_Memory memory = kai__dynamic_buffer_release(&buffer);
 
-    str_insert_string(info->message, "see original definition");
+		// Put everything together
+		Kai_Error* info = kai__range_to_data(info_range, memory);
+		*info = (Kai_Error) {
+			.result = KAI_ERROR_INFO,
+			.location = {
+				.line = original_line_number,
+				.string = original_name,
+			},
+			.message = kai__range_to_string(message_range, memory),
+			.memory = memory,
+		};
+		out_Error->next = info;
+	}
 
 	return KAI_ERROR_SEMANTIC;
 }
 
 Kai_Result kai__error_not_declared(
-	Kai_Error* out_Error,
-	Kai_str string,
-	Kai_u32 line_number)
+	Kai_Error*      out_Error,
+	Kai_Allocator*  allocator,
+	Kai_str         string,
+	Kai_u32         line_number)
 {
     *out_Error = (Kai_Error) {
 		.result = KAI_ERROR_SEMANTIC,
@@ -151,13 +162,14 @@ Kai_Result kai__error_not_declared(
 			.string = string,
 			.line = line_number,
 		},
-		.message = {
-			.data = delete_me,
-		},
 	};
-    str_insert_string(out_Error->message, "indentifier \"");
-    str_insert_str   (out_Error->message, string);
-    str_insert_string(out_Error->message, "\" not declared");
+	Kai__Dynamic_Buffer buffer = {0};
+	kai__dynamic_buffer_append_string(&buffer, KAI_STRING("indentifier \""));
+	kai__dynamic_buffer_append_string_max(&buffer, string, 24);
+	kai__dynamic_buffer_append_string(&buffer, KAI_STRING("\" not declared"));
+	Kai_range range = kai__dynamic_buffer_next(&buffer);
+	out_Error->memory = kai__dynamic_buffer_release(&buffer);
+	out_Error->message = kai__range_to_string(range, out_Error->memory);
     return KAI_ERROR_SEMANTIC;
 }
 
@@ -240,9 +252,9 @@ Kai_Result kai__dg_create_nodes_from_statement(
 		Kai__DG_Node_Index* node_index = kai__hash_table_find(scope->identifiers, node->name);
 		if (node_index != NULL) {
 			Kai__DG_Node* existing = &Graph->nodes.elements[node_index->value];
-			print_location();
 			return kai__error_redefinition(
 				Graph->error,
+				allocator,
 				node->name,
 				node->line_number,
 				existing->name,
@@ -393,7 +405,7 @@ Kai_Result kai__dg_insert_value_dependencies(
 		);
 
 		if (node_index == NULL) {
-			return kai__error_not_declared(Graph->error, Expr->source_code, Expr->line_number);
+			return kai__error_not_declared(Graph->error, allocator, Expr->source_code, Expr->line_number);
 		}
 
         // DO NOT depend on local variables
@@ -496,6 +508,7 @@ Kai_Result kai__dg_insert_value_dependencies(
 				Kai__DG_Node* original = &Graph->nodes.elements[node_index->value];
 				return kai__error_redefinition(
 					Graph->error,
+					allocator,
 					current->name,
 					current->line_number,
 					original->name,
@@ -537,6 +550,7 @@ Kai_Result kai__dg_insert_value_dependencies(
 				print_location();
                 return kai__error_redefinition(
 					Graph->error,
+					allocator,
 					node->name,
 					node->line_number,
 					original->name,
@@ -675,7 +689,7 @@ Kai_Result kai__dg_insert_type_dependencies(
 		);
 
         if (node_index == NULL)
-            return kai__error_not_declared(Graph->error, Expr->source_code, Expr->line_number);
+            return kai__error_not_declared(Graph->error, &Graph->allocator, Expr->source_code, Expr->line_number);
 
         // DO NOT depend on local variables
         if (node_index->flags & KAI__DG_NODE_LOCAL_VARIABLE)
@@ -1006,7 +1020,7 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
 			}
 		}
 
-		#if defined(DEBUG_COMPILATION_ORDER)
+#if defined(DEBUG_COMPILATION_ORDER)
 		char temp[256];
 		Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
 		kai__write("Compilation Order:\n");

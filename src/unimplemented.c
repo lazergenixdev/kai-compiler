@@ -14,6 +14,24 @@ kai_find_procedure(Kai_Program Program, Kai_str Name, Kai_Type Type)
     return NULL;
 }
 
+void debug_dump_memory(void* data, Kai_u32 count)
+{
+    Kai_u8* bytes = data;
+    int k = 0;
+    for (;;)
+    {
+        for (int i = 0; i < 16; ++i)
+        {
+            if (k >= count)
+            {
+                return;
+            }
+            printf("%02X ", bytes[k++]);
+        }
+        printf("\n");
+    }
+}
+
 Kai_bool is_convertible(Kai_Type from, Kai_Type to) {
     switch (from->type) {
         case KAI_TYPE_TYPE: {
