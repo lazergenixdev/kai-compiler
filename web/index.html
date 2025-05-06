@@ -218,7 +218,7 @@ main :: () {
             }
         }
 
-        WebAssembly.instantiateStreaming(fetch('/build/bin/lib.wasm'), {
+        WebAssembly.instantiateStreaming(fetch('../build/bin/lib.wasm'), {
             env: {
                 __wasm_console_log,
                 __wasm_allocate,
