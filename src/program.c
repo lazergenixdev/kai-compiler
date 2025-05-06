@@ -1,3 +1,4 @@
+#ifndef __WASM__
 #define KAI_USE_DEBUG_API
 #define KAI_USE_MEMORY_API
 #include "builtin_types.h"
@@ -6,10 +7,9 @@
 #include "program.h"
 
 //#define DEBUG_DEPENDENCY_GRAPH
-//#define DEBUG_COMPILATION_ORDER
+#define DEBUG_COMPILATION_ORDER
 
-Kai_Result
-kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program)
+Kai_Result kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program)
 {
 	(void)(program);
 	return kai__error_internal(info->error, KAI_STRING("kai_create_program not implemented"));
@@ -66,6 +66,7 @@ Kai_Result kai_create_program_from_source(
 		Kai__Program_Create_Info info = {
 			.bytecode = &bytecode,
 			.error = out_Error,
+			.allocator = *Allocator,
 		};
 		result = kai__create_program(&info, out_Program);
 	}
@@ -1111,7 +1112,7 @@ Kai__DG_Node* kai__dg_find_node(Kai__Dependency_Graph* graph, Kai_str name)
 	return NULL;
 }
 
-Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Create_Info* Info, Kai__DG_Node* node)
+Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Generation_Context* Info, Kai__DG_Node* node)
 {
 	if (node->type_flags & KAI__DG_NODE_EVALUATED)
 		return KAI_SUCCESS;
@@ -1168,22 +1169,98 @@ Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Create_Info* Info, Kai__DG_
 		stream.insert_return(r)
 */
 
-Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Create_Info* Info, Kai__DG_Node* node)
+Kai_Result kai__bytecode_emit_procedure(
+	Kai__Bytecode_Generation_Context* Context,
+	Kai_Expr Expr,
+	Kai_u32* out_Location)
+{
+	Bc_Stream* stream = &Context->bytecode->stream;
+
+	Kai_u32 branch_endif = 0;
+	Kai_u32 branch_call0 = 0;
+	Kai_u32 branch_call1 = 0;
+	
+	Kai_u32 location_call = stream->count;
+	bcs_insert_compare_value(stream, BC_TYPE_S32, BC_CMP_GT, 1, 0, (Bc_Value) {.S32 = 2});
+	bcs_insert_branch(stream, &branch_endif, 1);
+	bcs_insert_load_constant(stream, BC_TYPE_S32, 2, (Bc_Value) {.S32 = 1});
+	bcs_insert_return(stream, 1, (uint32_t[]) {2});
+	Kai_u32 location_endif = stream->count;
+	bcs_insert_math_value(stream, BC_TYPE_S32, BC_OP_SUB, 3, 0, (Bc_Value) {.S32 = 1});
+	bcs_insert_call(stream, &branch_call0, 1, (uint32_t[]) {4}, 1, (uint32_t[]) {3});
+	bcs_insert_math_value(stream, BC_TYPE_S32, BC_OP_SUB, 5, 0, (Bc_Value) {.S32 = 2});
+	bcs_insert_call(stream, &branch_call1, 1, (uint32_t[]) {6}, 1, (uint32_t[]) {5});
+	bcs_insert_math(stream, BC_TYPE_S32, BC_OP_ADD, 7, 4, 6);
+	bcs_insert_return(stream, 1, (uint32_t[]){7});
+
+	bcs_set_branch(stream, branch_endif, location_endif);
+	bcs_set_branch(stream, branch_call0, location_call);
+	bcs_set_branch(stream, branch_call1, location_call);
+
+	*out_Location = location_call;
+	
+	return KAI_SUCCESS;
+}
+
+Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Info, Kai__DG_Node* node)
 {
 	if (node->value_flags & KAI__DG_NODE_EVALUATED)
 		return KAI_SUCCESS;
+
+	switch (node->expr->id)
+	{
+		case KAI_EXPR_PROCEDURE: {
+			Kai_u32 location = 0;
+			Kai_Result result = kai__bytecode_emit_procedure(Info, node->expr, &location);
+
+			if (result != KAI_SUCCESS)
+				return result;
+
+			node->value = (Kai__DG_Value) {
+				.procedure_location = location,
+			};
+
+			return KAI_SUCCESS;
+		} break;
+
+		case KAI_EXPR_IDENTIFIER: {
+			void* base = node->expr;
+			Kai_Expr_Identifier* expr = base;
+			Kai__DG_Node* other_node = kai__dg_find_node(Info->dependency_graph, expr->source_code);
+
+			if (other_node == NULL)
+			{
+				return kai__error_internal(Info->error, KAI_STRING("I did not think this through..."));
+			}
+
+			node->value = (Kai__DG_Value) {
+				.type = other_node->value.type,
+			};
+
+			return KAI_SUCCESS;
+		} break;
+
+		default: {
+			printf("How did we get here? %i\n", node->expr->id);
+		}
+	}
 
 	return kai__error_internal(Info->error, KAI_STRING("kai__bytecode_generate_value not implemented"));
 }
 
 Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode* out_Bytecode)
 {
-	(void)out_Bytecode; // TODO: remove
 	Kai_Result result = KAI_SUCCESS;
 	Kai__Dependency_Graph* graph = Info->dependency_graph;
 	int* order = graph->compilation_order;
 
-	for (Kai_u32 i = 0; graph->nodes.count * 2; ++i)
+	Kai__Bytecode_Generation_Context context = {
+		.error = Info->error,
+		.dependency_graph = Info->dependency_graph,
+		.bytecode = out_Bytecode,
+	};
+
+	for (Kai_u32 i = 0; i < graph->nodes.count * 2; ++i)
 	{
 		int index = order[i];
 		Kai__DG_Node_Index node_index = {
@@ -1193,10 +1270,12 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 
 		Kai__DG_Node* node = &graph->nodes.elements[node_index.value];
 
+		printf("Generatiing %i -> %.*s\n", i, node->name.count, node->name.data);
+
 		if (node_index.flags & KAI__DG_NODE_TYPE)
-			result = kai__bytecode_generate_type(Info, node);
+			result = kai__bytecode_generate_type(&context, node);
 		else
-			result = kai__bytecode_generate_value(Info, node);
+			result = kai__bytecode_generate_value(&context, node);
 
 		if (result != KAI_SUCCESS)
 			return result;
@@ -1204,9 +1283,61 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 	return result;
 }
 
+extern inline uint32_t kai__arm64_add(uint32_t Rd, uint32_t Rn, uint32_t Rm, uint8_t sf) { return (sf << 31) | (0b0001011 << 24) | (Rn << 5) | (Rm << 16) | Rd; }
+extern inline uint32_t kai__arm64_sub(uint32_t Rd, uint32_t Rn, uint32_t Rm, uint8_t sf) { return (sf << 31) | (0b1001011 << 24) | (Rn << 5) | (Rm << 16) | Rd; }
+extern inline uint32_t kai__arm64_subs(uint32_t imm12, uint32_t Rn, uint8_t sf) { return (sf << 31) | (0b11100010 << 23) | (imm12 << 10) | (Rn << 5) | 0b11111; }
+extern inline uint32_t kai__arm64_movz(uint32_t Rd, uint32_t imm16, uint8_t sf) { return (sf << 31) | (0b10100101 << 23) | (imm16 << 5) | Rd; }
+extern inline uint32_t kai__arm64_bl(uint32_t imm26) { return (0b100101 << 26) | (imm26 & 0x3FFFFFF); }
+extern inline uint32_t kai__arm64_ret() { return 0xd65f03c0; }
+
 Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_Program)
 {
-	(void)out_Program; // TODO: remove
+	uint32_t code [] = {
+		kai__arm64_sub(0, 1, 2, 1),
+		kai__arm64_add(2, 1, 0, 1),
+		kai__arm64_subs(69, 5, 0),
+		kai__arm64_movz(4, 42069, 1),
+		kai__arm64_bl(-16),
+		kai__arm64_ret(),
+	};
+
+	for (int i = 0; i < sizeof(code)/sizeof(uint32_t); ++i)
+	{
+		union {
+			uint8_t byte[4];
+			uint32_t u32;
+		} temp = { .u32 = code[i] }, out;
+		out.byte[0] = temp.byte[3];
+		out.byte[1] = temp.byte[2];
+		out.byte[2] = temp.byte[1];
+		out.byte[3] = temp.byte[0];
+		printf("%x\n", out.u32);
+	}
+	
+	// Allocate memory to store machine code
+	Kai_Allocator* allocator = &Info->allocator;
+	Kai_Program program = {0};
+	program.platform_machine_code = allocator->allocate(allocator->user, allocator->page_size, KAI_MEMORY_ACCESS_WRITE);
+	program.code_size = allocator->page_size;
+
+	// Generate machine code
+	//kai__bytecode_iterate(Info->bytecode->stream, current)
+	//{
+	//	switch()
+	//	{
+	//		case BC_OP_ADD: {
+	//			kai__bytecode_decode_add(current, dst, src1, src2);
+	//			uint32_t instr = kai__arm64_add(dst, src1, src2, 0);
+	//			kai__array_append(arm64_machine_code, instr);
+	//		} break;
+	//	}
+	//}
+
+	// Set memory as executable
+	allocator->set_access(allocator->user, program.platform_machine_code, program.code_size, KAI_MEMORY_ACCESS_EXECUTE);
+
+	*out_Program = program;
+
 	return kai__error_internal(Info->error, KAI_STRING("kai__create_program not implemented"));
 }
 
@@ -1229,6 +1360,11 @@ void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
 void kai__destroy_bytecode(Kai__Bytecode* Bytecode)
 {
 	(void)Bytecode; // TODO: remove
+}
+
+void kai_destroy_program(Kai_Program Program)
+{
+	Program.allocator.free(Program.allocator.user, Program.platform_machine_code, Program.code_size);
 }
 
 #if 0
@@ -1347,4 +1483,5 @@ Kai_bool compile_type (Compiler_Context* context, u32 index) {
 	return KAI_TRUE;
 }
 
+#endif
 #endif

@@ -1,19 +1,14 @@
 #define KAI_USE_DEBUG_API
 #include "config.h"
 
-void
-kai_destroy_program(Kai_Program Program)
-{
-	UNIMPLEMENTED(Program);
-}
-
 void*
 kai_find_procedure(Kai_Program Program, Kai_str Name, Kai_Type Type)
 {
-	UNIMPLEMENTED(Program, Name, Type);
+	//UNIMPLEMENTED(Program, Name, Type);
     return NULL;
 }
 
+#ifndef __WASM__
 void debug_dump_memory(void* data, Kai_u32 count)
 {
     Kai_u8* bytes = data;
@@ -31,6 +26,7 @@ void debug_dump_memory(void* data, Kai_u32 count)
         printf("\n");
     }
 }
+#endif
 
 Kai_bool is_convertible(Kai_Type from, Kai_Type to) {
     switch (from->type) {

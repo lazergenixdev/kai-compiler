@@ -17,6 +17,7 @@ typedef struct {
 typedef union {
     Bc_Value bytecode;
     Kai_Type type;
+	Kai_u32  procedure_location;
 } Kai__DG_Value;
 
 typedef KAI__ARRAY(Kai__DG_Node_Index)      Kai__DG_Dependency_Array;
@@ -26,7 +27,7 @@ typedef struct {
 	Kai_Type                 type;  // evaluated type
 	Kai__DG_Value            value; // evaluated value
 	Kai__DG_Dependency_Array value_dependencies, type_dependencies;
-    Kai_u32                  value_flags, type_flags;  // (NODE_EVALUATED)
+    Kai_u32                  value_flags,        type_flags;  // (NODE_EVALUATED)
 	Kai_str                  name;
 	Kai_Expr                 expr;
 	Kai_u32                  line_number;
@@ -52,20 +53,27 @@ typedef struct {
 } Kai__Bytecode;
 
 typedef struct {
-	Kai_Error* error;
-	Kai_Syntax_Tree* trees;
-	Kai_u32 tree_count;
-	Kai_Allocator allocator;
+	Kai_Error*        error;
+	Kai_Syntax_Tree*  trees;
+	Kai_u32           tree_count;
+	Kai_Allocator     allocator;
 } Kai__Dependency_Graph_Create_Info;
 
 typedef struct {
-	Kai_Error* error;
-	Kai__Dependency_Graph* dependency_graph;
+	Kai_Error*              error;
+	Kai__Dependency_Graph*  dependency_graph;
 } Kai__Bytecode_Create_Info;
 
 typedef struct {
+	Kai_Error*              error;
+	Kai__Dependency_Graph*  dependency_graph;
+	Kai__Bytecode*          bytecode;
+} Kai__Bytecode_Generation_Context;
+
+typedef struct {
+	Kai_Error*     error;
+	Kai_Allocator  allocator;
     Kai__Bytecode* bytecode;
-	Kai_Error* error;
 } Kai__Program_Create_Info;
 
 Kai_Result kai__create_dependency_graph(

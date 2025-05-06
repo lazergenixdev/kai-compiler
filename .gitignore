@@ -17,3 +17,4 @@
 
 # Build Binaries
 build*/
+!build/bin/lib.wasm

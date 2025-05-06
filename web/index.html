@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Kai </title>
+    </head>
+    <style>
+        body { font-family: arial, monospace; color: white; background-color: black; }
+        div { width: 100%; height: 80vh; }
+        textarea { color: white; background-color: rgb(22, 22, 22); width: 100%; height: 80vh; border: solid 2px #333; padding: 4px; }
+        pre { color: #CCC; margin: 0; padding: 10px; }
+    </style>
+    <body>
+        <h1>hi</h1>
+        <div style="display: flex;">
+            <textarea></textarea>
+            <pre></pre>
+        </div>
+    </body>
+    <script>
+        class HTML_Builder {
+            constructor() {
+                this.parts = [];
+                this.currentColorIndex = 0;
+                this.colorMap = {
+                    1: "white",
+                    2: "red",
+                    3: "violet",
+                    4: "gray"
+                };
+                this.colorActive = false;
+            }
+
+            append(string) {
+                this.parts.push(string);
+            }
+
+            set_color(index) {
+                if (index === this.currentColorIndex) {
+                    return; // no change
+                }
+
+                // Close current span if active
+                if (this.colorActive) {
+                    this.parts.push("</span>");
+                    this.colorActive = false;
+                }
+
+                // Open new span if not default color (index != 0)
+                if (index !== 0 && this.colorMap[index]) {
+                    const color = this.colorMap[index];
+                    this.parts.push(`<span style="color: ${color}">`);
+                    this.colorActive = true;
+                }
+
+                this.currentColorIndex = index;
+            }
+
+            finalize() {
+                if (this.colorActive) {
+                    this.parts.push("</span>");
+                    this.colorActive = false;
+                }
+                return this.parts.join("");
+            }
+        }
+
+
+        let c = null; // functions we defined in C!
+        let c_bytes = null;
+        let c_memory = null;
+        const page_size = 64 * 1024;
+        const div = document.querySelector("pre");
+        
+        // Find length of C string
+        function c_string_length(address) {
+            const start = address;
+            while (c_bytes[address] != 0) address++;
+            return address - start;
+        }
+        
+        // Convert C string to Javascript string
+        function c_string(address, length) {
+            if (length === undefined) {
+                length = c_string_length(address);
+            }
+            const bytes = c_bytes.slice(address, address + length);
+            return new TextDecoder().decode(bytes);
+        }
+
+        function kai__fatal_error(_desc, _message, _file, line) {
+            const desc = c_string(_desc);
+            const message = c_string(_message);
+            const file = c_string(_file);
+            const error = Error(`${message}\n(${file}:${line})`);
+            error.name = desc;
+            throw error;
+        }
+
+        function __wasm_console_log(message, value) {
+            console.log(c_string(message), value);
+        }
+
+        const active_list = {};
+        const free_list = {};
+
+        function __wasm_allocate(size) {
+            for (let ptr in free_list) {
+                if (free_list[ptr] >= size) {
+                    active_list[ptr] = free_list[ptr];
+                    delete free_list[ptr];
+                    return ptr;
+                }
+            }
+            const prev_num_pages = c_memory.grow(size/page_size + 1);
+            c_bytes  = new Uint8Array(c_memory.buffer);
+            active_list[prev_num_pages * page_size] = size;
+            console.log(active_list, free_list);
+            return prev_num_pages * page_size;
+        }
+
+        function __wasm_free(ptr) {
+            const size = active_list[ptr];
+            delete active_list[ptr];
+            free_list[ptr] = size;
+            console.log(size, active_list, free_list);
+        }
+
+        function __wasm_free_all() {
+            for (let ptr in active_list) {
+                const size = active_list[ptr];
+                delete active_list[ptr];
+                free_list[ptr] = size;
+                console.log("freed leaked memory block");
+            }
+        }
+
+        let builder = null;
+
+        function __wasm_write_string(user, string) {
+            const dataView = new DataView(c_memory.buffer);
+            let data = dataView.getUint32(string, true);
+            let count = dataView.getUint32(string + 4, true);
+            builder.append(c_string(data, count));
+        }
+
+        function __wasm_write_c_string(user, string) {
+            builder.append(c_string(string));
+        }
+
+        function __wasm_write_char(user, char) {
+            builder.append(String.fromCharCode(char));
+        }
+
+        function __wasm_set_color(user, color) {
+            builder.set_color(color);
+        }
+
+        const SOURCE = document.querySelector("textarea");
+        SOURCE.addEventListener('keydown', function(e) {
+            if (e.key == 'Tab') {
+                e.preventDefault();
+                var start = this.selectionStart;
+                var end = this.selectionEnd;
+
+                // set textarea value to: text before caret + tab + text after caret
+                this.value = this.value.substring(0, start) +
+                "    " + this.value.substring(end);
+
+                // put caret at right position again
+                this.selectionStart =
+                this.selectionEnd = start + 4;
+            }
+        });
+        SOURCE.value = `fibonacci :: (n: int) -> int {
+    if n <= 2 ret 0;
+    ret fibonacci(n-2) + fibonacci(n-1);
+}
+
+int :: s32;
+
+h :: o + 3;
+
+print :: (x: int) #native;
+
+main :: () {
+    for i: 0..16 {
+        print(fibonacci(i));
+    }
+}`;
+
+        {
+            const src = localStorage.getItem("kai-compiler.playground.code");
+            if (src !== null) {
+                SOURCE.value = src;
+            }
+        }
+
+        let scratch_buffer = null;
+
+        function compile() {
+            const encoder = new TextEncoder();
+            const source = SOURCE.value;
+            const encodedString = encoder.encode(source + '\0');
+            console.log(encodedString);
+            c_bytes.set(encodedString, scratch_buffer);
+            //new DataView(c_memory.buffer).setUint8(scratch_buffer + source.length, 0);
+            builder = new HTML_Builder();
+            try {
+                console.log("test returned:", c.test(scratch_buffer));
+                div.innerHTML = builder.finalize();
+            }
+            catch (error) {
+                div.innerText = error;
+                throw error;
+            }
+            finally {
+                __wasm_free_all();
+            }
+        }
+
+        WebAssembly.instantiateStreaming(fetch('/build/bin/lib.wasm'), {
+            env: {
+                __wasm_console_log,
+                __wasm_allocate,
+                __wasm_free,
+                __wasm_write_string,
+                __wasm_write_c_string,
+                __wasm_write_char,
+                __wasm_set_color,
+                kai__fatal_error,
+            }
+        }).then(async (wasm) => {
+            c = wasm.instance.exports; // Exported C Functions
+            c_bytes  = new Uint8Array(wasm.instance.exports.memory.buffer);
+            c_memory = wasm.instance.exports.memory;
+            
+            const pointPtr = 100;
+            const dataView = new DataView(wasm.instance.exports.memory.buffer);
+
+            let str = c.kai_get_version_string(pointPtr);
+            let ptr = dataView.getUint32(pointPtr, true);
+            let len = dataView.getUint32(pointPtr + 4, true);
+            document.querySelector("h1").innerText = c_string(ptr, len);
+
+            scratch_buffer = __wasm_allocate(page_size);
+
+            SOURCE.addEventListener("input", e => {
+                localStorage.setItem("kai-compiler.playground.code", SOURCE.value);
+                compile();
+            });
+
+            compile();
+        });
+    </script>
+</html>

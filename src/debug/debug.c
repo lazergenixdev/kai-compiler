@@ -1,9 +1,8 @@
 #define KAI_USE_DEBUG_API
 #include "../config.h"
-#include "../token.h"
-#include <stdio.h>
-#include <inttypes.h>
-#include <locale.h>
+//#include <stdio.h>
+//#include <inttypes.h>
+//#include <locale.h>
 
 static char const* const kai__result_string_map[KAI_RESULT_COUNT] = {
     [KAI_SUCCESS]         = "Success",
@@ -53,10 +52,30 @@ void kai__write_source_code_count(Kai_Debug_String_Writer* writer, Kai_u8 const*
     }
 }
 
+void kai__write_base10(Kai_Debug_String_Writer* writer, Kai_u32 value) {
+    if (value == 0) {
+        kai__write_char('0');
+        return;
+    }
+    Kai_u32 exp = 1000000000;
+    Kai_u32 d = 0;
+    for (;;) {
+        d = value / exp;
+        if (d == 0)
+            exp /= 10;
+        else
+            break;
+    }
+    while (exp != 0) {
+        Kai_u32 digit = value / exp;
+        kai__write_char('0' + digit);
+        value -= digit * exp;
+        exp /= 10;
+    }
+}
+
 
 void kai_debug_write_error(Kai_Debug_String_Writer* writer, Kai_Error* error) {
-    char temp[256];
-
 write_error_message:
     if (error->result >= KAI_RESULT_COUNT) {
         kai__write("[Invalid result value]\n");
@@ -97,7 +116,9 @@ write_error_message:
     for_n(digits) kai__write_char(' ');
     kai__write("  |\n");
 
-    kai__write_format(" %" PRIu32, error->location.line);
+    //kai__write_format(" %" PRIu32, error->location.line);
+    kai__write_char(' ');
+    kai__write_base10(writer, error->location.line);
     kai__write(" | ");
 
     Kai_u8 const* begin = kai__advance_to_line(error->location.source, error->location.line);
@@ -188,7 +209,7 @@ char const* _binary_operator_name(Tree_Traversal_Context* ctx, Kai_u32 op) {
     case '.':  return "member access";
     case '[':  return "index";
     default:
-        snprintf(ctx->temp, sizeof(ctx->temp), "undefined(%u)", op);
+        //snprintf(ctx->temp, sizeof(ctx->temp), "undefined(%u)", op);
         return ctx->temp;
     }
 }
@@ -200,7 +221,7 @@ char const* _unary_operator_name(Tree_Traversal_Context* ctx, Kai_u32 op) {
     case '*':  return "pointer to";
     case '[':  return "array";
     default:
-        snprintf(ctx->temp, sizeof(ctx->temp), "undefined(%u)", op);
+        //snprintf(ctx->temp, sizeof(ctx->temp), "undefined(%u)", op);
         return ctx->temp;
     }
 }
@@ -499,6 +520,7 @@ kai_debug_write_expression(Kai_Debug_String_Writer* writer, Kai_Expr expr) {
 
 // ****************************************************************************
 
+#ifndef __WASM__
 char const* kai__term_debug_colors [KAI_DEBUG_COLOR_COUNT] = {
     [KAI_DEBUG_COLOR_PRIMARY]     = "\x1b[0;37m",
     [KAI_DEBUG_COLOR_SECONDARY]   = "\x1b[1;97m",
@@ -587,4 +609,4 @@ void kai_debug_close_file_writer(Kai_Debug_String_Writer* writer)
 {
     fclose(writer->user);
 }
-
+#endif

@@ -47,14 +47,6 @@ void kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
     }
 }
 
-#include <stdio.h>
-#include <stdlib.h>
-
-void panic(void) {
-    puts("\nPanic triggered. Now exiting...");
-    exit(1);
-}
-
 static char const* kai__file(char const* cs)
 {
 	Kai_str s = kai_str_from_cstring(cs);
@@ -70,6 +62,15 @@ static char const* kai__file(char const* cs)
 	return cs;
 }
 
+#ifndef __WASM__
+#include <stdio.h>
+#include <stdlib.h>
+
+void panic(void) {
+    puts("\nPanic triggered. Now exiting...");
+    exit(1);
+}
+
 void kai__fatal_error(
 	char const* Desc,
 	char const* Message,
@@ -81,3 +82,4 @@ void kai__fatal_error(
 	);
 	exit(1);
 }
+#endif

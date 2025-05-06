@@ -1,5 +1,4 @@
 #include "config.h"
-#include "token.h"
 
 //! @TODO: Implement Comments (multi-line)
 //! @TODO: String Escape \"
@@ -7,17 +6,18 @@
 
 Kai_str token_type_string(Kai_u32 type) {
     switch (type) {
-        default:            return KAI_EMPTY_STRING; // single character
-        case T_IDENTIFIER:  return KAI_STRING("identifier");
-        case T_DIRECTIVE:   return KAI_STRING("directive");
-        case T_STRING:      return KAI_STRING("string");
-        case T_NUMBER:      return KAI_STRING("number");
+        default:                     return KAI_EMPTY_STRING; // single character
+        case KAI__TOKEN_END:         return KAI_STRING("end of file");
+        case KAI__TOKEN_IDENTIFIER:  return KAI_STRING("identifier");
+        case KAI__TOKEN_DIRECTIVE:   return KAI_STRING("directive");
+        case KAI__TOKEN_STRING:      return KAI_STRING("string");
+        case KAI__TOKEN_NUMBER:      return KAI_STRING("number");
 #define X(SYMBOL) \
         case SYMBOL:         return KAI_STRING(#SYMBOL);
-        X_TOKEN_SYMBOLS
+        KAI__X_TOKEN_SYMBOLS
 #undef X
 #define X(NAME,ID) case ID: return KAI_STRING("'" #NAME "'");
-        X_TOKEN_KEYWORDS
+        KAI__X_TOKEN_KEYWORDS
 #undef X
     }
 }
@@ -30,13 +30,15 @@ void insert_token_type_string(Kai_str* out, Kai_u32 type) {
         out->data[out->count++] = '\'';
         return;
     }
-    memcpy(out->data + out->count, s.data, s.count);
+    //memcpy(out->data + out->count, s.data, s.count);
+    for (int i = 0; i < s.count; ++i)
+        out->data[out->count + i] = s.data[i];
     out->count += s.count;
 }
 
 Kai_str keyword_map[] = {
 #define X(NAME, ID) KAI_CONSTANT_STRING(#NAME),
-    X_TOKEN_KEYWORDS
+    KAI__X_TOKEN_KEYWORDS
 #undef X
 };
 
@@ -86,18 +88,18 @@ Kai_u8 lex_lookup_table[128] = {
 #define next_character_equals(C) \
     ( (cursor+1) < source.count && C == source.data[cursor+1] )
 
-void parse_number_bin(Tokenization_Context* context, Kai_u64* n);
-void parse_number_dec(Tokenization_Context* context, Kai_u64* n);
-void parse_number_hex(Tokenization_Context* context, Kai_u64* n);
-void parse_multi_token(Tokenization_Context* context, Kai__Token* t, Kai_u8);
+void parse_number_bin(Kai__Tokenizer* context, Kai_u64* n);
+void parse_number_dec(Kai__Tokenizer* context, Kai_u64* n);
+void parse_number_hex(Kai__Tokenizer* context, Kai_u64* n);
+void parse_multi_token(Kai__Tokenizer* context, Kai__Token* t, Kai_u8);
 
 // I forge my own "using"
 #define line    context->line_number
 #define cursor  context->cursor
 #define source  context->source
-Kai__Token generate_token(Tokenization_Context* context) {
+Kai__Token generate_token(Kai__Tokenizer* context) {
     Kai__Token token = (Kai__Token) {
-        .type = T_END,
+        .type = KAI__TOKEN_END,
         .string = {.count = 1},
         .line_number = line,
     };
@@ -127,7 +129,7 @@ Kai__Token generate_token(Tokenization_Context* context) {
         }
 
         case Keyword: {
-            token.type = T_IDENTIFIER;
+            token.type = KAI__TOKEN_IDENTIFIER;
             ++cursor;
             while (cursor < source.count) {
                 Kai_u8 c = source.data[cursor];
@@ -142,14 +144,14 @@ Kai__Token generate_token(Tokenization_Context* context) {
             int hash = hash_keyword(token.string);
             int keyword_index = hash_keyword_map[hash];
             if (kai_str_equals(keyword_map[keyword_index], token.string)) {
-                token.type = KEYWORD_START | keyword_index;
+                token.type = 0x80 | keyword_index;
                 return token;
             }
             return token;
         }
 
         case Directive: {
-            token.type = T_DIRECTIVE;
+            token.type = KAI__TOKEN_DIRECTIVE;
             ++token.string.data; // skip over '#' symbol
             token.string.count = 0;
             ++cursor;
@@ -158,7 +160,7 @@ Kai__Token generate_token(Tokenization_Context* context) {
 
         case Identifier: {
         case_identifier:
-            token.type = T_IDENTIFIER;
+            token.type = KAI__TOKEN_IDENTIFIER;
             ++cursor;
         parse_identifier:
             while (cursor < source.count) {
@@ -173,7 +175,7 @@ Kai__Token generate_token(Tokenization_Context* context) {
         }
 
         case String: {
-            token.type = T_STRING;
+            token.type = KAI__TOKEN_STRING;
             token.string.count = 0;
             ++cursor;
             ++token.string.data;
@@ -191,7 +193,7 @@ Kai__Token generate_token(Tokenization_Context* context) {
 
         case Number: {
             ++cursor;
-            token.type = T_NUMBER;
+            token.type = KAI__TOKEN_NUMBER;
             token.number.Whole_Part = ch - '0';
 
             // Integer
@@ -297,7 +299,7 @@ Kai__Token generate_token(Tokenization_Context* context) {
             if ((cursor + 1) < source.count &&
                 source.data[cursor + 1] >= '0' &&
                 source.data[cursor + 1] <= '9') {
-                token.type = T_NUMBER;
+                token.type = KAI__TOKEN_NUMBER;
                 goto parse_fraction;
             }
 			// Not ".." or Number? then single character token
@@ -325,7 +327,7 @@ Kai__Token generate_token(Tokenization_Context* context) {
 
 //! @TODO: Handle overflow of integers (how? lol idk, token_error_overflow?)
 
-void parse_number_bin(Tokenization_Context* context, Kai_u64* n) {
+void parse_number_bin(Kai__Tokenizer* context, Kai_u64* n) {
     for(; cursor < source.count; ++cursor) {
         Kai_u8 ch = source.data[cursor];
 
@@ -340,7 +342,7 @@ void parse_number_bin(Tokenization_Context* context, Kai_u64* n) {
     }
 }
 
-void parse_number_dec(Tokenization_Context* context, Kai_u64* n) {
+void parse_number_dec(Kai__Tokenizer* context, Kai_u64* n) {
     for(; cursor < source.count; ++cursor) {
         Kai_u8 ch = source.data[cursor];
 
@@ -355,7 +357,7 @@ void parse_number_dec(Tokenization_Context* context, Kai_u64* n) {
     }
 }
 
-void parse_number_hex(Tokenization_Context* context, Kai_u64* n) {
+void parse_number_hex(Kai__Tokenizer* context, Kai_u64* n) {
     enum {
         X = 16, /* BREAK */ S = 17, /* SKIP */
         A = 0xA, B = 0xB, C = 0xC, D = 0xD, E = 0xE, F = 0xF,
@@ -382,7 +384,7 @@ void parse_number_hex(Tokenization_Context* context, Kai_u64* n) {
     }
 }
 
-void parse_multi_token(Tokenization_Context* context, Kai__Token* t, Kai_u8 current) {
+void parse_multi_token(Kai__Tokenizer* context, Kai__Token* t, Kai_u8 current) {
     if(cursor >= source.count) return;
 
     switch(current)
@@ -460,7 +462,7 @@ void parse_multi_token(Tokenization_Context* context, Kai__Token* t, Kai_u8 curr
     }
 }
 
-Kai__Token* kai__next_token(Tokenization_Context* context) {
+Kai__Token* kai__next_token(Kai__Tokenizer* context) {
     if (!context->peeking) {
         context->current_token = generate_token(context);
         return &context->current_token;
@@ -470,7 +472,7 @@ Kai__Token* kai__next_token(Tokenization_Context* context) {
     return &context->current_token;
 }
 
-Kai__Token* kai__peek_token(Tokenization_Context* context) {
+Kai__Token* kai__peek_token(Kai__Tokenizer* context) {
     if (context->peeking) return &context->peeked_token;
     context->peeking = KAI_TRUE;
     context->peeked_token = generate_token(context);

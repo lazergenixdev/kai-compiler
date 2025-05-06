@@ -1,5 +1,4 @@
 #include "config.h"
-#include "token.h"
 
 // Optimization Idea:
 // 2 pass parser,
@@ -15,9 +14,9 @@
 // NOTE: how would that even fit in with tree rewriting??
 
 typedef struct {
-    Tokenization_Context tokenizer;
-    Kai__Dynamic_Arena_Allocator arena;
-    Kai_Error error;
+    Kai__Tokenizer                tokenizer;
+    Kai__Dynamic_Arena_Allocator  arena;
+    Kai_Error                     error;
 } Parser;
 
 // Im somewhat of a scientist myself, what can I say?
@@ -47,11 +46,11 @@ extern inline Kai_Expr alloc_type(Parser* p, Kai_u32 size, Kai_u8 id) {
 }
 
 void adjust_source_location(Kai_str* src, Kai_u32 type) {
-    if (type == T_STRING) {
+    if (type == KAI__TOKEN_STRING) {
         src->data  -= 1; // strings must begin with "
         src->count += 2;
     }
-    else if (type == T_DIRECTIVE) {
+    else if (type == KAI__TOKEN_DIRECTIVE) {
         src->data  -= 1;
         src->count += 1;
     }
@@ -146,12 +145,12 @@ Op_Info operator_of_token_type(Kai_u32 t) {
 Kai_bool is_procedurep_next(Parser* parser) {
     Kai__Token* p = p_peek();
     if (p->type == ')') return KAI_TRUE;
-    Tokenization_Context state = parser->tokenizer;
+    Kai__Tokenizer state = parser->tokenizer;
     Kai__Token* cur = p_next();
     Kai_bool found = KAI_FALSE;
 
     // go until we hit ')' or END, searching for ':'
-    while (cur->type != T_END && cur->type != ')') {
+    while (cur->type != KAI__TOKEN_END && cur->type != ')') {
         if (cur->type == ':') {
             found = KAI_TRUE;
             break;
@@ -268,7 +267,7 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
     case '(': {
         p_next();
         left = _parse_expr(DEFAULT_PREC);
-        p_expect(left, "in expression", "an expression with parathesis");
+        p_expect(left, "in expression", "should be an expression here");
         p_next();
         p_expect(t->type == ')', "in expression", "an operator or ')' in expression");
     } break;
@@ -290,7 +289,7 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
     } break;
     ////////////////////////////////////////////////////////////
     // Handle Explicit Casting "cast(int) x"
-    case T_KW_cast: {
+    case KAI__TOKEN_cast: {
         p_next();
         p_expect(t->type == '(', "in expression", "'(' after cast keyword");
         p_next();
@@ -309,7 +308,7 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
     } break;
     ////////////////////////////////////////////////////////////
     // Handle Directives
-    case T_DIRECTIVE: {
+    case KAI__TOKEN_DIRECTIVE: {
         if (kai_str_equals(KAI_STRING("type"), t->string)) {
             p_next();
             left = _parse_type();
@@ -336,20 +335,20 @@ Kai_Expr parse_expression(Parser* parser, int prec) {
     } break;
     ////////////////////////////////////////////////////////////
     // Handle Single-Token Expressions
-    case T_IDENTIFIER: {
+    case KAI__TOKEN_IDENTIFIER: {
         Kai_Expr_Identifier* ident = p_alloc_node(Expr_Identifier);
         ident->line_number = t->line_number;
         ident->source_code = t->string;
         left = (Kai_Expr) ident;
     } break;
-    case T_NUMBER: {
+    case KAI__TOKEN_NUMBER: {
         Kai_Expr_Number* num = p_alloc_node(Expr_Number);
         num->value       = t->number;
         num->line_number = t->line_number;
         num->source_code = t->string;
         left = (Kai_Expr) num;
     } break;
-    case T_STRING: {
+    case KAI__TOKEN_STRING: {
         Kai_Expr_String* str = p_alloc_node(Expr_String);
         str->line_number = t->line_number;
         str->source_code = t->string;
@@ -442,11 +441,11 @@ Kai_Expr parse_procedure(Parser* parser) {
 parse_parameter:
         (void)0;
         Kai_u8 flags = 0;
-        if (t->type == T_KW_using) {
+        if (t->type == KAI__TOKEN_using) {
             flags |= 1;//KAI_PARAMETER_FLAG_USING;
             p_next();
         }
-        p_expect(t->type == T_IDENTIFIER, "in procedure input", "should be an identifier");
+        p_expect(t->type == KAI__TOKEN_IDENTIFIER, "in procedure input", "should be an identifier");
         Kai_str name = t->string;
         p_next();
         p_expect(t->type == ':', "in procedure input", "wanted a ':' here");
@@ -498,7 +497,7 @@ parse_parameter:
     proc->out_count = out_count;
 
     Kai_Stmt body = NULL;
-    if (t->type == T_DIRECTIVE &&
+    if (t->type == KAI__TOKEN_DIRECTIVE &&
         kai_str_equals(KAI_STRING("native"), t->string)) {
         p_next();
         p_expect(t->type == ';', "???", "???");
@@ -514,11 +513,11 @@ parse_parameter:
 Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
     Kai__Token* t = &parser->tokenizer.current_token;
     switch (t->type) {
-    case T_END: if (is_top_level) return NULL;
+    case KAI__TOKEN_END: if (is_top_level) return NULL;
     default: {
     parse_expression_statement:
         if (is_top_level) {
-            return p_error_unexpected_s("in top level statement", "a top level statement");
+            return p_error_unexpected_s("in top level", "should be a top level statement");
         }
         Kai_Expr expr = _parse_expr(DEFAULT_PREC);
         p_expect(expr, "in statement", "should be an expression or statement");
@@ -570,7 +569,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         return (Kai_Stmt) compound;
     }
 
-    case T_KW_ret: {
+    case KAI__TOKEN_ret: {
         if (is_top_level)
             return p_error_unexpected_s("in top level statement", "a top level statement");
         p_next();
@@ -591,7 +590,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         return (Kai_Stmt) ret;
     }
 
-    case T_KW_if: {
+    case KAI__TOKEN_if: {
         if (is_top_level)
             return p_error_unexpected_s("is top level statement", "should be within a procedure");
         p_next();
@@ -604,7 +603,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         // parse "else"
         Kai__Token* p = p_peek();
         Kai_Stmt else_body = NULL;
-        if (p->type == T_KW_else) {
+        if (p->type == KAI__TOKEN_else) {
             p_next();
             p_next();
             else_body = _parse_stmt(KAI_FALSE);
@@ -617,11 +616,11 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         return (Kai_Stmt) if_statement;
     }
 
-    case T_KW_for: {
+    case KAI__TOKEN_for: {
         if (is_top_level)
             return p_error_unexpected_s("in top level statement", "should be within a procedure");
         p_next();
-        p_expect(t->type == T_IDENTIFIER, "in for statement", "should be the name of the iterator");
+        p_expect(t->type == KAI__TOKEN_IDENTIFIER, "in for statement", "should be the name of the iterator");
         Kai_str iterator_name = t->string;
         p_next();
         p_expect(t->type == ':', "in for statement", "should be ':' here");
@@ -648,7 +647,7 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
         return (Kai_Stmt) for_statement;
     }
 
-    case T_IDENTIFIER: {
+    case KAI__TOKEN_IDENTIFIER: {
         Kai__Token* p = p_peek();
         // just an expression?
         if (p->type != ':') goto parse_expression_statement;
@@ -714,7 +713,7 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
     Kai_Stmt current = NULL;
     Kai_Stmt head = NULL;
 
-    while (token->type != T_END) {
+    while (token->type != KAI__TOKEN_END) {
         Kai_Stmt statement = _parse_stmt(KAI_TRUE);
         if (!statement) break;
         if (!head) head = statement;

@@ -1,0 +1,9 @@
+foo :: (x: int) -> int ...
+foo :: (x: float) -> float ...
+
+if (decl is a function)
+    hash = hash(name) + hash(input types)
+else
+    hash = hash(name)
+
+    

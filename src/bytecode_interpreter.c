@@ -1,5 +1,5 @@
 #include "bytecode.h"
-#include <stdio.h>
+//#include <stdio.h>
 
 #define bci__for(N) for (int i = 0; i < (int)N; ++i)
 

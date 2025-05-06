@@ -56,6 +56,8 @@
 #   define KAI__PLATFORM_APPLE
 #elif defined(__linux__)
 #   define KAI__PLATFORM_LINUX
+#elif defined(__WASM__)
+#   define KAI__PLATFORM_WASM
 #else
 #	define KAI__PLATFORM_UNKNOWN
 // TODO: do something better here
@@ -287,11 +289,25 @@ typedef struct {
 #endif
 #ifndef KAI__SECTION_INTERNAL_STRUCTS
 
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Data Structures -------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 #define KAI__ARRAY(T) \
 struct {              \
 	Kai_u32 count;    \
 	Kai_u32 capacity; \
 	T*      elements; \
+}
+
+#define KAI__SMALL_ARRAY(T,N) \
+struct {                      \
+	Kai_u32 count;            \
+	Kai_u32 capacity;         \
+	union {                   \
+		T*      elements;     \
+		T       storage[N];   \
+	};                        \
 }
 
 #define KAI__HASH_TABLE(T) \
@@ -304,6 +320,17 @@ struct {                   \
 	T*       values;       \
 }
 
+typedef struct {
+	Kai_u32  size;
+	Kai_u32  capacity;
+	Kai_u8*  data;
+	Kai_u32  offset;
+} Kai__Dynamic_Buffer;
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Memory Allocators -----------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 #define KAI__MINIMUM_ARENA_BUCKET_SIZE 0x40000
 
 typedef struct Kai__Arena_Bucket {
@@ -311,11 +338,48 @@ typedef struct Kai__Arena_Bucket {
 } Kai__Arena_Bucket;
 
 typedef struct {
-    Kai__Arena_Bucket*   current_bucket;
-    Kai_u32              current_allocated;
-    Kai_u32              bucket_size;
-    Kai_Allocator        allocator;
+    Kai__Arena_Bucket*  current_bucket;
+    Kai_u32             current_allocated;
+    Kai_u32             bucket_size;
+    Kai_Allocator       allocator;
 } Kai__Dynamic_Arena_Allocator;
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Parser Tokens ---------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#define KAI__X_TOKEN_KEYWORDS \
+    X(break      , 0x80)      \
+    X(cast       , 0x81)      \
+    X(continue   , 0x82)      \
+    X(defer      , 0x83)      \
+    X(else       , 0x84)      \
+    X(for        , 0x85)      \
+    X(if         , 0x86)      \
+    X(loop       , 0x87)      \
+    X(ret        , 0x88)      \
+    X(struct     , 0x89)      \
+    X(using      , 0x8A)      \
+    X(while      , 0x8B)
+
+#define KAI__X_TOKEN_SYMBOLS \
+    X('->') X('=>')          \
+    X('==') X('!=')          \
+    X('<=') X('>=')          \
+    X('&&') X('||')          \
+    X('<<') X('>>')          \
+    X('..') X('---')
+
+enum {
+    KAI__TOKEN_END        = 0,
+    KAI__TOKEN_IDENTIFIER = 0xC0,
+    KAI__TOKEN_DIRECTIVE  = 0xC1,
+    KAI__TOKEN_STRING     = 0xC2,
+    KAI__TOKEN_NUMBER     = 0xC3,
+#define X(NAME,ID) KAI__TOKEN_ ## NAME = ID,
+    KAI__X_TOKEN_KEYWORDS
+#undef X
+};
 
 typedef struct {
     Kai_u32     type;
@@ -325,11 +389,13 @@ typedef struct {
 } Kai__Token;
 
 typedef struct {
-	Kai_u32 size;
-	Kai_u32 capacity;
-	Kai_u8* data;
-	Kai_u32 offset;
-} Kai__Dynamic_Buffer;
+    Kai__Token  current_token;
+    Kai__Token  peeked_token;
+    Kai_str     source;
+    Kai_u32     cursor;
+    Kai_u32     line_number;
+    Kai_bool    peeking;
+} Kai__Tokenizer;
 
 #endif
 #ifndef KAI__SECTION_SYNTAX_TREE
@@ -493,10 +559,10 @@ typedef struct {
 } Kai_Program_Create_Info;
 
 typedef struct {
-	void* platform_machine_code;
-	Kai_u32 code_size;
-	//KAI__HASH_TABLE(void*) procedure_table;
-	Kai_Allocator allocator;
+	void*                  platform_machine_code;
+	Kai_u32                code_size;
+	KAI__HASH_TABLE(void*) procedure_table;
+	Kai_Allocator          allocator;
 } Kai_Program;
 
 #endif
@@ -552,6 +618,11 @@ static inline void kai__dynamic_arena_allocator_create(Kai__Dynamic_Arena_Alloca
 		Arena->bucket_size,
 		KAI_MEMORY_ACCESS_READ_WRITE
 	);
+
+	if (Arena->current_bucket == 0)
+	{
+		kai__fatal_error("Dynamic Arena Allocator", "failed to allocate memory", __FILE__, __LINE__);
+	}
 }
 
 static inline void kai__dynamic_arena_allocator_free_all(Kai__Dynamic_Arena_Allocator* Arena)
@@ -601,12 +672,13 @@ static inline void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* Arena, Kai
     return ptr;
 }
 
-#define kai__bit_array_count(Bit_Count) \
-	(((((Bit_Count) - 1) / 64) + 1) * sizeof(Kai_u64))
-
 // Annoying to always have to pass allocator around,
 //  so macros assume variable defined `allocator` exists
 //  and is of type `Kai_Allocator*`
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Array API -------------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #define kai__array_reserve(Ptr_Array, Size) \
 	kai__array_reserve_stride(Ptr_Array, Size, allocator, sizeof((Ptr_Array)->elements[0]))
@@ -617,32 +689,6 @@ static inline void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* Arena, Kai
 #define kai__array_append(Ptr_Array, ...) \
 	kai__array_grow_stride(Ptr_Array, (Ptr_Array)->count + 1, allocator, sizeof((Ptr_Array)->elements[0])), \
 	(Ptr_Array)->elements[(Ptr_Array)->count++] = (__VA_ARGS__)
-
-#define kai__hash_table_destroy(Table) \
-	kai__hash_table_destroy_stride(&(Table), allocator, sizeof((Table).values[0]))
-
-#define kai__hash_table_find(Table, Key) \
-	kai__hash_table_find_stride(&(Table), Key, sizeof((Table).values[0]))
-
-#define kai__hash_table_remove_index(Table, Index) \
-	(Table).occupied[(Index) / 64] &=~ ((Kai_u64)1 << (Index % 64))
-
-#define kai__hash_table_get(Table, Key, out_Value) \
-    kai__hash_table_get_stride(&(Table), Key, out_Value, sizeof(*out_Value), sizeof((Table).values[0]))
-
-#define kai__hash_table_get_str(Table, Key, out_Value) \
-    kai__hash_table_get_stride(&(Table), KAI_STRING(Key), out_Value, sizeof(*out_Value), sizeof((Table).values[0]))
-	
-#define kai__hash_table_iterate(Table, Iter_Var)                               \
-	for (Kai_u32 Iter_Var = 0; Iter_Var < (Table).capacity; ++Iter_Var)        \
-		if ((Table).occupied[Iter_Var / 64] & ((Kai_u64)1 << (Iter_Var % 64)))
-
-#define kai__hash_table_emplace(Table, Key, ...)                  \
-	do {                                                          \
-		Kai_u32 __index__ = kai__hash_table_emplace_key_stride(   \
-			&(Table), Key, allocator, sizeof((Table).values[0])); \
-		(Table).values[__index__] = (__VA_ARGS__);                \
-	} while (0)
 
 static inline void kai__array_reserve_stride(void* Array, Kai_u32 Size, Kai_Allocator* Allocator, Kai_u32 Stride)
 {
@@ -675,6 +721,11 @@ static inline void kai__array_grow_stride(void* Array, Kai_u32 Min_Size, Kai_All
 		Stride * array->capacity
 	);
 	array->capacity = new_capacity;
+
+	if (array->elements == 0)
+	{
+		kai__fatal_error("Array", "Failed to allocate memory!", __FILE__, __LINE__);
+	}
 }
 
 static inline void kai__array_shrink_to_fit_stride(void* Array, Kai_Allocator* Allocator, Kai_u32 Stride)
@@ -708,6 +759,39 @@ static inline void kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* Ptr
 	array->capacity = 0;
 	array->count    = 0;
 }
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Hash Table API --------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#define kai__bit_array_count(Bit_Count) \
+	(((((Bit_Count) - 1) / 64) + 1) * sizeof(Kai_u64))
+
+#define kai__hash_table_destroy(Table) \
+	kai__hash_table_destroy_stride(&(Table), allocator, sizeof((Table).values[0]))
+
+#define kai__hash_table_find(Table, Key) \
+	kai__hash_table_find_stride(&(Table), Key, sizeof((Table).values[0]))
+
+#define kai__hash_table_remove_index(Table, Index) \
+	(Table).occupied[(Index) / 64] &=~ ((Kai_u64)1 << (Index % 64))
+
+#define kai__hash_table_get(Table, Key, out_Value) \
+    kai__hash_table_get_stride(&(Table), Key, out_Value, sizeof(*out_Value), sizeof((Table).values[0]))
+
+#define kai__hash_table_get_str(Table, Key, out_Value) \
+    kai__hash_table_get_stride(&(Table), KAI_STRING(Key), out_Value, sizeof(*out_Value), sizeof((Table).values[0]))
+	
+#define kai__hash_table_iterate(Table, Iter_Var)                               \
+	for (Kai_u32 Iter_Var = 0; Iter_Var < (Table).capacity; ++Iter_Var)        \
+		if ((Table).occupied[Iter_Var / 64] & ((Kai_u64)1 << (Iter_Var % 64)))
+
+#define kai__hash_table_emplace(Table, Key, ...)                  \
+	do {                                                          \
+		Kai_u32 __index__ = kai__hash_table_emplace_key_stride(   \
+			&(Table), Key, allocator, sizeof((Table).values[0])); \
+		(Table).values[__index__] = (__VA_ARGS__);                \
+	} while (0)
 
 static inline Kai_u64 kai__str_hash(Kai_str In)
 {
@@ -903,20 +987,27 @@ static inline void kai__hash_table_destroy_stride(void* Table, Kai_Allocator* Al
 	table->values   = 0;
 }
 
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Dynamic Buffer API ----------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 #define kai__dynamic_buffer_append_string(Builder, String) \
-	kai__dynamic_buffer_allocator_append(Builder, String.data, String.count, allocator)
+	kai__dynamic_buffer_append_a(Builder, String.data, String.count, allocator)
 
 #define kai__dynamic_buffer_append_string_max(Builder, String, Max_Count) \
-	kai__dynamic_buffer_allocator_append_max(Builder, String, Max_Count, allocator)
+	kai__dynamic_buffer_append_max_a(Builder, String, Max_Count, allocator)
 
-static void kai__dynamic_buffer_allocator_append(Kai__Dynamic_Buffer* Buffer, void* Data, Kai_u32 Size, Kai_Allocator* Allocator)
+#define kai__dynamic_buffer_push(Buffer, Size) \
+	kai__dynamic_buffer_push_a(Buffer, Size, allocator)
+
+static inline void kai__dynamic_buffer_append_a(Kai__Dynamic_Buffer* Buffer, void* Data, Kai_u32 Size, Kai_Allocator* Allocator)
 {
 	kai__array_grow_stride(Buffer, Buffer->size + Size, Allocator, 1);
 	kai__memcpy(Buffer->data + Buffer->size, Data, Size);
 	Buffer->size += Size;
 }
 
-static void kai__dynamic_buffer_allocator_append_max(Kai__Dynamic_Buffer* Buffer, Kai_str String, Kai_u32 Max_Count, Kai_Allocator* Allocator)
+static inline void kai__dynamic_buffer_append_max_a(Kai__Dynamic_Buffer* Buffer, Kai_str String, Kai_u32 Max_Count, Kai_Allocator* Allocator)
 {
 	kai__assert(Max_Count > 3);
 	Kai_u32 size = (String.count > Max_Count) ? Max_Count : String.count;
@@ -937,7 +1028,7 @@ static void kai__dynamic_buffer_allocator_append_max(Kai__Dynamic_Buffer* Buffer
 #define kai__range_to_data(Range, Memory)   (void*)(((Kai_u8*)(Memory).data) + (Range).offset)
 #define kai__range_to_string(Range, Memory) KAI_STRUCT(Kai_str) { .count = (Range).count, .data = kai__range_to_data(Range, Memory) }
 
-static Kai_range kai__dynamic_buffer_next(Kai__Dynamic_Buffer* Buffer)
+static inline Kai_range kai__dynamic_buffer_next(Kai__Dynamic_Buffer* Buffer)
 {
 	Kai_range out = {
 		.count = Buffer->size - Buffer->offset,
@@ -947,10 +1038,7 @@ static Kai_range kai__dynamic_buffer_next(Kai__Dynamic_Buffer* Buffer)
 	return out;
 }
 
-#define kai__dynamic_buffer_push(Buffer, Size) \
-	kai__dynamic_buffer_allocator_push(Buffer, Size, allocator)
-
-static Kai_range kai__dynamic_buffer_allocator_push(Kai__Dynamic_Buffer* Buffer, Kai_u32 Size, Kai_Allocator* Allocator)
+static inline Kai_range kai__dynamic_buffer_push_a(Kai__Dynamic_Buffer* Buffer, Kai_u32 Size, Kai_Allocator* Allocator)
 {
 	kai__array_grow_stride(Buffer, Buffer->size + Size, Allocator, 1);
 	Kai_range out = { .count = Size, .offset = Buffer->offset };
@@ -969,10 +1057,9 @@ static inline Kai_Memory kai__dynamic_buffer_release(Kai__Dynamic_Buffer* Buffer
 	return memory;
 }
 
-//	Kai__String_Builder* builder;
-//	kai__str_create(&builder);
-//	kai__str_append(&builder, KAI_STRING("did not expect "));
-//	error->message = kai__str_done(&builder);
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Error Creation API ----------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 static Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
 {
@@ -983,22 +1070,34 @@ static Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
 	return KAI_ERROR_INTERNAL;
 }
 
-/*void* kai__syntax_error(Kai_Error* out_Error, Kai_Allocator* allocator, Kai__Token* token, Kai_str where, Kai_str wanted)
+#define kai__error_syntax_error(Error, Token, Where, Wanted) \
+	kai__error_syntax_error_a(Error, allocator, Token, Where, Wanted)
+
+static void* kai__error_syntax_error_a(Kai_Error* out_Error, Kai_Allocator* allocator, Kai__Token* token, Kai_str where, Kai_str wanted)
 {
     Kai_Error* e = out_Error;
-    if (e->result != KAI_SUCCESS) return NULL;
+    if (e->result != KAI_SUCCESS) return 0;
     e->result          = KAI_ERROR_SYNTAX;
     e->location.string = token->string;
     e->location.line   = token->line_number;
     e->context         = wanted;
-    e->message = (Kai_str){.count = 0, .data = (Kai_u8*)hack__delete_me};
-    adjust_source_location(&e->location.string, token->type);
-    str_insert_string(e->message, "unexpected ");
-    insert_token_type_string(&e->message, token->type);
-    e->message.data[e->message.count++] = ' ';
-    str_insert_str(e->message, where);
-    return NULL;
-}*/
+    //e->message = (Kai_str){.count = 0, .data = (Kai_u8*)hack__delete_me};
+    //adjust_source_location(&e->location.string, token->type);
+    //str_insert_string(e->message, "unexpected ");
+    //insert_token_type_string(&e->message, token->type);
+    //e->message.data[e->message.count++] = ' ';
+    //str_insert_str(e->message, where);
+    return 0;
+}
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Tokenizer API ---------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+//! TODO: replace this function
+void insert_token_type_string(Kai_str* out, Kai_u32 type);
+Kai__Token* kai__next_token(Kai__Tokenizer* context);
+Kai__Token* kai__peek_token(Kai__Tokenizer* context);
 
 #endif
 #ifdef KAI_USE_MEMORY_API

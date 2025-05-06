@@ -1,6 +1,5 @@
 #define KAI_USE_MEMORY_API
 #include "config.h"
-#include "stdlib.h" // -> malloc, free
 
 typedef struct {
     Kai_u32 debug_level;
@@ -106,8 +105,35 @@ Kai_u32 kai__page_size()
 	GetSystemInfo(&info);
 	return (Kai_u32)info.dwPageSize;
 }
+#else
+extern void* __wasm_allocate(Kai_u32 size);
+extern void* __wasm_free(void* ptr);
 
+void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
+{
+    __wasm_console_log("kai__memory_allocate", size);
+    return __wasm_allocate(size);
+}
+
+void kai__memory_free(Kai_ptr user, Kai_ptr ptr, Kai_u32 size)
+{
+    __wasm_console_log("kai__memory_free", size);
+    __wasm_free(ptr);
+}
+
+void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 access)
+{
+    __wasm_console_log("kai__memory_set_access", size);
+}
+
+Kai_u32 kai__page_size()
+{
+    return 64 * 1024; // 64 KiB
+}
 #endif
+
+#ifndef __WASM__
+#include "stdlib.h" // -> malloc, free
 
 static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size)
 {
@@ -130,35 +156,57 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
     internal->total_allocated -= old_size;
     return ptr;
 }
+#else
+static Kai_u8* scratch = 0;
+static Kai_u32 offset = 0;
+static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size)
+{
+    Kai_u32 ptr = offset;
+    offset += new_size;
+    for (int i = 0; i < old_size; ++i) {
+        scratch[ptr + i] = ((Kai_u8*)old_ptr)[i];
+    }
+    __wasm_console_log("heap allocated", new_size);
+    return scratch + ptr;
+}
+#endif
 
 Kai_Result kai_create_memory(Kai_Allocator* Memory)
 {
-    kai__assert(Memory != NULL);
+    kai__assert(Memory != 0);
+
+    scratch = __wasm_allocate(kai__page_size() * 2);
+    offset = 0;
 	
     Memory->allocate      = kai__memory_allocate;
     Memory->free          = kai__memory_free;
     Memory->heap_allocate = kai__memory_heap_allocate;
     Memory->set_access    = kai__memory_set_access;
     Memory->page_size     = kai__page_size();
+#ifndef __WASM__
     Memory->user          = malloc(sizeof(Kai__Memory_Internal));
-
+#else
+    Memory->user          = 0;
+#endif
     if (!Memory->user) {
 		return KAI_MEMORY_ERROR_OUT_OF_MEMORY;
     }
 
-    Kai__Memory_Internal* internal = Memory->user;
-    internal->debug_level = KAI_MEMORY_DEBUG_OFF;
-    internal->total_allocated = 0;
+    //Kai__Memory_Internal* internal = Memory->user;
+    //internal->debug_level = KAI_MEMORY_DEBUG_OFF;
+    //internal->total_allocated = 0;
 	return KAI_SUCCESS;
 }
 
 Kai_Result kai_destroy_memory(Kai_Allocator* Memory)
 {
-    Kai__Memory_Internal* internal = Memory->user;
-    if (internal->total_allocated != 0) {
-		return KAI_MEMORY_ERROR_MEMORY_LEAK;
-    }
+    //Kai__Memory_Internal* internal = Memory->user;
+    //if (internal->total_allocated != 0) {
+	//	return KAI_MEMORY_ERROR_MEMORY_LEAK;
+    //}
+    #ifndef __WASM__
     free(Memory->user);
+    #endif
     *Memory = (Kai_Allocator) {0};
 	return KAI_SUCCESS;
 }
