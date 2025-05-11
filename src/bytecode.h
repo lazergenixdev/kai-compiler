@@ -162,36 +162,36 @@ enum {
     BC_INTERP_FLAGS_INVALID    = 1 << 3, // instruction was invalid (e.g. %0xFFFFFFF <- 69)
 };
 
-int bcs_insert_load_constant(Bc_Stream* stream, uint8_t type, Bc_Reg reg_dst, Bc_Value value);
-int bcs_insert_math(Bc_Stream* stream, uint8_t type, uint8_t operation, Bc_Reg reg_dst, Bc_Reg reg_src1, Bc_Reg reg_src2);
-int bcs_insert_math_value(Bc_Stream* stream, uint8_t type, uint8_t operation, Bc_Reg reg_dst, Bc_Reg reg_src1, Bc_Value value);
-int bcs_insert_compare(Bc_Stream* stream, uint8_t type, uint8_t comparison, Bc_Reg reg_dst, Bc_Reg reg_src1, Bc_Reg reg_src2);
-int bcs_insert_compare_value(Bc_Stream* stream, uint8_t type, uint8_t comparison, Bc_Reg reg_dst, Bc_Reg reg_src1, Bc_Value value);
+int bcs_insert_load_constant  (Bc_Stream* stream, uint8_t type, Bc_Reg reg_dst, Bc_Value value);
+int bcs_insert_math           (Bc_Stream* stream, uint8_t type, uint8_t operation, Bc_Reg reg_dst, Bc_Reg reg_src1, Bc_Reg reg_src2);
+int bcs_insert_math_value     (Bc_Stream* stream, uint8_t type, uint8_t operation, Bc_Reg reg_dst, Bc_Reg reg_src1, Bc_Value value);
+int bcs_insert_compare        (Bc_Stream* stream, uint8_t type, uint8_t comparison, Bc_Reg reg_dst, Bc_Reg reg_src1, Bc_Reg reg_src2);
+int bcs_insert_compare_value  (Bc_Stream* stream, uint8_t type, uint8_t comparison, Bc_Reg reg_dst, Bc_Reg reg_src1, Bc_Value value);
 int bcs_insert_branch_location(Bc_Stream* stream, uint32_t location, Bc_Reg reg_src);
-int bcs_insert_branch(Bc_Stream* stream, uint32_t* branch, Bc_Reg reg_src);
-int bcs_insert_jump_location(Bc_Stream* stream, uint32_t location);
-int bcs_insert_jump(Bc_Stream* stream, uint32_t* branch);
-int bcs_insert_call(Bc_Stream* stream, uint32_t* branch, uint8_t ret_count, Bc_Reg* reg_ret, uint8_t arg_count, Bc_Reg* reg_arg);
-int bcs_insert_return(Bc_Stream* stream, uint8_t count, Bc_Reg* regs);
-int bcs_insert_native_call(Bc_Stream* stream, uint8_t use_dst, Bc_Reg reg_dst, Bc_Native_Procedure* proc, Bc_Reg* reg_src);
-int bcs_insert_load(Bc_Stream* stream, Bc_Reg reg_dst, uint8_t type, Bc_Reg reg_addr, uint32_t offset);
-int bcs_insert_store(Bc_Stream* stream, Bc_Reg reg_src, uint8_t type, Bc_Reg reg_addr, uint32_t offset);
-int bcs_insert_check_address(Bc_Stream* stream, uint8_t type, Bc_Reg reg_addr, uint32_t offset);
-int bcs_insert_stack_alloc(Bc_Stream* stream, Bc_Reg reg_dst, uint32_t size);
-int bcs_insert_stack_free(Bc_Stream* stream, uint32_t size);
-int bcs_set_branch(Bc_Stream* stream, uint32_t branch, uint32_t location);
-int bcs_reserve(Bc_Stream* stream, uint32_t byte_count);
+int bcs_insert_branch         (Bc_Stream* stream, uint32_t* branch, Bc_Reg reg_src);
+int bcs_insert_jump_location  (Bc_Stream* stream, uint32_t location);
+int bcs_insert_jump           (Bc_Stream* stream, uint32_t* branch);
+int bcs_insert_call           (Bc_Stream* stream, uint32_t* branch, uint8_t ret_count, Bc_Reg* reg_ret, uint8_t arg_count, Bc_Reg* reg_arg);
+int bcs_insert_return         (Bc_Stream* stream, uint8_t count, Bc_Reg* regs);
+int bcs_insert_native_call    (Bc_Stream* stream, uint8_t use_dst, Bc_Reg reg_dst, Bc_Native_Procedure* proc, Bc_Reg* reg_src);
+int bcs_insert_load           (Bc_Stream* stream, Bc_Reg reg_dst, uint8_t type, Bc_Reg reg_addr, uint32_t offset);
+int bcs_insert_store          (Bc_Stream* stream, Bc_Reg reg_src, uint8_t type, Bc_Reg reg_addr, uint32_t offset);
+int bcs_insert_check_address  (Bc_Stream* stream, uint8_t type, Bc_Reg reg_addr, uint32_t offset);
+int bcs_insert_stack_alloc    (Bc_Stream* stream, Bc_Reg reg_dst, uint32_t size);
+int bcs_insert_stack_free     (Bc_Stream* stream, uint32_t size);
+int bcs_set_branch            (Bc_Stream* stream, uint32_t branch, uint32_t location);
+int bcs_reserve               (Bc_Stream* stream, uint32_t byte_count);
 
 uint32_t bci_required_memory_size(Bc_Interpreter_Setup* info);
-int bci_create(Bc_Interpreter* interp, Bc_Interpreter_Setup* info);
-int bci_step(Bc_Interpreter* interp);
-void bci_reset(Bc_Interpreter* interp, uint32_t location);
-void bci_set_input(Bc_Interpreter* interp, uint32_t index, Bc_Value value);
-void bci_push_output(Bc_Interpreter* interp, Bc_Reg reg);
-void bci_load_from_stream(Bc_Interpreter* interp, Bc_Stream* stream);
-void bci_load_from_memory(Bc_Interpreter* interp, void* code, uint32_t size);
+int      bci_create              (Bc_Interpreter* interp, Bc_Interpreter_Setup* info);
+int      bci_step                (Bc_Interpreter* interp);
+void     bci_reset               (Bc_Interpreter* interp, uint32_t location);
+void     bci_set_input           (Bc_Interpreter* interp, uint32_t index, Bc_Value value);
+void     bci_push_output         (Bc_Interpreter* interp, Bc_Reg reg);
+void     bci_load_from_stream    (Bc_Interpreter* interp, Bc_Stream* stream);
+void     bci_load_from_memory    (Bc_Interpreter* interp, void* code, uint32_t size);
 
 void bc_convert_to_string(Bc_Def* def, Bc_Writer_Proc* writer, void* user);
-void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user);
+void bc_convert_to_c     (Bc_Def* def, Bc_Writer_Proc* writer, void* user);
 
 #endif // BYTECODE__H

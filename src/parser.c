@@ -13,12 +13,6 @@
 //     so not going to implement.
 // NOTE: how would that even fit in with tree rewriting??
 
-typedef struct {
-    Kai__Tokenizer                tokenizer;
-    Kai__Dynamic_Arena_Allocator  arena;
-    Kai_Error                     error;
-} Parser;
-
 // Im somewhat of a scientist myself, what can I say?
 #define _ID_Expr_Identifier     KAI_EXPR_IDENTIFIER
 #define _ID_Expr_String         KAI_EXPR_STRING         
@@ -39,57 +33,14 @@ typedef struct {
 #define p_alloc_node(TYPE) \
     (Kai_##TYPE*)alloc_type(parser, sizeof(Kai_##TYPE), _ID_##TYPE)
     
-extern inline Kai_Expr alloc_type(Parser* p, Kai_u32 size, Kai_u8 id) {
+extern inline Kai_Expr alloc_type(Kai__Parser* p, Kai_u32 size, Kai_u8 id) {
     Kai_Expr expr = kai__arena_allocate(&p->arena, size);
     expr->id = id;
     return expr;
 }
 
-void adjust_source_location(Kai_str* src, Kai_u32 type) {
-    if (type == KAI__TOKEN_STRING) {
-        src->data  -= 1; // strings must begin with "
-        src->count += 2;
-    }
-    else if (type == KAI__TOKEN_DIRECTIVE) {
-        src->data  -= 1;
-        src->count += 1;
-    }
-}
-
-void* error_unexpected(Parser* parser, Kai__Token* token, Kai_str where, Kai_str wanted) {
-    Kai_Allocator* allocator = &parser->arena.allocator;
-
-    if (parser->error.result != KAI_SUCCESS)
-        return NULL;
-
-    Kai__Dynamic_Buffer buffer = {0};
-    kai__dynamic_buffer_append_string(&buffer, KAI_STRING("unexpected "));
-    Kai_u8 temp [32];
-    Kai_str type = { .data = temp };
-    insert_token_type_string(&type, token->type);
-    kai__dynamic_buffer_append_string(&buffer, type);
-    kai__dynamic_buffer_append_string(&buffer, KAI_STRING(" "));
-    kai__dynamic_buffer_append_string(&buffer, where);
-    Kai_range message_range = kai__dynamic_buffer_next(&buffer);
-    Kai_Memory memory = kai__dynamic_buffer_release(&buffer);
-
-    parser->error = (Kai_Error) {
-        .result = KAI_ERROR_SYNTAX,
-        .location = {
-            .string = token->string,
-            .line = token->line_number,
-        },
-        .message = kai__range_to_string(message_range, memory),
-        .context = wanted,
-        .memory = memory,
-    };
-    adjust_source_location(&parser->error.location.string, token->type);
-
-    return 0;
-}
-
 #define p_error_unexpected_s(WHERE, CONTEXT) \
-    error_unexpected(parser, &parser->tokenizer.current_token, KAI_STRING(WHERE), KAI_STRING(CONTEXT))
+    kai__error_unexpected(parser, &parser->tokenizer.current_token, KAI_STRING(WHERE), KAI_STRING(CONTEXT)), NULL
 
 #define p_expect(OK, WHERE, CONTEXT) \
     if (!(OK)) return p_error_unexpected_s(WHERE, CONTEXT)
@@ -101,10 +52,10 @@ void* error_unexpected(Parser* parser, Kai__Token* token, Kai_str where, Kai_str
 #define _parse_proc()      parse_procedure(parser)
 #define _parse_type()      parse_type(parser)
 
-Kai_Expr parse_type(Parser* parser);
-Kai_Expr parse_expression(Parser* parser, int precedence);
-Kai_Expr parse_procedure(Parser* parser);
-Kai_Stmt parse_statement(Parser* parser, Kai_bool is_top_level);
+Kai_Expr parse_type(Kai__Parser* parser);
+Kai_Expr parse_expression(Kai__Parser* parser, int precedence);
+Kai_Expr parse_procedure(Kai__Parser* parser);
+Kai_Stmt parse_statement(Kai__Parser* parser, Kai_bool is_top_level);
 
 enum {
     OP_BINARY,
@@ -142,7 +93,7 @@ Op_Info operator_of_token_type(Kai_u32 t) {
     }
 }
 
-Kai_bool is_procedurep_next(Parser* parser) {
+Kai_bool is_procedurep_next(Kai__Parser* parser) {
     Kai__Token* p = p_peek();
     if (p->type == ')') return KAI_TRUE;
     Kai__Tokenizer state = parser->tokenizer;
@@ -161,7 +112,7 @@ Kai_bool is_procedurep_next(Parser* parser) {
     return found;
 }
 
-Kai_Expr parse_type(Parser* parser) {
+Kai_Expr parse_type(Kai__Parser* parser) {
     Kai__Token* t = &parser->tokenizer.current_token;
     if (t->type == '[') {
         p_next(); // get token after
@@ -257,7 +208,7 @@ Kai_Expr parse_type(Parser* parser) {
     return (Kai_Expr) proc;
 }
 
-Kai_Expr parse_expression(Parser* parser, int prec) {
+Kai_Expr parse_expression(Kai__Parser* parser, int prec) {
     Kai_Expr left = NULL;
     Kai__Token* t = &parser->tokenizer.current_token;
 
@@ -426,7 +377,7 @@ loop_back:
     goto loop_back;
 }
 
-Kai_Expr parse_procedure(Parser* parser) {
+Kai_Expr parse_procedure(Kai__Parser* parser) {
     Kai__Token* t = &parser->tokenizer.current_token;
     // sanity check
     p_expect(t->type == '(', "", "this is likely a compiler bug, sorry :c");
@@ -510,7 +461,7 @@ parse_parameter:
     return (Kai_Expr) proc;
 }
 
-Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
+Kai_Expr parse_statement(Kai__Parser* parser, Kai_bool is_top_level) {
     Kai__Token* t = &parser->tokenizer.current_token;
     switch (t->type) {
     case KAI__TOKEN_END: if (is_top_level) return NULL;
@@ -696,14 +647,14 @@ Kai_Expr parse_statement(Parser* parser, Kai_bool is_top_level) {
 
 Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_Tree* tree)
 {
-    Parser p = {
+    Kai__Parser p = {
         .tokenizer = {
             .source = info->source_code,
             .cursor = 0,
             .line_number = 1,
         },
     };
-    Parser* const parser = &p;
+    Kai__Parser* const parser = &p;
     
     kai__dynamic_arena_allocator_create(&p.arena, &info->allocator);
 

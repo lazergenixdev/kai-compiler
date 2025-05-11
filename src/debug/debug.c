@@ -1,8 +1,7 @@
 #define KAI_USE_DEBUG_API
 #include "../config.h"
-//#include <stdio.h>
-//#include <inttypes.h>
-//#include <locale.h>
+#include <stdio.h>
+#include <locale.h>
 
 static char const* const kai__result_string_map[KAI_RESULT_COUNT] = {
     [KAI_SUCCESS]         = "Success",
@@ -67,7 +66,7 @@ void kai__write_base10(Kai_Debug_String_Writer* writer, Kai_u32 value) {
             break;
     }
     while (exp != 0) {
-        Kai_u32 digit = value / exp;
+        Kai_u8 digit = (Kai_u8)(value / exp);
         kai__write_char('0' + digit);
         value -= digit * exp;
         exp /= 10;
@@ -588,7 +587,7 @@ void kai__file_writer_set_color(Kai_ptr user, Kai_Debug_Color color) {
 static inline FILE* stdc_file_open(char const* path, char const* mode) {
     FILE* handle = NULL;
     fopen_s(&handle, path, mode); // this is somehow more safe? :/
-    return handle;
+    return (void*)handle;
 }
 #else
 #    define stdc_file_open fopen

@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <windows.h> // for EXCEPTION_ACCESS_VIOLATION
+#include <excpt.h>
+
 void set_underline(int enable) {
     printf("\x1b[%im", enable ? 4 : 24);
 }
@@ -118,7 +121,21 @@ int main(int argc, char** argv) {
                 command_line[i] = kai_str_from_cstring(argv[i + 2]);
             }
         }
-        exit_value = main_proc(args);
+
+		__try
+		{
+			exit_value = main_proc(args);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			const char* str = "Uknown";
+			int code = GetExceptionCode();
+			switch (code) {
+				case EXCEPTION_ILLEGAL_INSTRUCTION: str = "EXCEPTION_ILLEGAL_INSTRUCTION";
+				case EXCEPTION_ACCESS_VIOLATION:    str = "EXCEPTION_ACCESS_VIOLATION";
+			}
+			printf("Exception caught! %s\n", str);
+		}
     }
 	
 cleanup:

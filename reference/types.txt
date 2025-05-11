@@ -1,23 +1,32 @@
-A :: B + C;
+A :: EXPRESSION;
 
 if A is inferred:
-    tA <- type_of (B + C)
+    tA <- type_of EXPRESSION
 else:
     tA is known;
-    make sure that type_of (B + C) is convertable to tA
+    make sure that type_of EXPRESSION is convertable to tA
 
+Automatic Conversions
      to -->
 from    u8  u16 u32 u64 s8  s16 s32 s64 f32 f64
-  |  u8  Y   Y   Y   Y   N   Y   Y   Y   N   N
-  V u16  N   Y   Y   Y   N   N   Y   Y   N   N
-    u32  N   N   Y   Y   N   N   N   Y   N   N
-    u64  N   N   N   Y   N   N   N   N   N   N
-     s8  
-    s16
-    s32
-    s64
+  |  u8  -   Y   Y   Y   N   Y   Y   Y   N   N
+  V u16  N   -   Y   Y   N   N   Y   Y   N   N
+    u32  N   N   -   Y   N   N   N   Y   N   N
+    u64  N   N   N   -   N   N   N   N   N   N
+     s8  N   Y   Y   Y   -   Y   Y   Y   N   N
+    s16  N   N   Y   Y   N   -   Y   Y   N   N
+    s32  N   N   N   Y   N   N   -   Y   N   N
+    s64  N   N   N   N   N   N   N   -   N   N
 
 a : u64 : 258;
 b : u8  : cast.truc a;
+
+
+// Bit casting (Type punning)
+d : u64 = -69;
+c := d => s64; // This will always work *
+
+// * as long as the size of the type you are casting to is less than or equal to the original type
+// ``` From -> To | #size(To) <= #size(From) ```
 
 

@@ -7,7 +7,8 @@
  */
 #ifndef KAI__H
 #define KAI__H
-#include <stdint.h>
+#include <stdint.h> // --> uint32, uint64, ...
+#include <stddef.h> // --> NULL
 
 /*
     CONVENTIONS:
@@ -81,6 +82,10 @@
 #define KAI_EMPTY_STRING    KAI_STRUCT(Kai_str){0}
 #define KAI_STRING(LITERAL) KAI_STRUCT(Kai_str){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
 #define KAI_BOOL(EXPR)      ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
+
+//#if !defined(KAI_IMPLEMENTATION)
+//#	define KAI__SECTION_INTERNAL_API
+//#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -345,7 +350,7 @@ typedef struct {
 } Kai__Dynamic_Arena_Allocator;
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-// --- Parser Tokens ---------------------------------------------------------
+// --- Parser ----------------------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #define KAI__X_TOKEN_KEYWORDS \
@@ -396,6 +401,12 @@ typedef struct {
     Kai_u32     line_number;
     Kai_bool    peeking;
 } Kai__Tokenizer;
+
+typedef struct {
+    Kai__Tokenizer                tokenizer;
+    Kai__Dynamic_Arena_Allocator  arena;
+    Kai_Error                     error;
+} Kai__Parser;
 
 #endif
 #ifndef KAI__SECTION_SYNTAX_TREE
@@ -568,30 +579,63 @@ typedef struct {
 #endif
 #ifndef KAI__SECTION_CORE_API
 
-KAI_API (Kai_bool) kai_str_equals(Kai_str A, Kai_str B);
-KAI_API (Kai_str) kai_str_from_cstring(char const* String);
-KAI_API (Kai_vector3_u32) kai_get_version(void);
-KAI_API (Kai_str) kai_get_version_string(void);
-KAI_API (Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
-KAI_API (void) kai_destroy_syntax_tree(Kai_Syntax_Tree* Syntax_Tree);
-KAI_API (Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Program* out_Program);
-KAI_API (Kai_Result) kai_create_program_from_source(Kai_str Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program);
-KAI_API (void) kai_destroy_program(Kai_Program Program);
-KAI_API (void*) kai_find_procedure(Kai_Program Program, Kai_str Name, Kai_Type opt_Type);
-KAI_API (void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* Allocator);
+KAI_API (Kai_bool)        kai_str_equals                 (Kai_str A, Kai_str B);
+KAI_API (Kai_str)         kai_str_from_cstring           (char const* String);
+KAI_API (Kai_vector3_u32) kai_get_version                (void);
+KAI_API (Kai_str)         kai_get_version_string         (void);
+KAI_API (Kai_Result)      kai_create_syntax_tree         (Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
+KAI_API (void)            kai_destroy_syntax_tree        (Kai_Syntax_Tree* Syntax_Tree);
+KAI_API (Kai_Result)      kai_create_program             (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
+KAI_API (Kai_Result)      kai_create_program_from_source (Kai_str Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program);
+KAI_API (void)            kai_destroy_program            (Kai_Program Program);
+KAI_API (void*)           kai_find_procedure             (Kai_Program Program, Kai_str Name, Kai_Type opt_Type);
+KAI_API (void)            kai_destroy_error              (Kai_Error* Error, Kai_Allocator* Allocator);
 
 #endif
 #ifndef KAI__SECTION_INTERNAL_API
 
-// TODO: should this be here? should this exist? should I?
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Convienence -----------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#define kai__allocate(Old, New_Size, Old_Size) \
+	allocator->heap_allocate(allocator->user, Old, New_Size, Old_Size)
+
+#define kai__free(Ptr,Size) \
+	allocator->heap_allocate(allocator->user, Ptr, Size, 0)
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Error Handling --------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#if defined(KAI__DISABLE_ALL_CHECKS)
+
+#define kai__assert(EXPR)          (void)0
+#define kai__unreachable()         (void)0
+#define kai__check_allocation(PTR) (void)0
+
+#else
+
 KAI_API (void) kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line);
 
 #define kai__assert(EXPR) \
 	if (!(EXPR))          \
-		kai__fatal_error("assertion failed", #EXPR, __FILE__, __LINE__)
-
+		kai__fatal_error("Assertion Failed", #EXPR, __FILE__, __LINE__)
 		
-static inline void kai__memcpy(void* Dst, void* Src, Kai_u32 Size)
+#define kai__unreachable() \
+	kai__fatal_error("Assertion Failed", "Unreachable code", __FILE__, __LINE__)
+
+#define kai__check_allocation(PTR) \
+	if ((PTR) == NULL)             \
+		kai__fatal_error("Allocation Error", #PTR " was null", __FILE__, __LINE__)
+
+#endif
+		
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Basic Memory Operations -----------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+static inline void kai__memory_copy(void* Dst, void* Src, Kai_u32 Size)
 {
 	for (Kai_u32 i = 0; i < Size; ++i)
 	{
@@ -599,16 +643,50 @@ static inline void kai__memcpy(void* Dst, void* Src, Kai_u32 Size)
 	}
 }
 
-//! @return The smallest number n such that n*Den >= Num
+static inline void kai__memory_zero(void* Dst, Kai_u32 Size)
+{
+	for (Kai_u32 i = 0; i < Size; ++i)
+	{
+		((Kai_u8*)Dst)[i] = 0;
+	}
+}
+
+static inline void kai__memory_fill(void* Dst, Kai_u8 Data, Kai_u32 Size)
+{
+	for (Kai_u32 i = 0; i < Size; ++i)
+	{
+		((Kai_u8*)Dst)[i] = Data;
+	}
+}
+
+static inline void kai__string_copy(Kai_u8* Dst, char const* restrict Src, Kai_u32 Dst_Size)
+{
+	for (Kai_u32 i = 0; i < Dst_Size && Src[i] != '\0'; ++i)
+	{
+		((Kai_u8*)Dst)[i] = ((Kai_u8*)Src)[i];
+	}
+}
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Basic Math Functions --------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 static inline Kai_u32 kai__ceil_div(Kai_u32 Num, Kai_u32 Den)
 {
     return (Num + Den - 1) / Den;
 }
 
-static inline void kai__dynamic_arena_allocator_create(Kai__Dynamic_Arena_Allocator* Arena, Kai_Allocator* Allocator)
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Dynamic Arena Allocator -----------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+static inline void kai__dynamic_arena_allocator_create(
+	Kai__Dynamic_Arena_Allocator* Arena,
+	Kai_Allocator*                Allocator)
 {
-	kai__assert(Arena != 0);
-	kai__assert(Allocator != 0);
+	kai__assert(Arena != NULL);
+	kai__assert(Allocator != NULL);
+
     Arena->allocator = *Allocator;
     Arena->bucket_size = kai__ceil_div(KAI__MINIMUM_ARENA_BUCKET_SIZE, Allocator->page_size)
 	                   * Allocator->page_size;
@@ -618,23 +696,21 @@ static inline void kai__dynamic_arena_allocator_create(Kai__Dynamic_Arena_Alloca
 		Arena->bucket_size,
 		KAI_MEMORY_ACCESS_READ_WRITE
 	);
-
-	if (Arena->current_bucket == 0)
-	{
-		kai__fatal_error("Dynamic Arena Allocator", "failed to allocate memory", __FILE__, __LINE__);
-	}
+	kai__check_allocation(Arena->current_bucket);
 }
 
 static inline void kai__dynamic_arena_allocator_free_all(Kai__Dynamic_Arena_Allocator* Arena)
 {
-	kai__assert(Arena != 0);
+	kai__assert(Arena != NULL);
     Kai__Arena_Bucket* bucket = Arena->current_bucket;
-    while (bucket) {
+
+    while (bucket)
+	{
         Kai__Arena_Bucket* prev = bucket->prev;
         Arena->allocator.free(Arena->allocator.user, bucket, Arena->bucket_size);
         bucket = prev;
     }
-    Arena->current_bucket = 0;
+    Arena->current_bucket = NULL;
     Arena->current_allocated = 0;
 }
 
@@ -647,10 +723,10 @@ static inline void kai__dynamic_arena_allocator_destroy(Kai__Dynamic_Arena_Alloc
 
 static inline void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* Arena, Kai_u32 Size)
 {    
-	kai__assert(Arena != 0);
+	kai__assert(Arena != NULL);
 
     if (Size > Arena->bucket_size)
-        return 0;
+        return NULL;
     
     if (Arena->current_allocated + Size > Arena->bucket_size)
     {
@@ -659,22 +735,20 @@ static inline void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* Arena, Kai
             Arena->bucket_size,
             KAI_MEMORY_ACCESS_READ_WRITE
         );
-        if (new_bucket == 0)
-            return 0; // Bubble down failure
-        new_bucket->prev = Arena->current_bucket;
+
+		// Bubble failure to caller
+        if (new_bucket == NULL)
+            return NULL;
+        
+		new_bucket->prev = Arena->current_bucket;
         Arena->current_bucket = new_bucket;
         Arena->current_allocated = sizeof(Kai__Arena_Bucket*);
     }
-
     Kai_u8* bytes = (Kai_u8*)Arena->current_bucket;
     void* ptr = bytes + Arena->current_allocated;
     Arena->current_allocated += Size;
     return ptr;
 }
-
-// Annoying to always have to pass allocator around,
-//  so macros assume variable defined `allocator` exists
-//  and is of type `Kai_Allocator*`
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Array API -------------------------------------------------------------
@@ -690,23 +764,18 @@ static inline void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* Arena, Kai
 	kai__array_grow_stride(Ptr_Array, (Ptr_Array)->count + 1, allocator, sizeof((Ptr_Array)->elements[0])), \
 	(Ptr_Array)->elements[(Ptr_Array)->count++] = (__VA_ARGS__)
 
-static inline void kai__array_reserve_stride(void* Array, Kai_u32 Size, Kai_Allocator* Allocator, Kai_u32 Stride)
+static inline void kai__array_reserve_stride(void* Array, Kai_u32 Size, Kai_Allocator* allocator, Kai_u32 Stride)
 {
 	KAI__ARRAY(void)* array = Array;
 	
 	if (Size <= array->capacity)
 		return;
 
-	array->elements = Allocator->heap_allocate(
-		Allocator->user,
-		array->elements,
-		Stride * Size,
-		Stride * array->capacity
-	);
+	array->elements = kai__allocate(array->elements, Stride * Size, Stride * array->capacity);
 	array->capacity = Size;
 }
 
-static inline void kai__array_grow_stride(void* Array, Kai_u32 Min_Size, Kai_Allocator* Allocator, Kai_u32 Stride)
+static inline void kai__array_grow_stride(void* Array, Kai_u32 Min_Size, Kai_Allocator* allocator, Kai_u32 Stride)
 {
 	KAI__ARRAY(void)* array = Array;
 	
@@ -714,48 +783,31 @@ static inline void kai__array_grow_stride(void* Array, Kai_u32 Min_Size, Kai_All
 		return;
 	
 	Kai_u32 new_capacity = (Min_Size * 3) / 2;
-	array->elements = Allocator->heap_allocate(
-		Allocator->user,
-		array->elements,
-		Stride * new_capacity,
-		Stride * array->capacity
-	);
+	array->elements = kai__allocate(array->elements, Stride * new_capacity, Stride * array->capacity);
 	array->capacity = new_capacity;
-
-	if (array->elements == 0)
-	{
-		kai__fatal_error("Array", "Failed to allocate memory!", __FILE__, __LINE__);
-	}
+	kai__check_allocation(array->elements);
 }
 
-static inline void kai__array_shrink_to_fit_stride(void* Array, Kai_Allocator* Allocator, Kai_u32 Stride)
+static inline void kai__array_shrink_to_fit_stride(void* Array, Kai_Allocator* allocator, Kai_u32 Stride)
 {
 	KAI__ARRAY(void)* array = Array;
+
 	if (array->capacity != 0)
 	{
-		array->elements = Allocator->heap_allocate(
-			Allocator->user,
-			array->elements,
-			Stride * array->count,
-			Stride * array->capacity
-		);
+		array->elements = kai__allocate(array->elements, Stride * array->count, Stride * array->capacity);
 		array->capacity = array->count;
 	}
 }
 
-static inline void kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* Ptr_Allocator, Kai_u32 Stride)
+static inline void kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* allocator, Kai_u32 Stride)
 {
 	KAI__ARRAY(int)* array = Ptr_Array;
+	
 	if (array->capacity != 0)
 	{
-		Ptr_Allocator->heap_allocate(
-			Ptr_Allocator->user,
-			array->elements,
-			0,
-			Stride * array->capacity
-		);
+		kai__free(array->elements, Stride * array->capacity);
 	}
-	array->elements = 0;
+	array->elements = NULL;
 	array->capacity = 0;
 	array->count    = 0;
 }
@@ -806,23 +858,20 @@ static inline Kai_u64 kai__str_hash(Kai_str In)
     return hash;
 }
 
-static inline void kai__hash_table_grow(void* Table, Kai_Allocator* Allocator, Kai_u32 Elem_Size)
+static inline void kai__hash_table_grow(void* Table, Kai_Allocator* allocator, Kai_u32 Elem_Size)
 {
 	KAI__HASH_TABLE(void)* table = Table;
 	
-	Kai_u32 new_capacity = (table->capacity == 0) ? 8 : table->capacity * 2;
+	// Calculate total space required
+	Kai_u32 new_capacity  = (table->capacity == 0) ? 8 : table->capacity * 2;
 	Kai_u32 occupied_size = kai__bit_array_count(new_capacity);
 	Kai_u32 hashes_size   = new_capacity * sizeof(Kai_u64);
 	Kai_u32 keys_size     = new_capacity * sizeof(Kai_str);
 	Kai_u32 values_size   = new_capacity * Elem_Size;
 
-	void* new_ptr = Allocator->heap_allocate(
-		Allocator->user,
-		0,
-		occupied_size + hashes_size + keys_size + values_size,
-		0
-	);
+	void* new_ptr = kai__allocate(NULL, occupied_size + hashes_size + keys_size + values_size, 0);
 
+	// Distribute allocated memory
 	Kai_u64* occupied = new_ptr;
 	Kai_u64* hashes   = (Kai_u64*)((Kai_u8*)occupied + occupied_size);
 	Kai_str* keys     = (Kai_str*)((Kai_u8*)hashes + hashes_size);
@@ -849,7 +898,7 @@ static inline void kai__hash_table_grow(void* Table, Kai_Allocator* Allocator, K
 				hashes[index] = hash;
 				keys[index] = table->keys[i];
 				Kai_u8* src = (Kai_u8*)table->values + i * Elem_Size;
-				kai__memcpy(values + index * Elem_Size, src, Elem_Size);
+				kai__memory_copy(values + index * Elem_Size, src, Elem_Size);
 				count += 1;
 				break;
 			}
@@ -863,10 +912,8 @@ static inline void kai__hash_table_grow(void* Table, Kai_Allocator* Allocator, K
 	// Free old memory
 	if (table->capacity != 0)
 	{
-		Allocator->heap_allocate(
-			Allocator->user,
+		kai__free(
 			table->occupied,
-			0,
 			kai__bit_array_count(table->capacity)
 			+ table->capacity * (sizeof(Kai_u64) + sizeof(Kai_str) + Elem_Size)
 		);
@@ -881,8 +928,8 @@ static inline void kai__hash_table_grow(void* Table, Kai_Allocator* Allocator, K
 
 static inline Kai_u32 kai__hash_table_emplace_key_stride(void* Table, Kai_str Key, Kai_Allocator* Allocator, Kai_u32 Elem_Size)
 {
-	kai__assert(Table     != 0);
-	kai__assert(Allocator != 0);
+	kai__assert(Table     != NULL);
+	kai__assert(Allocator != NULL);
 	kai__assert(Elem_Size != 0);
 	
 	KAI__HASH_TABLE(void)* table = Table;
@@ -921,14 +968,13 @@ static inline Kai_u32 kai__hash_table_emplace_key_stride(void* Table, Kai_str Ke
 		index = (index + 1) & mask;
 	}
 
-	// Should be impossible to reach,
-	// but make sure to crash the program if we reach here
+	kai__unreachable();
 	return 0xFFFFFFFF;
 }
 
 static inline void* kai__hash_table_find_stride(void* Table, Kai_str Key, Kai_u32 Elem_Size)
 {
-	kai__assert(Table     != 0);
+	kai__assert(Table     != NULL);
 	kai__assert(Elem_Size != 0);
 	
 	KAI__HASH_TABLE(void)* table = Table;
@@ -943,7 +989,7 @@ static inline void* kai__hash_table_find_stride(void* Table, Kai_str Key, Kai_u3
 
 		if ((block & bit) == 0)
 		{
-			return 0; // Slot was empty
+			return NULL; // Slot was empty
 		}
 		else if (table->hashes[index] == hash
 		     &&  kai_str_equals(table->keys[index], Key))
@@ -954,37 +1000,37 @@ static inline void* kai__hash_table_find_stride(void* Table, Kai_str Key, Kai_u3
 		index = (index + 1) & mask;
 	}
 
-	return 0;
+	return NULL;
 }
 
 static inline Kai_bool kai__hash_table_get_stride(void* Table, Kai_str Key, void* out_Value, Kai_u32 Value_Size, Kai_u32 Elem_Size)
 {
 	void* elem_ptr = kai__hash_table_find_stride(Table, Key, Elem_Size);
-	if (elem_ptr == 0)
+
+	if (elem_ptr == NULL)
 		return KAI_FALSE;
-	kai__memcpy(out_Value, elem_ptr, Value_Size);
+		
+	kai__memory_copy(out_Value, elem_ptr, Value_Size);
 	return KAI_TRUE;
 }
 
-static inline void kai__hash_table_destroy_stride(void* Table, Kai_Allocator* Allocator, Kai_u32 Elem_Size)
+static inline void kai__hash_table_destroy_stride(void* Table, Kai_Allocator* allocator, Kai_u32 Elem_Size)
 {
 	KAI__HASH_TABLE(void)* table = Table;
+
 	if (table->capacity != 0)
 	{
-		Allocator->heap_allocate(
-			Allocator->user,
-			table->occupied,
-			0,
+		kai__free(table->occupied,
 			kai__bit_array_count(table->capacity)
 			+ table->capacity * (sizeof(Kai_u64) + sizeof(Kai_str) + Elem_Size)
 		);
 	}
 	table->count    = 0;
 	table->capacity = 0;
-	table->occupied = 0;
-	table->hashes   = 0;
-	table->keys     = 0;
-	table->values   = 0;
+	table->occupied = NULL;
+	table->hashes   = NULL;
+	table->keys     = NULL;
+	table->values   = NULL;
 }
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -999,11 +1045,17 @@ static inline void kai__hash_table_destroy_stride(void* Table, Kai_Allocator* Al
 
 #define kai__dynamic_buffer_push(Buffer, Size) \
 	kai__dynamic_buffer_push_a(Buffer, Size, allocator)
+	
+#define kai__range_to_data(Range, Memory) \
+	(void*)(((Kai_u8*)(Memory).data) + (Range).offset)
+	
+#define kai__range_to_string(Range, Memory) \
+	(KAI_STRUCT(Kai_str) { .count = (Range).count, .data = kai__range_to_data(Range, Memory) })
 
 static inline void kai__dynamic_buffer_append_a(Kai__Dynamic_Buffer* Buffer, void* Data, Kai_u32 Size, Kai_Allocator* Allocator)
 {
 	kai__array_grow_stride(Buffer, Buffer->size + Size, Allocator, 1);
-	kai__memcpy(Buffer->data + Buffer->size, Data, Size);
+	kai__memory_copy(Buffer->data + Buffer->size, Data, Size);
 	Buffer->size += Size;
 }
 
@@ -1014,19 +1066,16 @@ static inline void kai__dynamic_buffer_append_max_a(Kai__Dynamic_Buffer* Buffer,
 	kai__array_grow_stride(Buffer, Buffer->size + size, Allocator, 1);
 	if (String.count < Max_Count)
 	{
-		kai__memcpy(Buffer->data + Buffer->size, String.data, String.count);
+		kai__memory_copy(Buffer->data + Buffer->size, String.data, String.count);
 		Buffer->size += String.count;
 	}
 	else
 	{
-		kai__memcpy(Buffer->data + Buffer->size, String.data, Max_Count - 3);
-		kai__memcpy(Buffer->data + Buffer->size + Max_Count - 3, "...", 3);
+		kai__memory_copy(Buffer->data + Buffer->size, String.data, Max_Count - 3);
+		kai__memory_copy(Buffer->data + Buffer->size + Max_Count - 3, "...", 3);
 		Buffer->size += Max_Count;
 	}
 }
-
-#define kai__range_to_data(Range, Memory)   (void*)(((Kai_u8*)(Memory).data) + (Range).offset)
-#define kai__range_to_string(Range, Memory) KAI_STRUCT(Kai_str) { .count = (Range).count, .data = kai__range_to_data(Range, Memory) }
 
 static inline Kai_range kai__dynamic_buffer_next(Kai__Dynamic_Buffer* Buffer)
 {
@@ -1041,7 +1090,10 @@ static inline Kai_range kai__dynamic_buffer_next(Kai__Dynamic_Buffer* Buffer)
 static inline Kai_range kai__dynamic_buffer_push_a(Kai__Dynamic_Buffer* Buffer, Kai_u32 Size, Kai_Allocator* Allocator)
 {
 	kai__array_grow_stride(Buffer, Buffer->size + Size, Allocator, 1);
-	Kai_range out = { .count = Size, .offset = Buffer->offset };
+	Kai_range out = {
+		.count = Size,
+		.offset = Buffer->offset
+	};
 	Buffer->size += Size;
 	Buffer->offset = Buffer->size;
 	return out;
@@ -1058,10 +1110,21 @@ static inline Kai_Memory kai__dynamic_buffer_release(Kai__Dynamic_Buffer* Buffer
 }
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Parser API ------------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+// out_String->count: Maximum number of characters
+// out_String->count must be >= 3
+void kai__token_type_string(Kai_u32 Type, Kai_str* out_String);
+
+Kai__Token* kai__next_token(Kai__Tokenizer* context);
+Kai__Token* kai__peek_token(Kai__Tokenizer* context);
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Error Creation API ----------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-static Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
+static inline Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
 {
 	*out_Error = (Kai_Error) {
 		.message = Message,
@@ -1070,34 +1133,46 @@ static Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
 	return KAI_ERROR_INTERNAL;
 }
 
-#define kai__error_syntax_error(Error, Token, Where, Wanted) \
-	kai__error_syntax_error_a(Error, allocator, Token, Where, Wanted)
-
-static void* kai__error_syntax_error_a(Kai_Error* out_Error, Kai_Allocator* allocator, Kai__Token* token, Kai_str where, Kai_str wanted)
+static inline void kai__error_unexpected(Kai__Parser* parser, Kai__Token* token, Kai_str where, Kai_str wanted)
 {
-    Kai_Error* e = out_Error;
-    if (e->result != KAI_SUCCESS) return 0;
-    e->result          = KAI_ERROR_SYNTAX;
-    e->location.string = token->string;
-    e->location.line   = token->line_number;
-    e->context         = wanted;
-    //e->message = (Kai_str){.count = 0, .data = (Kai_u8*)hack__delete_me};
-    //adjust_source_location(&e->location.string, token->type);
-    //str_insert_string(e->message, "unexpected ");
-    //insert_token_type_string(&e->message, token->type);
-    //e->message.data[e->message.count++] = ' ';
-    //str_insert_str(e->message, where);
-    return 0;
+    Kai_Allocator* allocator = &parser->arena.allocator;
+
+    if (parser->error.result != KAI_SUCCESS)
+        return;
+
+    Kai__Dynamic_Buffer buffer = {0};
+    kai__dynamic_buffer_append_string(&buffer, KAI_STRING("unexpected "));
+    Kai_u8 temp [32];
+    Kai_str type = { .data = temp, .count = sizeof(temp) };
+	kai__token_type_string(token->type, &type);
+    kai__dynamic_buffer_append_string(&buffer, type);
+    kai__dynamic_buffer_append_string(&buffer, KAI_STRING(" "));
+    kai__dynamic_buffer_append_string(&buffer, where);
+    Kai_range message_range = kai__dynamic_buffer_next(&buffer);
+    Kai_Memory memory = kai__dynamic_buffer_release(&buffer);
+
+    parser->error = (Kai_Error) {
+        .result = KAI_ERROR_SYNTAX,
+        .location = {
+            .string = token->string,
+            .line = token->line_number,
+        },
+        .message = kai__range_to_string(message_range, memory),
+        .context = wanted,
+        .memory = memory,
+    };
+	
+    if (token->type == KAI__TOKEN_STRING)
+	{
+		parser->error.location.string.data  -= 1; // strings must begin with "
+        parser->error.location.string.count += 2;
+    }
+    else if (token->type == KAI__TOKEN_DIRECTIVE)
+	{
+        parser->error.location.string.data  -= 1;
+        parser->error.location.string.count += 1;
+    }
 }
-
-// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-// --- Tokenizer API ---------------------------------------------------------
-// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-//! TODO: replace this function
-void insert_token_type_string(Kai_str* out, Kai_u32 type);
-Kai__Token* kai__next_token(Kai__Tokenizer* context);
-Kai__Token* kai__peek_token(Kai__Tokenizer* context);
 
 #endif
 #ifdef KAI_USE_MEMORY_API

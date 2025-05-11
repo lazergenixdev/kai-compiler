@@ -4,37 +4,55 @@
 //! @TODO: String Escape \"
 //! @TODO: Add "false" and "true" keywords (re2c)
 
-Kai_str token_type_string(Kai_u32 type) {
-    switch (type) {
-        default:                     return KAI_EMPTY_STRING; // single character
-        case KAI__TOKEN_END:         return KAI_STRING("end of file");
-        case KAI__TOKEN_IDENTIFIER:  return KAI_STRING("identifier");
-        case KAI__TOKEN_DIRECTIVE:   return KAI_STRING("directive");
-        case KAI__TOKEN_STRING:      return KAI_STRING("string");
-        case KAI__TOKEN_NUMBER:      return KAI_STRING("number");
+#if 1
+void kai__token_type_string(Kai_u32 Type, Kai_str* out_String)
+{
+    switch (Type)
+	{
+        default:
+		{
+			kai__assert(Type <= 0xff);
+			out_String->data[0] = '\'';
+			out_String->data[1] = (char)Type;
+			out_String->data[2] = '\'';
+		} break;
+
+        case KAI__TOKEN_END:
+			kai__string_copy(out_String->data, "end of file", out_String->count);
+		break;
+
+		case KAI__TOKEN_IDENTIFIER:
+			kai__string_copy(out_String->data, "identifier", out_String->count);
+		break;
+
+        case KAI__TOKEN_DIRECTIVE:
+			kai__string_copy(out_String->data, "directive", out_String->count);
+		break;
+
+        case KAI__TOKEN_STRING:
+			kai__string_copy(out_String->data, "string", out_String->count);
+		break;
+
+        case KAI__TOKEN_NUMBER:
+			kai__string_copy(out_String->data, "number", out_String->count);
+		break;
+
 #define X(SYMBOL) \
-        case SYMBOL:         return KAI_STRING(#SYMBOL);
+        case SYMBOL: \
+			kai__string_copy(out_String->data, #SYMBOL, out_String->count); \
+		break;
         KAI__X_TOKEN_SYMBOLS
 #undef X
-#define X(NAME,ID) case ID: return KAI_STRING("'" #NAME "'");
+
+#define X(NAME,ID) \
+		case ID: \
+			kai__string_copy(out_String->data, "'" #NAME "'", out_String->count); \
+		break;
         KAI__X_TOKEN_KEYWORDS
 #undef X
     }
 }
-
-void insert_token_type_string(Kai_str* out, Kai_u32 type) {
-    Kai_str s = token_type_string(type);
-    if (s.count == 0 && type < 0x100) {
-        out->data[out->count++] = '\'';
-        out->data[out->count++] = (char)type;
-        out->data[out->count++] = '\'';
-        return;
-    }
-    //memcpy(out->data + out->count, s.data, s.count);
-    for (int i = 0; i < s.count; ++i)
-        out->data[out->count + i] = s.data[i];
-    out->count += s.count;
-}
+#endif
 
 Kai_str keyword_map[] = {
 #define X(NAME, ID) KAI_CONSTANT_STRING(#NAME),

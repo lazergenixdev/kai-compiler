@@ -986,7 +986,7 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
 	dfs.prev    = malloc(Graph->nodes.count * 2* sizeof(Kai_u32));
 	dfs.visited = calloc(Graph->nodes.count * 2, sizeof(Kai_bool));
 
-	memset(dfs.prev, 0xFF, Graph->nodes.count * 2* sizeof(Kai_u32));
+	kai__memory_fill(dfs.prev, 0xFF, Graph->nodes.count * 2* sizeof(Kai_u32));
 
 	// Do not waste time on builtins
 	//iterate (builtin_types) {
@@ -1112,18 +1112,18 @@ Kai__DG_Node* kai__dg_find_node(Kai__Dependency_Graph* graph, Kai_str name)
 	return NULL;
 }
 
-Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Generation_Context* Info, Kai__DG_Node* node)
+Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Generation_Context* Info, Kai__DG_Node* dg_node)
 {
-	if (node->type_flags & KAI__DG_NODE_EVALUATED)
+	if (dg_node->type_flags & KAI__DG_NODE_EVALUATED)
 		return KAI_SUCCESS;
 
-	void* base = node->expr;
+	void* base = dg_node->expr;
 
-	switch (node->expr->id) {
+	switch (dg_node->expr->id) {
 		case KAI_EXPR_IDENTIFIER: {
-		 	Kai__DG_Node* d = kai__dg_find_node(Info->dependency_graph, node->expr->source_code);
+		 	Kai__DG_Node* d = kai__dg_find_node(Info->dependency_graph, dg_node->expr->source_code);
 			kai__assert(d != NULL);
-			node->type = d->type;
+			dg_node->type = d->type;
 			return KAI_SUCCESS;
 		} break;
 
@@ -1138,7 +1138,7 @@ Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Generation_Context* Info, K
 		}
 
 		default: {
-			panic_with_message("not handled %i", node->expr->id);
+			panic_with_message("not handled %i", dg_node->expr->id);
 		}
 	}
 	
@@ -1174,6 +1174,7 @@ Kai_Result kai__bytecode_emit_procedure(
 	Kai_Expr Expr,
 	Kai_u32* out_Location)
 {
+	(void)Expr;
 	Bc_Stream* stream = &Context->bytecode->stream;
 
 	Kai_u32 branch_endif = 0;
@@ -1287,58 +1288,80 @@ extern inline uint32_t kai__arm64_add(uint32_t Rd, uint32_t Rn, uint32_t Rm, uin
 extern inline uint32_t kai__arm64_sub(uint32_t Rd, uint32_t Rn, uint32_t Rm, uint8_t sf) { return (sf << 31) | (0b1001011 << 24) | (Rn << 5) | (Rm << 16) | Rd; }
 extern inline uint32_t kai__arm64_subs(uint32_t imm12, uint32_t Rn, uint8_t sf) { return (sf << 31) | (0b11100010 << 23) | (imm12 << 10) | (Rn << 5) | 0b11111; }
 extern inline uint32_t kai__arm64_movz(uint32_t Rd, uint32_t imm16, uint8_t sf) { return (sf << 31) | (0b10100101 << 23) | (imm16 << 5) | Rd; }
-extern inline uint32_t kai__arm64_bl(uint32_t imm26) { return (0b100101 << 26) | (imm26 & 0x3FFFFFF); }
+extern inline uint32_t kai__arm64_bl(int32_t imm26) { return (0b100101 << 26) | (imm26 & 0x3FFFFFF); }
 extern inline uint32_t kai__arm64_ret() { return 0xd65f03c0; }
 
 Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_Program)
 {
-	uint32_t code [] = {
-		kai__arm64_sub(0, 1, 2, 1),
-		kai__arm64_add(2, 1, 0, 1),
-		kai__arm64_subs(69, 5, 0),
-		kai__arm64_movz(4, 42069, 1),
-		kai__arm64_bl(-16),
-		kai__arm64_ret(),
-	};
-
-	for (int i = 0; i < sizeof(code)/sizeof(uint32_t); ++i)
-	{
-		union {
-			uint8_t byte[4];
-			uint32_t u32;
-		} temp = { .u32 = code[i] }, out;
-		out.byte[0] = temp.byte[3];
-		out.byte[1] = temp.byte[2];
-		out.byte[2] = temp.byte[1];
-		out.byte[3] = temp.byte[0];
-		printf("%x\n", out.u32);
-	}
-	
-	// Allocate memory to store machine code
 	Kai_Allocator* allocator = &Info->allocator;
+
+	//uint32_t code [] = {
+	//	kai__arm64_sub(0, 1, 2, 1),
+	//	kai__arm64_add(2, 1, 0, 1),
+	//	kai__arm64_subs(69, 5, 0),
+	//	kai__arm64_movz(4, 42069, 1),
+	//	kai__arm64_bl(-16),
+	//	kai__arm64_ret(),
+	//};
+//
+	//for (int i = 0; i < sizeof(code)/sizeof(uint32_t); ++i)
+	//{
+	//	union {
+	//		uint8_t byte[4];
+	//		uint32_t u32;
+	//	} temp = { .u32 = code[i] }, out;
+	//	out.byte[0] = temp.byte[3];
+	//	out.byte[1] = temp.byte[2];
+	//	out.byte[2] = temp.byte[1];
+	//	out.byte[3] = temp.byte[0];
+	//	printf("%x\n", out.u32);
+	//}
+
+#define kai__bytecode_decode_add(Position, Dst_Var, Src1_Var, Src2_Var) \
+    uint32_t Dst_Var = *(uint32_t*)(stream->data + Position);           \
+    Position += sizeof(uint32_t);                                       \
+    uint32_t Src1_Var = *(uint32_t*)(stream->data + Position);          \
+    Position += sizeof(uint32_t);                                       \
+    uint32_t Src2_Var = *(uint32_t*)(stream->data + Position);          \
+    Position += sizeof(uint32_t);
+
+	KAI__ARRAY(uint32_t) arm64_machine_code = {0};
+
+	// Generate machine code
+	Bc_Stream* stream = &Info->bytecode->stream;
+	
+	for (Kai_u32 i = 0; i < stream->count; ++i) \
+		switch (stream->data[i])
+		{
+			case BC_OP_ADD: {
+				kai__bytecode_decode_add(i, dst, src1, src2);
+				uint32_t instr = kai__arm64_add(dst, src1, src2, 0);
+				kai__array_append(&arm64_machine_code, instr);
+			} break;
+		}
+
+	// Allocate memory to store machine code
 	Kai_Program program = {0};
 	program.platform_machine_code = allocator->allocate(allocator->user, allocator->page_size, KAI_MEMORY_ACCESS_WRITE);
 	program.code_size = allocator->page_size;
 
-	// Generate machine code
-	//kai__bytecode_iterate(Info->bytecode->stream, current)
-	//{
-	//	switch()
-	//	{
-	//		case BC_OP_ADD: {
-	//			kai__bytecode_decode_add(current, dst, src1, src2);
-	//			uint32_t instr = kai__arm64_add(dst, src1, src2, 0);
-	//			kai__array_append(arm64_machine_code, instr);
-	//		} break;
-	//	}
-	//}
+	//kai__memory_copy(
+	//	program.platform_machine_code,
+	//	arm64_machine_code.elements,
+	//	arm64_machine_code.count * sizeof(uint32_t)
+	//);
+
+	kai__memory_copy(program.platform_machine_code,
+                         "\xB8\x45\x00\x00\x00\xC3", 7);
 
 	// Set memory as executable
 	allocator->set_access(allocator->user, program.platform_machine_code, program.code_size, KAI_MEMORY_ACCESS_EXECUTE);
 
+	kai__hash_table_emplace(program.procedure_table, KAI_STRING("main"), program.platform_machine_code);
+
 	*out_Program = program;
 
-	return kai__error_internal(Info->error, KAI_STRING("kai__create_program not implemented"));
+	return KAI_SUCCESS;
 }
 
 void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
@@ -1365,6 +1388,12 @@ void kai__destroy_bytecode(Kai__Bytecode* Bytecode)
 void kai_destroy_program(Kai_Program Program)
 {
 	Program.allocator.free(Program.allocator.user, Program.platform_machine_code, Program.code_size);
+}
+
+void* kai_find_procedure(Kai_Program Program, Kai_str Name, Kai_Type Type)
+{
+	(void)Type;
+	return *(void**)kai__hash_table_find(Program.procedure_table, Name);
 }
 
 #if 0

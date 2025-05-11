@@ -31,9 +31,6 @@ Kai_str kai_str_from_cstring(char const* string)
     return (Kai_str) {.data = (Kai_u8*)string, .count = len};
 }
 
-#define kai__allocate(S) allocator->heap_allocate(allocator->user, 0, S, 0)
-#define kai__free(P,S)   allocator->heap_allocate(allocator->user, P, 0, S)
-
 void kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
 {
     while (Error)
@@ -77,7 +74,7 @@ void kai__fatal_error(
 	char const* File,
 	int         Line)
 {
-	printf("\x1b[91m%s\x1b[0m: \"\x1b[94m%s\x1b[0m\"\nin \x1b[92m%s:%i\x1b[0m",
+	printf("\x1b[91m%s\x1b[0m: %s\nin \x1b[92m%s:%i\x1b[0m",
 		Desc, Message, kai__file(File), Line
 	);
 	exit(1);

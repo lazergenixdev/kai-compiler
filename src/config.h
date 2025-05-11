@@ -2,10 +2,8 @@
 #define CONFIG_H
 
 #include "kai/kai.h"
-//#include <string.h>  // --> memset, memcpy
-//#include <stdio.h>   // --> printf
+#include <stdio.h>   // --> printf
 
-#define NULL ((void*)0)
 
 #define MACRO_PRAGMA(X) _Pragma(#X)
 

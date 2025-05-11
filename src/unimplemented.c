@@ -1,18 +1,11 @@
 #define KAI_USE_DEBUG_API
 #include "config.h"
 
-void*
-kai_find_procedure(Kai_Program Program, Kai_str Name, Kai_Type Type)
-{
-	//UNIMPLEMENTED(Program, Name, Type);
-    return NULL;
-}
-
 #ifndef __WASM__
 void debug_dump_memory(void* data, Kai_u32 count)
 {
     Kai_u8* bytes = data;
-    int k = 0;
+    Kai_u32 k = 0;
     for (;;)
     {
         for (int i = 0; i < 16; ++i)

@@ -1,6 +1,8 @@
 #include "bytecode.h"
-//#include "stdlib.h" // --> realloc
-//#include "stdio.h" // --> snprintf
+
+//! TODO: remove
+#include "stdlib.h" // --> realloc
+#include "stdio.h" // --> snprintf
 
 #define bcs__for(N) for (int i = 0; i < (int)N; ++i)
 
@@ -12,16 +14,17 @@ uint32_t bcs__grow_function(uint32_t x) {
 }
 
 int bcs__ensure_space(Bc_Stream* stream, uint32_t added_count) {
-    //uint32_t const required_capacity = stream->count + added_count;
-    //if (stream->capacity >= required_capacity)
-    //    return BC_STREAM_SUCCESS;
-    //uint32_t const new_capacity = bcs__grow_function(required_capacity);
-    //void* new_data = realloc(stream->data, new_capacity);
-    //if (new_data == NULL)
+    uint32_t const required_capacity = stream->count + added_count;
+    if (stream->capacity >= required_capacity)
+        return BC_STREAM_SUCCESS;
+    uint32_t const new_capacity = bcs__grow_function(required_capacity);
+	//! TODO: replace realloc with custom allocator
+    void* new_data = realloc(stream->data, new_capacity);
+    if (new_data == NULL)
         return BC_STREAM_ERROR_MEMORY;
-    //stream->data = new_data;
-    //stream->capacity = new_capacity;
-    //return BC_STREAM_SUCCESS;
+    stream->data = new_data;
+    stream->capacity = new_capacity;
+    return BC_STREAM_SUCCESS;
 }
 
 #define bcs__make_space(BYTES_REQUIRED)           \

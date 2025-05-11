@@ -96,7 +96,9 @@ void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 acc
     int flags = 0;
     flags |= (access & KAI_MEMORY_ACCESS_READ_WRITE)? 0x04 : 0;
     flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)?    0x10 : 0;
-    VirtualProtect(ptr, size, flags, NULL);
+	DWORD old;
+    BOOL r = VirtualProtect(ptr, size, flags, &old);
+	printf("virtual protect with %i -> %i\n", flags, r);
 }
 
 Kai_u32 kai__page_size()
@@ -144,7 +146,7 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
         kai__assert(old_ptr != NULL || old_size == 0);
         ptr = realloc(old_ptr, new_size);
         if (ptr != NULL && old_ptr == NULL) {
-            memset(ptr, 0, new_size);
+            kai__memory_zero(ptr, new_size);
         }
     }
     Kai__Memory_Internal* internal = user;
@@ -174,9 +176,6 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
 Kai_Result kai_create_memory(Kai_Allocator* Memory)
 {
     kai__assert(Memory != 0);
-
-    scratch = __wasm_allocate(kai__page_size() * 2);
-    offset = 0;
 	
     Memory->allocate      = kai__memory_allocate;
     Memory->free          = kai__memory_free;
@@ -184,26 +183,28 @@ Kai_Result kai_create_memory(Kai_Allocator* Memory)
     Memory->set_access    = kai__memory_set_access;
     Memory->page_size     = kai__page_size();
 #ifndef __WASM__
-    Memory->user          = malloc(sizeof(Kai__Memory_Internal));
+	Memory->user          = malloc(sizeof(Kai__Memory_Internal));
 #else
+	scratch = __wasm_allocate(kai__page_size() * 2);
+	offset = 0;
     Memory->user          = 0;
 #endif
     if (!Memory->user) {
 		return KAI_MEMORY_ERROR_OUT_OF_MEMORY;
     }
 
-    //Kai__Memory_Internal* internal = Memory->user;
-    //internal->debug_level = KAI_MEMORY_DEBUG_OFF;
-    //internal->total_allocated = 0;
+    Kai__Memory_Internal* internal = Memory->user;
+    internal->debug_level = KAI_MEMORY_DEBUG_OFF;
+    internal->total_allocated = 0;
 	return KAI_SUCCESS;
 }
 
 Kai_Result kai_destroy_memory(Kai_Allocator* Memory)
 {
-    //Kai__Memory_Internal* internal = Memory->user;
-    //if (internal->total_allocated != 0) {
-	//	return KAI_MEMORY_ERROR_MEMORY_LEAK;
-    //}
+    Kai__Memory_Internal* internal = Memory->user;
+    if (internal->total_allocated != 0) {
+		return KAI_MEMORY_ERROR_MEMORY_LEAK;
+    }
     #ifndef __WASM__
     free(Memory->user);
     #endif
