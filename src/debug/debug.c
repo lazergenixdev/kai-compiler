@@ -158,6 +158,7 @@ repeat:
 
 void kai_debug_write_type(Kai_Debug_String_Writer* writer, Kai_Type Type)
 {
+    char temp[64];
     if (Type == NULL) {
         kai__write("[null]");
         return;
@@ -165,10 +166,37 @@ void kai_debug_write_type(Kai_Debug_String_Writer* writer, Kai_Type Type)
     switch (Type->type) {
         default:                 { kai__write("[Unknown]"); } break;
         case KAI_TYPE_TYPE:      { kai__write("Type");      } break;
-        case KAI_TYPE_INTEGER:   { kai__write("Integer");   } break;   
-        case KAI_TYPE_FLOAT:     { kai__write("Float");     } break; 
+        case KAI_TYPE_INTEGER: {
+            Kai_Type_Info_Integer* info = Type;
+            kai__write_format("%s%i", info->is_signed? "s":"u", info->bits);
+        } break;
+        case KAI_TYPE_FLOAT: {
+            Kai_Type_Info_Float* info = Type;
+            kai__write_format("f%i", info->bits);
+        } break;
         case KAI_TYPE_POINTER:   { kai__write("Pointer");   } break;   
-        case KAI_TYPE_PROCEDURE: { kai__write("Procedure"); } break;     
+        case KAI_TYPE_PROCEDURE: {
+            Kai_Type_Info_Procedure* info = Type;
+            kai__write("(");
+            for (int i = 0;;) {
+                kai_debug_write_type(writer, info->sub_types[i]);
+                if (++i < info->in_count)
+                {
+                    kai__write(", ");
+                }
+                else break;
+            }
+            kai__write(") -> (");
+            for (int i = 0;;) {
+                kai_debug_write_type(writer, info->sub_types[info->in_count+i]);
+                if (++i < info->out_count)
+                {
+                    kai__write(", ");
+                }
+                else break;
+            }
+            kai__write(")");
+        } break;
         case KAI_TYPE_SLICE:     { kai__write("Slice");     } break; 
         case KAI_TYPE_STRING:    { kai__write("String");    } break;  
         case KAI_TYPE_STRUCT:    { kai__write("Struct");    } break;  
@@ -280,6 +308,12 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             set_node(Kai_Expr_Identifier);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("identifier");
+            if (node->name.count != 0)
+            {
+                kai__write(" (");
+                kai__write_string(node->name);
+                kai__write_char(')');
+            }
             kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
             kai__write(" \"");
             kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
@@ -560,7 +594,7 @@ Kai_Debug_String_Writer* kai_debug_stdout_writer(void)
         .write_string   = kai__stdout_writer_write_string,
         .write_c_string = kai__stdout_writer_write_c_string,
         .write_char     = kai__stdout_writer_write_char,
-        .set_color      = kai__stdout_writer_set_color,
+        //.set_color      = kai__stdout_writer_set_color,
         .user           = NULL
     };
     return &writer;

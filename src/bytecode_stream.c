@@ -1,5 +1,8 @@
 #include "kai/kai.h"
 
+// TODO: remove this
+#include <stdio.h>
+
 #define bcs__for(N) for (int i = 0; i < (int)N; ++i)
 #define __type_to_size(T) ((T) >> 4)
 
@@ -84,6 +87,7 @@ Kai_Result kai_bc_insert_math(Kai_BC_Stream* stream, Kai_u8 type, Kai_u8 operati
     bcs__push_u8(stream, type);
     bcs__push_u32(stream, reg_src1);
     bcs__push_u32(stream, reg_src2);
+    printf("math %%%i <- %%%i, %%%i\n", reg_dst, reg_src1, reg_src2);
     return KAI_SUCCESS;
 }
 
@@ -203,6 +207,7 @@ Kai_Result kai_bc_insert_return(Kai_BC_Stream* stream, Kai_u8 count, Kai_Reg* re
     bcs__push_u8(stream, KAI_BOP_RETURN);
     bcs__push_u8(stream, count);
     bcs__for (count) bcs__push_u32(stream, regs[i]);
+    printf("ret %%%i\n", regs[0]);
     return KAI_SUCCESS;
 }
 
@@ -279,9 +284,23 @@ Kai_Result kai_bc_set_branch(Kai_BC_Stream* stream, uint32_t branch, uint32_t lo
     return KAI_SUCCESS;
 }
 
+#ifndef __WASM__
+#include <stdio.h>
+
+const char* __math_op_to_string(Kai_u8 op)
+{
+    switch (op)
+    {
+        case KAI_BOP_ADD: return "+";
+        case KAI_BOP_MUL: return "*";
+        case KAI_BOP_DIV: return "/";
+        case KAI_BOP_SUB: return "-";
+        default: return "?";
+    }
+}
+
 Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
 {
-#ifndef __WASM__
     //! TODO: use type info
     //! TODO: find all branch locations
     //! TODO: use procedure name and argument count
@@ -291,7 +310,7 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
     #define bcc__write(...) \
     { \
         int length = snprintf(temp_buffer, sizeof(temp_buffer), __VA_ARGS__); \
-        writer->write(writer->user, (Kai_str) {.data = temp_buffer, .count = length}); \
+        writer->write(writer->user, (Kai_str) {.data = (Kai_u8*)temp_buffer, .count = length}); \
     } (void)0
 
     #define bcc__indent() bcc__write(";   ")
@@ -306,7 +325,17 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
     Kai_u8 const* data = bytecode->data;
     uint32_t cursor = 0;
 
-    bcc__write("int32_t func(int32_t __0) {\n");
+    bcc__write("int32_t func(");
+    for (int i = 0;;)
+    {
+        bcc__write("int32_t __%i", i);
+        if (++i < bytecode->arg_count)
+        {
+            bcc__write(", ");
+        }
+        else break;
+    }
+    bcc__write(") {\n");
 
     while (cursor < bytecode->count) {
         bcc__branch_check();
@@ -338,6 +367,8 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
 
         case KAI_BOP_ADD:
         case KAI_BOP_SUB:
+        case KAI_BOP_MUL:
+        case KAI_BOP_DIV:
         {
             Kai_Reg dst;
             dst = *(Kai_Reg*)(data + cursor);
@@ -362,11 +393,11 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
                 for (int i = 0; i < size; ++i)
                     u8_out[i] = data[cursor + i];
                 cursor += size;
-                bcc__write("%s __%d = __%d %s %i;\n", "int32_t", dst, a, operation==KAI_BOP_ADD? "+":"-", value.s32);
+                bcc__write("%s __%d = __%d %s %i;\n", "int32_t", dst, a, __math_op_to_string(operation), value.s32);
             } else {
                 Kai_Reg b = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
-                bcc__write("%s __%d = __%d %s __%d;\n", "int32_t", dst, a, operation==KAI_BOP_ADD? "+":"-", b);
+                bcc__write("%s __%d = __%d %s __%d;\n", "int32_t", dst, a, __math_op_to_string(operation), b);
             }
 
         } break;
@@ -525,11 +556,12 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
         default: {
             kai__unreachable();
             //bc__debug_log("invalid bytecode instruction! (pc=%x op=%d)", cursor - 1, operation);
-            return;
+            return KAI_SUCCESS;
         } break;
         }
     }
 
     bcc__write("}");
-#endif
+	return KAI_SUCCESS;
 }
+#endif

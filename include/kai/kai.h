@@ -787,6 +787,8 @@ KAI_API (Kai_Result) kai_bytecode_to_c           (Kai_Bytecode* Bytecode, Kai_Wr
 #define kai__free(Ptr,Size) \
 	allocator->heap_allocate(allocator->user, Ptr, Size, 0)
 
+#define kai__unused(VAR) (void)VAR
+
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Error Handling --------------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -1360,20 +1362,14 @@ static inline void kai__error_unexpected(Kai__Parser* parser, Kai__Token* token,
 #endif
 #ifdef KAI_USE_MEMORY_API
 
-enum {
-	KAI_MEMORY_DEBUG_OFF     = 0,
-	KAI_MEMORY_DEBUG_VERBOSE = 1,
+	enum {
+	KAI_MEMORY_ERROR_OUT_OF_MEMORY  = 1, //! @see kai_memory_create implementation
+	KAI_MEMORY_ERROR_MEMORY_LEAK    = 2, //! @see kai_memory_destroy implementation
 };
 
-enum {
-	KAI_MEMORY_ERROR_OUT_OF_MEMORY  = 1, //! @see kai_create_memory implementation
-	KAI_MEMORY_ERROR_MEMORY_LEAK    = 2, //! @see kai_destroy_memory implementation
-};	
-
-KAI_API (Kai_Result) kai_memory_create   (Kai_Allocator* out_Allocator);
-KAI_API (Kai_Result) kai_memory_destroy  (Kai_Allocator* Allocator);
-KAI_API (void)       kai_memory_set_debug(Kai_Allocator* Allocator, Kai_u32 Debug_Level);
-KAI_API (Kai_u32)    kai_memory_usage    (Kai_Allocator* Allocator);
+	KAI_API (Kai_Result) kai_memory_create   (Kai_Allocator* out_Allocator);
+	KAI_API (Kai_Result) kai_memory_destroy  (Kai_Allocator* Allocator);
+	KAI_API (Kai_u64)    kai_memory_usage    (Kai_Allocator* Allocator);
 
 #endif
 #ifdef KAI_USE_DEBUG_API

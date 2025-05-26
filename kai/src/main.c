@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <windows.h> // for EXCEPTION_ACCESS_VIOLATION
+#include <windows.h> // --> EXCEPTION_ACCESS_VIOLATION
 #include <excpt.h>
 
 void set_underline(int enable) {
@@ -72,7 +72,6 @@ int main(int argc, char** argv) {
     Kai_Error     error     = {0};
 	Kai_Allocator allocator = {0};
 	kai_memory_create(&allocator);
-    //kai_memory_set_debug(&allocator, KAI_MEMORY_DEBUG_VERBOSE);
 
     if (options.parse_only) {
         parse(file, source_code, &error, &allocator);
@@ -146,7 +145,7 @@ cleanup:
     {
         Kai_Result result = kai_memory_destroy(&allocator);
         if (result) {
-		    error("Some allocations were not freed! (amount=%u B)", kai_memory_usage(&allocator));
+		    error("Some allocations were not freed! (amount=%i B)", (int)kai_memory_usage(&allocator));
         }
     }
 	return exit_value;

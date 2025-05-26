@@ -72,9 +72,16 @@ typedef struct {
 } Kai__Bytecode_Create_Info;
 
 typedef struct {
-	Kai_Error*              error;
-	Kai__Dependency_Graph*  dependency_graph;
-	Kai__Bytecode*          bytecode;
+	Kai_str name;
+	Kai_Reg reg;
+} Kai__Bytecode_Register;
+
+typedef struct {
+	Kai_Error*                   error;
+	Kai__Dependency_Graph*       dependency_graph;
+	Kai__Bytecode*               bytecode;
+	Kai__Dynamic_Arena_Allocator arena;
+	KAI__ARRAY(Kai__Bytecode_Register) registers;
 } Kai__Bytecode_Generation_Context;
 
 typedef struct {

@@ -7,7 +7,7 @@
 
 //#define DEBUG_DEPENDENCY_GRAPH
 //#define DEBUG_COMPILATION_ORDER
-//#define DEBUG_CODE_GENERATION
+#define DEBUG_CODE_GENERATION
 
 Kai_Result kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program)
 {
@@ -1112,37 +1112,90 @@ Kai__DG_Node* kai__dg_find_node(Kai__Dependency_Graph* graph, Kai_str name)
 	return NULL;
 }
 
-Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Generation_Context* Info, Kai__DG_Node* dg_node)
+Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr expr, Kai_Type* type)
+{
+	switch (expr->id)
+	{
+		/*case KAI_EXPR_PROCEDURE: {
+			Kai_u32 location = 0;
+			Kai_Result result = kai__bytecode_emit_procedure(Info, node->expr, &location);
+
+			if (result != KAI_SUCCESS)
+				return result;
+
+			return (Kai__DG_Value) {
+				.procedure_location = location,
+			};
+		} break;*/
+
+		case KAI_EXPR_IDENTIFIER: {
+			void* base = expr;
+			Kai_Expr_Identifier* expr = base;
+			Kai__DG_Node* other_node = kai__dg_find_node(Context->dependency_graph, expr->source_code);
+
+			if (other_node == NULL)
+			{
+				return (Kai__DG_Value) {};
+			}
+
+			*type = other_node->type;
+			return other_node->value;
+		} break;
+
+		default: {
+			printf("How did we get here? %i\n", expr->id);
+		}
+	}
+
+	return (Kai__DG_Value) {};
+}
+
+Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr expr) {
+	switch (expr->id) {
+		case KAI_EXPR_IDENTIFIER: {
+			Kai__DG_Node* d = kai__dg_find_node(Context->dependency_graph, expr->source_code);
+			kai__assert(d != NULL);
+			return d->type;
+		} break;
+
+		case KAI_EXPR_PROCEDURE: {
+			Kai_Expr_Procedure* node = expr;
+			Kai_Type_Info_Procedure* type_info = kai__arena_allocate(&Context->arena, sizeof(Kai_Type_Info_Procedure));
+			type_info->type = KAI_TYPE_PROCEDURE;
+			type_info->in_count = node->in_count;
+			type_info->out_count = node->out_count;
+			type_info->sub_types = kai__arena_allocate(&Context->arena, sizeof(Kai_Type) * (node->in_count + node->out_count));
+			Kai_Expr current = node->in_out_expr;
+			int i = 0;
+			while (current != NULL)
+			{
+				Kai_Type type = NULL;
+				Kai__DG_Value value = kai__value_from_expression(Context, current, &type);
+				if (type != NULL && type->type == KAI_TYPE_TYPE)
+					type_info->sub_types[i++] = value.type;
+				else
+					panic_with_message("Type was not a type!");
+				current = current->next;
+			}
+			return (Kai_Type)type_info;
+		}
+
+		default: {
+			panic_with_message("not handled %i", expr->id);
+		}
+	}
+
+	return NULL;
+}
+
+Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Generation_Context* Context, Kai__DG_Node* dg_node)
 {
 	if (dg_node->type_flags & KAI__DG_NODE_EVALUATED)
 		return KAI_SUCCESS;
 
-	void* base = dg_node->expr;
+	dg_node->type = kai__type_from_expression(Context, dg_node->expr);
 
-	switch (dg_node->expr->id) {
-		case KAI_EXPR_IDENTIFIER: {
-		 	Kai__DG_Node* d = kai__dg_find_node(Info->dependency_graph, dg_node->expr->source_code);
-			kai__assert(d != NULL);
-			dg_node->type = d->type;
-			return KAI_SUCCESS;
-		} break;
-
-		case KAI_EXPR_PROCEDURE: {
-			Kai_Expr_Procedure* node = base;
-			Kai_Type_Info_Procedure type_info;
-			type_info.type = KAI_TYPE_PROCEDURE;
-			type_info.in_count = node->in_count;
-			type_info.out_count = node->out_count;
-			type_info.sub_types = NULL;
-			return KAI_SUCCESS;
-		}
-
-		default: {
-			panic_with_message("not handled %i", dg_node->expr->id);
-		}
-	}
-	
-	return KAI_ERROR_INTERNAL;
+	return KAI_SUCCESS;
 }
 
 /*
@@ -1169,28 +1222,171 @@ Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Generation_Context* Info, K
 		stream.insert_return(r)
 */
 
-Kai_Result kai__bytecode_emit_procedure(
+Kai_bool kai__bytecode_find_register(Kai__Bytecode_Generation_Context* Context, Kai_str Name, Kai_Reg* out)
+{
+	for (int i = Context->registers.count - 1; i >= 0; i--)
+	{
+		Kai__Bytecode_Register br = Context->registers.elements[i];
+		if (kai_str_equals(br.name, Name))
+		{
+			*out = br.reg;
+			return KAI_TRUE;
+		}
+	}
+	return KAI_FALSE;
+}
+
+Kai_Reg kai__bytecode_allocate_register(Kai__Bytecode_Generation_Context* Context)
+{
+	Kai_Allocator* allocator = &Context->dependency_graph->allocator;
+	Kai_Reg reg = Context->registers.count;
+	kai__array_append(&Context->registers, (Kai__Bytecode_Register){
+		.reg = reg,
+	});
+	return reg;
+}
+
+Kai_Result kai__bytecode_emit_expression(
 	Kai__Bytecode_Generation_Context* Context,
 	Kai_Expr Expr,
-	Kai_u32* out_Location)
+	Kai_u32* output_register)
 {
-    sizeof(Context, Expr, out_Location);
+	switch (Expr->id) {
+		case KAI_EXPR_NUMBER: {
+			Kai_Expr_Number* node = Expr;
+			Kai_Reg dst = kai__bytecode_allocate_register(Context);
+			Kai_Value value;
+			value.s32 = node->value.Whole_Part;
+			kai_bc_insert_load_constant(&Context->bytecode->stream, KAI_S32, dst, value);
+			*output_register = dst;
+		} break;
 
-	Context->bytecode;
+		case KAI_EXPR_IDENTIFIER: {
+			Kai_Expr_Identifier* node = Expr;
+			kai__bytecode_find_register(Context, node->source_code, output_register);
+		} break;
+
+		case KAI_EXPR_BINARY: {
+			Kai_Expr_Binary* node = Expr;
+			Kai_Reg left, right;
+			kai__bytecode_emit_expression(Context, node->left, &left);
+			kai__bytecode_emit_expression(Context, node->right, &right);
+			Kai_Reg dst = kai__bytecode_allocate_register(Context);
+			Kai_u8 op = 0;
+			switch (node->op)
+			{
+				case '+': op = KAI_BOP_ADD; break;
+				case '-': op = KAI_BOP_SUB; break;
+				case '*': op = KAI_BOP_MUL; break;
+				case '/': op = KAI_BOP_DIV; break;
+			}
+			kai_bc_insert_math(&Context->bytecode->stream, KAI_S32, op, dst, left, right);
+			*output_register = dst;
+		} break;
+
+		default: {
+			char temp[64];
+			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
+			kai__write_format("Emit %i Expression\n", Expr->id);
+		} break;
+	}
+}
+
+Kai_Result kai__bytecode_emit_statement(
+	Kai__Bytecode_Generation_Context* Context,
+	Kai_Expr Expr)
+{
+	switch (Expr->id) {
+		case KAI_STMT_COMPOUND: {
+			Kai_Stmt_Compound* node = Expr;
+			Kai_Expr current = node->head;
+			while (current != NULL)
+			{
+				kai__bytecode_emit_statement(Context, current);
+				current = current->next;
+			}
+		} break;
+
+		case KAI_STMT_RETURN: {
+			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
+			Kai_Stmt_Return* node = Expr;
+			Kai_Reg result;
+			kai__bytecode_emit_expression(Context, node->expr, &result);
+			kai_bc_insert_return(&Context->bytecode->stream, 1, &result);
+		} break;
+
+		default: {
+			char temp[64];
+			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
+			kai__write_format("Emit %i Statment\n", Expr->id);
+		} break;
+	}
 
 	return KAI_SUCCESS;
 }
 
-Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Info, Kai__DG_Node* node)
+Kai_Result kai__bytecode_emit_procedure(
+	Kai__Bytecode_Generation_Context* Context,
+	Kai_Expr_Procedure* Procedure,
+	Kai_u32* out_Location)
+{
+	Kai_Expr current = Procedure->body;
+	while (current != NULL)
+	{
+		kai__bytecode_emit_statement(Context, current);
+		current = current->next;
+	}
+
+	return KAI_SUCCESS;
+}
+
+void kai__stdout_write(void* User, Kai_str String)
+{
+	kai_debug_stdout_writer()->write_string(NULL, String);
+}
+
+Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Context, Kai__DG_Node* node)
 {
 	if (node->value_flags & KAI__DG_NODE_EVALUATED)
 		return KAI_SUCCESS;
 
+	Kai_Allocator* allocator = &Context->dependency_graph->allocator;
+
 	switch (node->expr->id)
 	{
 		case KAI_EXPR_PROCEDURE: {
+			Kai_Expr_Procedure* procedure = node->expr;
+
+			// Add all input registers
+			Kai_Expr current = procedure->in_out_expr;
+			for (int i = 0; i < procedure->in_count; i++)
+			{
+				kai__array_append(&Context->registers, (Kai__Bytecode_Register) {
+					.reg = i,
+					.name = current->name,
+				});
+				current = current->next;
+			}
+
 			Kai_u32 location = 0;
-			Kai_Result result = kai__bytecode_emit_procedure(Info, node->expr, &location);
+			Kai_Result result = kai__bytecode_emit_procedure(Context, procedure, &location);
+
+			Kai_Bytecode bytecode = {
+				.data = Context->bytecode->stream.data,
+				.count = Context->bytecode->stream.count,
+				.ret_count = 1,
+				.arg_count = 2,
+				.natives = NULL,
+				.native_count = 0,
+				.branch_hints = NULL,
+				.branch_count = 0
+			};
+			Kai_Writer writer = {
+				.write = kai__stdout_write,
+				.user = NULL,
+			};
+			kai_bytecode_to_c(&bytecode, &writer);
+			kai__stdout_write(NULL, KAI_STRING("\n"));
 
 			if (result != KAI_SUCCESS)
 				return result;
@@ -1205,11 +1401,11 @@ Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Info, 
 		case KAI_EXPR_IDENTIFIER: {
 			void* base = node->expr;
 			Kai_Expr_Identifier* expr = base;
-			Kai__DG_Node* other_node = kai__dg_find_node(Info->dependency_graph, expr->source_code);
+			Kai__DG_Node* other_node = kai__dg_find_node(Context->dependency_graph, expr->source_code);
 
 			if (other_node == NULL)
 			{
-				return kai__error_internal(Info->error, KAI_STRING("I did not think this through..."));
+				return kai__error_internal(Context->error, KAI_STRING("I did not think this through..."));
 			}
 
 			node->value = (Kai__DG_Value) {
@@ -1224,7 +1420,7 @@ Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Info, 
 		}
 	}
 
-	return kai__error_internal(Info->error, KAI_STRING("kai__bytecode_generate_value not implemented"));
+	return kai__error_internal(Context->error, KAI_STRING("kai__bytecode_generate_value not implemented"));
 }
 
 Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode* out_Bytecode)
@@ -1238,6 +1434,9 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 		.dependency_graph = Info->dependency_graph,
 		.bytecode = out_Bytecode,
 	};
+	context.bytecode->stream.allocator = &Info->dependency_graph->allocator;
+
+	kai__dynamic_arena_allocator_create(&context.arena, &Info->dependency_graph->allocator);
 
 	for (Kai_u32 i = 0; i < graph->nodes.count * 2; ++i)
 	{
@@ -1248,15 +1447,41 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 		};
 
 		Kai__DG_Node* node = &graph->nodes.elements[node_index.value];
+		
+        #if 1
+		if (node_index.flags & KAI__DG_NODE_TYPE)
+        {
+			if (node->type_flags & KAI__DG_NODE_EVALUATED)
+				continue;
+        }
+        else
+        {
+			if (node->value_flags & KAI__DG_NODE_EVALUATED)
+				continue;
+        }
+        #endif
 
 #ifdef DEBUG_CODE_GENERATION
-		printf("Generatiing %i -> %.*s\n", i, node->name.count, node->name.data);
+		printf("Generating %i -> %.*s\n", i, node->name.count, node->name.data);
 #endif
 
 		if (node_index.flags & KAI__DG_NODE_TYPE)
+		{
 			result = kai__bytecode_generate_type(&context, node);
-		else
+
+			kai_debug_stdout_writer()->write_c_string(0, "--> ");
+			kai_debug_write_type(kai_debug_stdout_writer(), node->type);
+			kai_debug_stdout_writer()->write_char(0, '\n');
+		}
+		else {
 			result = kai__bytecode_generate_value(&context, node);
+
+			if (node->type->type == KAI_TYPE_TYPE) {
+				kai_debug_stdout_writer()->write_c_string(0, "--> ");
+				kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
+				kai_debug_stdout_writer()->write_char(0, '\n');
+			}
+		}
 
 		if (result != KAI_SUCCESS)
 			return result;
