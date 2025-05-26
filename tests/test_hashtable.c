@@ -6,7 +6,7 @@ int hash_table() {
     TEST();
 
     Kai_Allocator _allocator;
-    kai_create_memory(&_allocator);
+    kai_memory_create(&_allocator);
     Kai_Allocator* allocator = &_allocator;
 
     KAI__HASH_TABLE(Kai_u64) table = {0};
@@ -40,6 +40,7 @@ int hash_table() {
     found = kai__hash_table_get_str(table, "apple", &value);      if (!found || value != 9) return FAIL;
 
     kai__hash_table_destroy(table);
+    kai_memory_destroy(&_allocator);
 
     return PASS;
 }

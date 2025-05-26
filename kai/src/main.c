@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
 
     Kai_Error     error     = {0};
 	Kai_Allocator allocator = {0};
-	kai_create_memory(&allocator);
+	kai_memory_create(&allocator);
     //kai_memory_set_debug(&allocator, KAI_MEMORY_DEBUG_VERBOSE);
 
     if (options.parse_only) {
@@ -80,12 +80,11 @@ int main(int argc, char** argv) {
     }
 
     Kai_Program program = {0};
-    Kai_Result result;
     Timer timer = {0};
     Timer_Init();
 
     Timer_Start(&timer);
-    result = kai_create_program_from_source(source_code, &allocator, &error, &program);
+    Kai_Result result = kai_create_program_from_source(source_code, &allocator, &error, &program);
     double elapsed_ms = Timer_ElapsedMilliseconds(&timer);
 
     printf("Compilation Took: %.4f ms\n", elapsed_ms);
@@ -122,12 +121,13 @@ int main(int argc, char** argv) {
             }
         }
 
-		__try
+#if _MSC_VER
+        __try
 		{
 			exit_value = main_proc(args);
 		}
-		__except(EXCEPTION_EXECUTE_HANDLER)
-		{
+        __except(EXCEPTION_EXECUTE_HANDLER)
+        {
 			const char* str = "Uknown";
 			int code = GetExceptionCode();
 			switch (code) {
@@ -136,12 +136,15 @@ int main(int argc, char** argv) {
 			}
 			printf("Exception caught! %s\n", str);
 		}
+#else
+        exit_value = main_proc(args);
+#endif
     }
 	
 cleanup:
     kai_destroy_error(&error, &allocator);
     {
-        Kai_Result result = kai_destroy_memory(&allocator);
+        Kai_Result result = kai_memory_destroy(&allocator);
         if (result) {
 		    error("Some allocations were not freed! (amount=%u B)", kai_memory_usage(&allocator));
         }

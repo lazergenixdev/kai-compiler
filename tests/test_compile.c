@@ -1,6 +1,7 @@
 #include "test.h"
 #include <setjmp.h>
 
+#if 1 // Psuedo-code
 typedef Kai_bool Kai_P_Is_Valid_Address(Kai_ptr Address, Kai_u32 Size);
 
 // %3 <- add.u32 %0, %2
@@ -12,18 +13,43 @@ Kai_P_Is_Valid_Address* is_valid_address;
 
 void kai__check_address(void* address, Kai_u32 size) {
     if (is_valid_address(address, size)) return;
+	// signal to host program that script has failed
     longjmp(buf, 0);
 }
 
+// Call this once before initializing script
 int check_script() {
     return setjmp(buf);
 }
+
+typedef void Func(Kai_int);
+typedef struct {
+	Func* func;
+	Kai_bool initialized;
+	Kai_bool valid;
+} Script;
+
+void example(Script script)
+{
+	if (!script.initialized)
+	{
+		script.initialized = KAI_TRUE;
+		if (check_script()) {
+			script.valid = KAI_FALSE;
+		}
+	}
+
+	if (script.valid) {
+		script.func(7);
+	}
+}
+#endif
 
 int compile_simple_add() {
     TEST();
 
     Kai_Allocator allocator = {0};
-    kai_create_memory(&allocator);
+    kai_memory_create(&allocator);
 
     Kai_Program program = {0};
     Kai_Error error = {0};
@@ -41,6 +67,7 @@ int compile_simple_add() {
         return FAIL;
     }
 
+	#if 0
     typedef Kai_s32 Proc(Kai_s32, Kai_s32);
     Proc* proc = kai_find_procedure(program, KAI_STRING("add"), NULL);
 
@@ -49,7 +76,9 @@ int compile_simple_add() {
     if (0 != proc(0, 0)) failed = KAI_TRUE;
     if (0x45 != proc(0x22, 0x23)) failed = KAI_TRUE;
 
-    kai_destroy_memory(&allocator);
-
     return (result != KAI_SUCCESS) ? FAIL : PASS;
+	#endif
+
+    kai_memory_destroy(&allocator);
+	return FAIL;
 }

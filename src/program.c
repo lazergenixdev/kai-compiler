@@ -2,12 +2,12 @@
 #define KAI_USE_DEBUG_API
 #define KAI_USE_MEMORY_API
 #include "builtin_types.h"
-#include "bytecode.h"
 #include <stdlib.h>
 #include "program.h"
 
 //#define DEBUG_DEPENDENCY_GRAPH
-#define DEBUG_COMPILATION_ORDER
+//#define DEBUG_COMPILATION_ORDER
+//#define DEBUG_CODE_GENERATION
 
 Kai_Result kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program)
 {
@@ -1174,32 +1174,10 @@ Kai_Result kai__bytecode_emit_procedure(
 	Kai_Expr Expr,
 	Kai_u32* out_Location)
 {
-	(void)Expr;
-	Bc_Stream* stream = &Context->bytecode->stream;
+    sizeof(Context, Expr, out_Location);
 
-	Kai_u32 branch_endif = 0;
-	Kai_u32 branch_call0 = 0;
-	Kai_u32 branch_call1 = 0;
-	
-	Kai_u32 location_call = stream->count;
-	bcs_insert_compare_value(stream, BC_TYPE_S32, BC_CMP_GT, 1, 0, (Bc_Value) {.S32 = 2});
-	bcs_insert_branch(stream, &branch_endif, 1);
-	bcs_insert_load_constant(stream, BC_TYPE_S32, 2, (Bc_Value) {.S32 = 1});
-	bcs_insert_return(stream, 1, (uint32_t[]) {2});
-	Kai_u32 location_endif = stream->count;
-	bcs_insert_math_value(stream, BC_TYPE_S32, BC_OP_SUB, 3, 0, (Bc_Value) {.S32 = 1});
-	bcs_insert_call(stream, &branch_call0, 1, (uint32_t[]) {4}, 1, (uint32_t[]) {3});
-	bcs_insert_math_value(stream, BC_TYPE_S32, BC_OP_SUB, 5, 0, (Bc_Value) {.S32 = 2});
-	bcs_insert_call(stream, &branch_call1, 1, (uint32_t[]) {6}, 1, (uint32_t[]) {5});
-	bcs_insert_math(stream, BC_TYPE_S32, BC_OP_ADD, 7, 4, 6);
-	bcs_insert_return(stream, 1, (uint32_t[]){7});
+	Context->bytecode;
 
-	bcs_set_branch(stream, branch_endif, location_endif);
-	bcs_set_branch(stream, branch_call0, location_call);
-	bcs_set_branch(stream, branch_call1, location_call);
-
-	*out_Location = location_call;
-	
 	return KAI_SUCCESS;
 }
 
@@ -1271,7 +1249,9 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 
 		Kai__DG_Node* node = &graph->nodes.elements[node_index.value];
 
+#ifdef DEBUG_CODE_GENERATION
 		printf("Generatiing %i -> %.*s\n", i, node->name.count, node->name.data);
+#endif
 
 		if (node_index.flags & KAI__DG_NODE_TYPE)
 			result = kai__bytecode_generate_type(&context, node);
@@ -1325,20 +1305,20 @@ Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_
     uint32_t Src2_Var = *(uint32_t*)(stream->data + Position);          \
     Position += sizeof(uint32_t);
 
-	KAI__ARRAY(uint32_t) arm64_machine_code = {0};
+	//KAI__ARRAY(uint32_t) arm64_machine_code = {0};
 
 	// Generate machine code
-	Bc_Stream* stream = &Info->bytecode->stream;
-	
-	for (Kai_u32 i = 0; i < stream->count; ++i) \
-		switch (stream->data[i])
-		{
-			case BC_OP_ADD: {
-				kai__bytecode_decode_add(i, dst, src1, src2);
-				uint32_t instr = kai__arm64_add(dst, src1, src2, 0);
-				kai__array_append(&arm64_machine_code, instr);
-			} break;
-		}
+	//Bc_Stream* stream = &Info->bytecode->stream;
+	//
+	//for (Kai_u32 i = 0; i < stream->count; ++i) \
+	//	switch (stream->data[i])
+	//	{
+	//		case BC_OP_ADD: {
+	//			kai__bytecode_decode_add(i, dst, src1, src2);
+	//			uint32_t instr = kai__arm64_add(dst, src1, src2, 0);
+	//			kai__array_append(&arm64_machine_code, instr);
+	//		} break;
+	//	}
 
 	// Allocate memory to store machine code
 	Kai_Program program = {0};

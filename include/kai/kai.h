@@ -108,18 +108,18 @@ enum {
 };
 
 #define KAI_X_PRIMITIVE_TYPES \
-	X( int8_t   , s8  )       \
-	X( int16_t  , s16 )       \
-	X( int32_t  , s32 )       \
-	X( int64_t  , s64 )       \
-	X( uint8_t  , u8  )       \
-	X( uint16_t , u16 )       \
-	X( uint32_t , u32 )       \
-	X( uint64_t , u64 )       \
-	X( double   , f64 )       \
-	X( float    , f32 )
+	X( int8_t   , s8  , S8  ) \
+	X( int16_t  , s16 , S16 ) \
+	X( int32_t  , s32 , S32 ) \
+	X( int64_t  , s64 , S64 ) \
+	X( uint8_t  , u8  , U8  ) \
+	X( uint16_t , u16 , U16 ) \
+	X( uint32_t , u32 , U32 ) \
+	X( uint64_t , u64 , U64 ) \
+	X( float    , f32 , F32 ) \
+	X( double   , f64 , F64 )
 
-#define X(TYPE, NAME) typedef TYPE Kai_##NAME;
+#define X(TYPE, NAME, _) typedef TYPE Kai_##NAME;
 	KAI_X_PRIMITIVE_TYPES
 #undef X
 
@@ -151,7 +151,7 @@ typedef struct Kai_Type_Info* Kai_Type;
 
 //! TODO: Complete vector + matrix + ... types
 //! NOTE: probably better idea to just use raw pointers in compiler, to avoid this macro mess
-#define X(TYPE, NAME) \
+#define X(TYPE, NAME, _) \
 	typedef KAI__VECTOR2_STRUCT(TYPE, NAME) Kai_vector2_##NAME; \
 	typedef KAI__VECTOR3_STRUCT(TYPE, NAME) Kai_vector3_##NAME; \
 	typedef KAI__VECTOR4_STRUCT(TYPE, NAME) Kai_vector4_##NAME; \
@@ -223,6 +223,14 @@ typedef struct {
 
 #endif
 #ifndef KAI__SECTION_CORE_STRUCTS
+
+// TODO: should writer be allowed to fail? (probably not)
+typedef void Kai_P_Write(void* User, Kai_str String);
+
+typedef struct {
+	Kai_P_Write * write;
+	void        * user;
+} Kai_Writer;
 
 enum {
 	KAI_MEMORY_ACCESS_READ    = 1 << 0,
@@ -350,7 +358,7 @@ typedef struct {
 } Kai__Dynamic_Arena_Allocator;
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-// --- Parser ----------------------------------------------------------------
+// --- Tokens ----------------------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #define KAI__X_TOKEN_KEYWORDS \
@@ -401,6 +409,10 @@ typedef struct {
     Kai_u32     line_number;
     Kai_bool    peeking;
 } Kai__Tokenizer;
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Parser ----------------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 typedef struct {
     Kai__Tokenizer                tokenizer;
@@ -552,13 +564,146 @@ typedef struct {
 } Kai_Syntax_Tree_Create_Info;
 
 #endif
-#ifndef KAI__SECTION_PROGRAM
+#ifndef KAI__SECTION_BYTECODE
+
+enum {
+    //        SIZE       ID
+    KAI_U8  = (1 << 4) | 0,
+    KAI_U16 = (2 << 4) | 1,
+    KAI_U32 = (4 << 4) | 2,
+    KAI_U64 = (8 << 4) | 3,
+    KAI_S8  = (1 << 4) | 4,
+    KAI_S16 = (2 << 4) | 5,
+    KAI_S32 = (4 << 4) | 6,
+    KAI_S64 = (8 << 4) | 7,
+    KAI_F32 = (4 << 4) | 8,
+    KAI_F64 = (8 << 4) | 9,
+};
+
+// Bytecode OPerations (BOP)
+enum {
+    KAI_BOP_NOP           = 0,  //  nop
+    KAI_BOP_LOAD_CONSTANT = 1,  //  %0 <- load_constant.u32 8
+    KAI_BOP_ADD           = 2,  //  %2 <- add.u32 %0, %1
+    KAI_BOP_SUB           = 3,  //  %7 <- sub.u32 %0, %1
+    KAI_BOP_MUL           = 4,  //  %8 <- mul.u32 %0, %1
+    KAI_BOP_DIV           = 5,  //  %9 <- div.u32 %0, %1
+    KAI_BOP_COMPARE       = 6,  //  %3 <- compare.gt.s64 %0, 0
+    KAI_BOP_BRANCH        = 7,  //  branch %5 {0x43}
+    KAI_BOP_JUMP          = 8,  //  jump 0x43
+    KAI_BOP_CALL          = 9,  //  %4, %5 <- call {0x34} (%1, %2)
+    KAI_BOP_RETURN        = 10, //  ret %1, %2
+    KAI_BOP_NATIVE_CALL   = 11, //  %4 <- native_call {0x100f3430} (%1, %2)
+    KAI_BOP_LOAD          = 12, //  %5 <- u64 [%1 + 0x24]
+    KAI_BOP_STORE         = 13, //  u32 [%2 + 0x8] <- %5
+    KAI_BOP_STACK_ALLOC   = 14, //  %6 <- stack_alloc 48
+    KAI_BOP_STACK_FREE    = 15, //  stack_free 48
+    KAI_BOP_CHECK_ADDRESS = 99, //  check_address.u32 (%1 + 0x8)
+};
+
+enum {
+    KAI_CMP_LT  = 0,
+    KAI_CMP_GTE = 1,
+    KAI_CMP_GT  = 2,
+    KAI_CMP_LTE = 3,
+    KAI_CMP_EQ  = 4,
+    KAI_CMP_NE  = 5,
+};
+
+enum {
+    KAI_BC_ERROR_MEMORY   = 1, // bcs_insert_* ; bcs_
+    KAI_BC_ERROR_BRANCH   = 2, // bcs_set_branch
+	KAI_BC_ERROR_OVERFLOW = 3, // bytecode instruction went outside of buffer
+};
+
+enum {
+    KAI_INTERP_FLAGS_DONE       = 1 << 0, // returned from call stack
+    KAI_INTERP_FLAGS_OVERFLOW   = 1 << 1, // the next bytecode instruction went outside of buffer
+    KAI_INTERP_FLAGS_INCOMPLETE = 1 << 2, // a bytecode instruction being executed was not able to be fully read
+    KAI_INTERP_FLAGS_INVALID    = 1 << 3, // instruction was invalid (e.g. %0xFFFFFFF <- 69)
+};
+
+typedef Kai_u32 Kai_Reg;
+
+typedef union {
+#define X(TYPE, NAME, _) Kai_##NAME NAME;
+	KAI_X_PRIMITIVE_TYPES
+#undef X
+} Kai_Value;
 
 typedef struct {
-	Kai_ptr address;
-	Kai_str name;
-	Kai_str signature;
+    char const * name; // metadata
+    void const * address;
+    Kai_u8       input_count;
 } Kai_Native_Procedure;
+
+typedef struct {
+    Kai_u8*        data;
+    Kai_u32        count;
+    Kai_u32        capacity;
+    Kai_Allocator* allocator;
+} Kai_BC_Stream;
+
+typedef struct {
+    Kai_Reg base_register;
+    Kai_u32 return_address;
+} Kai_BC_Procedure_Frame;
+
+typedef struct {
+    // Bytecode to Execute
+    Kai_u8                  * bytecode;
+    Kai_u32                   count;
+
+    // State of Execution
+    Kai_u32                   pc;
+    Kai_u32                   flags;
+
+    // Virtual Registers
+    Kai_Value               * registers;
+    Kai_u32                   max_register_count;
+    Kai_Reg                   frame_max_register_written; // used to determine next base register
+
+    // Call Frame Information
+    Kai_BC_Procedure_Frame  * call_stack;
+    Kai_u32                   call_stack_count;
+    Kai_u32                   max_call_stack_count;
+    Kai_Reg                 * return_registers; // where to place returned values
+    Kai_u32                   return_registers_count;
+    Kai_u32                   max_return_values_count;
+    
+    // Native Functions
+    Kai_Native_Procedure    * native_procedures;
+    Kai_u32                   native_procedure_count;
+
+    // Stack Memory
+    Kai_u8                  * stack;
+    Kai_u32                   stack_size;
+    Kai_u32                   max_stack_size;
+
+    void                    * scratch_buffer; // at least 255 x 4 Bytes
+} Kai_Interpreter;
+
+typedef struct {
+    Kai_u32 max_register_count;
+    Kai_u32 max_call_stack_count;
+    Kai_u32 max_return_value_count;
+    Kai_u32 max_stack_size;
+    void*   memory;
+} Kai_Interpreter_Setup;
+
+typedef struct {
+	void                    * data;
+    Kai_u32                   count;
+    Kai_u8                    ret_count;
+    Kai_u8                    arg_count;
+    Kai_Native_Procedure    * natives;
+    Kai_u32                   native_count;
+    Kai_u32                 * branch_hints;
+    Kai_u32                   branch_count;
+} Kai_Bytecode;
+
+#endif
+#ifndef KAI__SECTION_PROGRAM
 
 typedef struct {
 	Kai_Syntax_Tree*      trees;
@@ -579,17 +724,55 @@ typedef struct {
 #endif
 #ifndef KAI__SECTION_CORE_API
 
-KAI_API (Kai_bool)        kai_str_equals                 (Kai_str A, Kai_str B);
-KAI_API (Kai_str)         kai_str_from_cstring           (char const* String);
-KAI_API (Kai_vector3_u32) kai_get_version                (void);
-KAI_API (Kai_str)         kai_get_version_string         (void);
-KAI_API (Kai_Result)      kai_create_syntax_tree         (Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
-KAI_API (void)            kai_destroy_syntax_tree        (Kai_Syntax_Tree* Syntax_Tree);
-KAI_API (Kai_Result)      kai_create_program             (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
-KAI_API (Kai_Result)      kai_create_program_from_source (Kai_str Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program);
-KAI_API (void)            kai_destroy_program            (Kai_Program Program);
-KAI_API (void*)           kai_find_procedure             (Kai_Program Program, Kai_str Name, Kai_Type opt_Type);
-KAI_API (void)            kai_destroy_error              (Kai_Error* Error, Kai_Allocator* Allocator);
+KAI_API (Kai_bool) kai_str_equals(Kai_str A, Kai_str B);
+KAI_API (Kai_str)  kai_str_from_cstring(char const* String);
+
+KAI_API (Kai_vector3_u32) kai_get_version(void);
+KAI_API (Kai_str)         kai_get_version_string(void);
+
+/// @param out_Syntax_Tree Must be freed using @ref(kai_destroy_syntax_tree)
+KAI_API (Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
+
+KAI_API (void)       kai_destroy_syntax_tree        (Kai_Syntax_Tree* Syntax_Tree);
+KAI_API (Kai_Result) kai_create_program             (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
+KAI_API (Kai_Result) kai_create_program_from_source (Kai_str Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program);
+KAI_API (void)       kai_destroy_program            (Kai_Program Program);
+KAI_API (void*)      kai_find_procedure             (Kai_Program Program, Kai_str Name, Kai_Type opt_Type);
+KAI_API (void)       kai_destroy_error              (Kai_Error* Error, Kai_Allocator* Allocator);
+
+KAI_API (Kai_Result) kai_bc_insert_load_constant    (Kai_BC_Stream* Stream, Kai_u8 type, Kai_Reg reg_dst, Kai_Value value);
+KAI_API (Kai_Result) kai_bc_insert_math             (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2);
+KAI_API (Kai_Result) kai_bc_insert_math_value       (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value);
+KAI_API (Kai_Result) kai_bc_insert_compare          (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2);
+KAI_API (Kai_Result) kai_bc_insert_compare_value    (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value);
+KAI_API (Kai_Result) kai_bc_insert_branch_location  (Kai_BC_Stream* Stream, Kai_u32 location, Kai_Reg reg_src);
+KAI_API (Kai_Result) kai_bc_insert_branch           (Kai_BC_Stream* Stream, Kai_u32* branch, Kai_Reg reg_src);
+KAI_API (Kai_Result) kai_bc_insert_jump_location    (Kai_BC_Stream* Stream, Kai_u32 location);
+KAI_API (Kai_Result) kai_bc_insert_jump             (Kai_BC_Stream* Stream, Kai_u32* branch);
+KAI_API (Kai_Result) kai_bc_insert_call             (Kai_BC_Stream* Stream, Kai_u32* branch, Kai_u8 ret_count, Kai_Reg* reg_ret, Kai_u8 arg_count, Kai_Reg* reg_arg);
+KAI_API (Kai_Result) kai_bc_insert_return           (Kai_BC_Stream* Stream, Kai_u8 count, Kai_Reg* regs);
+KAI_API (Kai_Result) kai_bc_insert_native_call      (Kai_BC_Stream* Stream, Kai_u8 use_dst, Kai_Reg reg_dst, Kai_Native_Procedure* proc, Kai_Reg* reg_src);
+KAI_API (Kai_Result) kai_bc_insert_load             (Kai_BC_Stream* Stream, Kai_Reg reg_dst, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
+KAI_API (Kai_Result) kai_bc_insert_store            (Kai_BC_Stream* Stream, Kai_Reg reg_src, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
+KAI_API (Kai_Result) kai_bc_insert_check_address    (Kai_BC_Stream* Stream, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
+KAI_API (Kai_Result) kai_bc_insert_stack_alloc      (Kai_BC_Stream* Stream, Kai_Reg reg_dst, Kai_u32 size);
+KAI_API (Kai_Result) kai_bc_insert_stack_free       (Kai_BC_Stream* Stream, Kai_u32 size);
+KAI_API (Kai_Result) kai_bc_set_branch              (Kai_BC_Stream* Stream, Kai_u32 branch, Kai_u32 location);
+KAI_API (Kai_Result) kai_bc_reserve                 (Kai_BC_Stream* Stream, Kai_u32 byte_count);
+KAI_API (Kai_u32)    kai_interp_required_memory_size(Kai_Interpreter_Setup* info);
+KAI_API (Kai_Result) kai_interp_create              (Kai_Interpreter* Interp, Kai_Interpreter_Setup* info);
+
+/// @brief Execute one bytecode instruction
+/// @return 1 if done executing or error, 0 otherwise
+int bci_step(Kai_Interpreter* interp);
+
+KAI_API (void)       kai_interp_reset            (Kai_Interpreter* Interp, Kai_u32 location);
+KAI_API (void)       kai_interp_set_input        (Kai_Interpreter* Interp, Kai_u32 index, Kai_Value value);
+KAI_API (void)       kai_interp_push_output      (Kai_Interpreter* Interp, Kai_Reg reg);
+KAI_API (void)       kai_interp_load_from_stream (Kai_Interpreter* Interp, Kai_BC_Stream* stream);
+KAI_API (void)       kai_interp_load_from_memory (Kai_Interpreter* Interp, void* code, Kai_u32 size);
+KAI_API (Kai_Result) kai_bytecode_to_string      (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
+KAI_API (Kai_Result) kai_bytecode_to_c           (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
 
 #endif
 #ifndef KAI__SECTION_INTERNAL_API
@@ -816,7 +999,7 @@ static inline void kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* all
 // --- Hash Table API --------------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#define kai__bit_array_count(Bit_Count) \
+#define kai__bit_array_size(Bit_Count) \
 	(((((Bit_Count) - 1) / 64) + 1) * sizeof(Kai_u64))
 
 #define kai__hash_table_destroy(Table) \
@@ -864,7 +1047,7 @@ static inline void kai__hash_table_grow(void* Table, Kai_Allocator* allocator, K
 	
 	// Calculate total space required
 	Kai_u32 new_capacity  = (table->capacity == 0) ? 8 : table->capacity * 2;
-	Kai_u32 occupied_size = kai__bit_array_count(new_capacity);
+	Kai_u32 occupied_size = kai__bit_array_size(new_capacity);
 	Kai_u32 hashes_size   = new_capacity * sizeof(Kai_u64);
 	Kai_u32 keys_size     = new_capacity * sizeof(Kai_str);
 	Kai_u32 values_size   = new_capacity * Elem_Size;
@@ -914,7 +1097,7 @@ static inline void kai__hash_table_grow(void* Table, Kai_Allocator* allocator, K
 	{
 		kai__free(
 			table->occupied,
-			kai__bit_array_count(table->capacity)
+			kai__bit_array_size(table->capacity)
 			+ table->capacity * (sizeof(Kai_u64) + sizeof(Kai_str) + Elem_Size)
 		);
 	}
@@ -1021,7 +1204,7 @@ static inline void kai__hash_table_destroy_stride(void* Table, Kai_Allocator* al
 	if (table->capacity != 0)
 	{
 		kai__free(table->occupied,
-			kai__bit_array_count(table->capacity)
+			kai__bit_array_size(table->capacity)
 			+ table->capacity * (sizeof(Kai_u64) + sizeof(Kai_str) + Elem_Size)
 		);
 	}
@@ -1187,10 +1370,10 @@ enum {
 	KAI_MEMORY_ERROR_MEMORY_LEAK    = 2, //! @see kai_destroy_memory implementation
 };	
 
-KAI_API (Kai_Result) kai_create_memory(Kai_Allocator* out_Allocator);
-KAI_API (Kai_Result) kai_destroy_memory(Kai_Allocator* Allocator);
-KAI_API (void) kai_memory_set_debug(Kai_Allocator* Allocator, Kai_u32 Debug_Level);
-KAI_API (Kai_u32) kai_memory_usage(Kai_Allocator* Allocator);
+KAI_API (Kai_Result) kai_memory_create   (Kai_Allocator* out_Allocator);
+KAI_API (Kai_Result) kai_memory_destroy  (Kai_Allocator* Allocator);
+KAI_API (void)       kai_memory_set_debug(Kai_Allocator* Allocator, Kai_u32 Debug_Level);
+KAI_API (Kai_u32)    kai_memory_usage    (Kai_Allocator* Allocator);
 
 #endif
 #ifdef KAI_USE_DEBUG_API
@@ -1249,7 +1432,7 @@ namespace Kai {
     };
 
     struct String : public Kai_str {
-        String(const char* s): Kai_str(kai_str_from_c(s)) {}
+        String(const char* s): Kai_str(kai_str_from_cstring(s)) {}
         String(std::string s) {
 			data = (Kai_u8*)s.data();
 			count = (Kai_u32)s.size();

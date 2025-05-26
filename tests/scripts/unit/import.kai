@@ -1,0 +1,5 @@
+#import "add"
+
+test :: (x: s32, y: s32) -> s32 {
+	ret add(x, y);
+}
