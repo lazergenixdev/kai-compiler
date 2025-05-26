@@ -98,7 +98,7 @@ void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 acc
     flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)?    0x10 : 0;
 	DWORD old;
     BOOL r = VirtualProtect(ptr, size, flags, &old);
-	printf("virtual protect with %i -> %i\n", flags, r);
+	//printf("virtual protect with %i -> %i\n", flags, r);
 }
 
 Kai_u32 kai__page_size()
@@ -173,7 +173,7 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
 }
 #endif
 
-Kai_Result kai_create_memory(Kai_Allocator* Memory)
+Kai_Result kai_memory_create(Kai_Allocator* Memory)
 {
     kai__assert(Memory != 0);
 	
@@ -199,8 +199,11 @@ Kai_Result kai_create_memory(Kai_Allocator* Memory)
 	return KAI_SUCCESS;
 }
 
-Kai_Result kai_destroy_memory(Kai_Allocator* Memory)
+Kai_Result kai_memory_destroy(Kai_Allocator* Memory)
 {
+    if (Memory->user == NULL)
+        return KAI_ERROR_FATAL;
+    
     Kai__Memory_Internal* internal = Memory->user;
     if (internal->total_allocated != 0) {
 		return KAI_MEMORY_ERROR_MEMORY_LEAK;

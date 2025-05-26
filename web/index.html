@@ -7,7 +7,7 @@
         body { font-family: arial, monospace; color: white; background-color: black; }
         div { width: 100%; height: 80vh; }
         textarea { color: white; background-color: rgb(22, 22, 22); width: 100%; height: 80vh; border: solid 2px #333; padding: 4px; }
-        pre { color: #CCC; margin: 0; padding: 10px; }
+        pre { color: #CCC; margin: 0; padding: 10px; max-width: 50%; }
     </style>
     <body>
         <h1>hi</h1>
@@ -218,7 +218,7 @@ main :: () {
             }
         }
 
-        WebAssembly.instantiateStreaming(fetch('../build/bin/lib.wasm'), {
+        WebAssembly.instantiateStreaming(fetch('lib.wasm'), {
             env: {
                 __wasm_console_log,
                 __wasm_allocate,
@@ -234,15 +234,15 @@ main :: () {
             c_bytes  = new Uint8Array(wasm.instance.exports.memory.buffer);
             c_memory = wasm.instance.exports.memory;
             
-            const pointPtr = 100;
-            const dataView = new DataView(wasm.instance.exports.memory.buffer);
 
-            let str = c.kai_get_version_string(pointPtr);
-            let ptr = dataView.getUint32(pointPtr, true);
-            let len = dataView.getUint32(pointPtr + 4, true);
+			scratch_buffer = __wasm_allocate(page_size);
+			
+            c.kai_get_version_string(scratch_buffer);
+			
+            const dataView = new DataView(c_memory.buffer);
+            let ptr = dataView.getUint32(scratch_buffer    , true);
+            let len = dataView.getUint32(scratch_buffer + 4, true);
             document.querySelector("h1").innerText = c_string(ptr, len);
-
-            scratch_buffer = __wasm_allocate(page_size);
 
             SOURCE.addEventListener("input", e => {
                 localStorage.setItem("kai-compiler.playground.code", SOURCE.value);

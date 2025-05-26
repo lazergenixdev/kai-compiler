@@ -1,44 +1,38 @@
-#include "bytecode.h"
-//#include <stdio.h>
+#include "kai/kai.h"
 
 #define bci__for(N) for (int i = 0; i < (int)N; ++i)
+#define __type_to_size(T) ((T) >> 4)
 
-uint8_t bc__type_to_size [16] = {
-#define X(name, value, type) [value] = sizeof(type),
-    BC_X_PRIMITIVE_TYPES
-#undef X
-};
-
-int bci__next_u8(Bc_Interpreter* interp, uint8_t* out) {
+int bci__next_u8(Kai_Interpreter* interp, uint8_t* out) {
     if (interp->pc + sizeof(uint8_t) > interp->count) {
-        interp->flags |= BC_INTERP_FLAGS_INCOMPLETE;
+        interp->flags |= KAI_INTERP_FLAGS_INCOMPLETE;
         return 1;
     }
     *out = interp->bytecode[interp->pc++];
     return 0;
 }
-int bci__next_u32(Bc_Interpreter* interp, uint32_t* out) {
+int bci__next_u32(Kai_Interpreter* interp, uint32_t* out) {
     if (interp->pc + sizeof(uint32_t) > interp->count) {
-        interp->flags |= BC_INTERP_FLAGS_INCOMPLETE;
+        interp->flags |= KAI_INTERP_FLAGS_INCOMPLETE;
         return 1;
     }
     *out = *(uint32_t*)(interp->bytecode + interp->pc);
     interp->pc += sizeof(uint32_t);
     return 0;
 }
-int bci__next_address(Bc_Interpreter* interp, uintptr_t* out) {
+int bci__next_address(Kai_Interpreter* interp, uintptr_t* out) {
     if (interp->pc + sizeof(uintptr_t) > interp->count) {
-        interp->flags |= BC_INTERP_FLAGS_INCOMPLETE;
+        interp->flags |= KAI_INTERP_FLAGS_INCOMPLETE;
         return 1;
     }
     *out = *(uintptr_t*)(interp->bytecode + interp->pc);
     interp->pc += sizeof(uintptr_t);
     return 0;
 }
-int bci__next_value(Bc_Interpreter* interp, uint8_t type, Bc_Value* out) {
-    uint8_t size = bc__type_to_size[type];
+int bci__next_value(Kai_Interpreter* interp, uint8_t type, Kai_Value* out) {
+    uint8_t size = __type_to_size(type);
     if (interp->pc + size > interp->count) {
-        interp->flags |= BC_INTERP_FLAGS_INCOMPLETE;
+        interp->flags |= KAI_INTERP_FLAGS_INCOMPLETE;
         return 1;
     }
     uint8_t* u8_out = (uint8_t*)(out);
@@ -48,19 +42,19 @@ int bci__next_value(Bc_Interpreter* interp, uint8_t type, Bc_Value* out) {
     interp->pc += size;
     return 0;
 }
-int bci__next_reg(Bc_Interpreter* interp, Bc_Reg* out) {
-    if (interp->pc + sizeof(Bc_Reg) > interp->count) {
-        interp->flags |= BC_INTERP_FLAGS_INCOMPLETE;
+int bci__next_reg(Kai_Interpreter* interp, Kai_Reg* out) {
+    if (interp->pc + sizeof(Kai_Reg) > interp->count) {
+        interp->flags |= KAI_INTERP_FLAGS_INCOMPLETE;
         return 1;
     }
-    Bc_Reg reg = *(Bc_Reg*)(interp->bytecode + interp->pc);
+    Kai_Reg reg = *(Kai_Reg*)(interp->bytecode + interp->pc);
     // TODO: cannot do bounds check here
     if (reg >= interp->max_register_count) {
-        interp->flags |= BC_INTERP_FLAGS_INVALID;
+        interp->flags |= KAI_INTERP_FLAGS_INVALID;
         return 1;
     }
     *out = reg;
-    interp->pc += sizeof(Bc_Reg);
+    interp->pc += sizeof(Kai_Reg);
     return 0;
 }
 
@@ -68,14 +62,14 @@ int bci__next_reg(Bc_Interpreter* interp, Bc_Reg* out) {
     if (interp->frame_max_register_written < reg) \
         interp->frame_max_register_written = reg
 
-int bci__read_register(Bc_Interpreter* interp, Bc_Reg reg, Bc_Value* value) {
-    Bc_Reg base = interp->call_stack[interp->call_stack_count - 1].base_register;
+int bci__read_register(Kai_Interpreter* interp, Kai_Reg reg, Kai_Value* value) {
+    Kai_Reg base = interp->call_stack[interp->call_stack_count - 1].base_register;
     if (base + reg >= interp->max_register_count) return 1;
     *value = interp->registers[base + reg];
     return 0;
 }
-int bci__write_register(Bc_Interpreter* interp, Bc_Reg reg, Bc_Value value) {
-    Bc_Reg base = interp->call_stack[interp->call_stack_count - 1].base_register;
+int bci__write_register(Kai_Interpreter* interp, Kai_Reg reg, Kai_Value value) {
+    Kai_Reg base = interp->call_stack[interp->call_stack_count - 1].base_register;
     if (base + reg >= interp->max_register_count) return 1;
     bci__use_reg(interp, reg);
     interp->registers[base + reg] = value;
@@ -102,65 +96,67 @@ call:
     asm ( "mov %0, x0"  : "=r" (result) );
 #else
 	sizeof(address, args, arg_count);
-    bc__debug_log("what is this now?");
+    kai__unreachable();
 //#   error "Dynamic call not implemented for this architecture!"
 #endif
     return result;
 }
 
-Bc_Value bci__compute_math(uint8_t type, uint8_t op, Bc_Value a, Bc_Value b) {
+Kai_Value bci__compute_math(uint8_t type, uint8_t op, Kai_Value a, Kai_Value b) {
 #   define BCI__MATH_OPERATION(NAME,A,B)                    \
     switch (op) {                                           \
-        case BC_OP_ADD: return (Bc_Value) {.NAME = A + B};  \
-        case BC_OP_SUB: return (Bc_Value) {.NAME = A - B};  \
-        case BC_OP_MUL: return (Bc_Value) {.NAME = A * B};  \
-        case BC_OP_DIV: return (Bc_Value) {.NAME = A / B};  \
+        case KAI_BOP_ADD: return (Kai_Value) {.NAME = A + B};  \
+        case KAI_BOP_SUB: return (Kai_Value) {.NAME = A - B};  \
+        case KAI_BOP_MUL: return (Kai_Value) {.NAME = A * B};  \
+        case KAI_BOP_DIV: return (Kai_Value) {.NAME = A / B};  \
     }
     switch (type) {
-#       define X(NAME, VALUE, TYPE) case VALUE: BCI__MATH_OPERATION(NAME, a.NAME, b.NAME)
-        BC_X_PRIMITIVE_TYPES
+#       define X(TYPE, ITEM, NAME) case KAI_##NAME: BCI__MATH_OPERATION(ITEM, a.ITEM, b.ITEM)
+        KAI_X_PRIMITIVE_TYPES
 #       undef X
     }
-    return (Bc_Value) {0};
+    return (Kai_Value) {0};
 #   undef BCI__MATH_OPERATION
 }
 
-uint8_t bci__compute_comparison(uint8_t type, uint8_t comp, Bc_Value a, Bc_Value b) {
-#   define BCI__COMPARE(A,B)             \
-    switch (comp) {                      \
-        case BC_CMP_LT:  return A < B;   \
-        case BC_CMP_GTE: return A >= B;  \
-        case BC_CMP_GT:  return A > B;   \
-        case BC_CMP_LTE: return A <= B;  \
-        case BC_CMP_EQ:  return A == B;  \
-        case BC_CMP_NE:  return A != B;  \
+uint8_t bci__compute_comparison(uint8_t type, uint8_t comp, Kai_Value a, Kai_Value b) {
+#   define BCI__COMPARE(A,B)              \
+    switch (comp) {                       \
+        case KAI_CMP_LT:  return A < B;   \
+        case KAI_CMP_GTE: return A >= B;  \
+        case KAI_CMP_GT:  return A > B;   \
+        case KAI_CMP_LTE: return A <= B;  \
+        case KAI_CMP_EQ:  return A == B;  \
+        case KAI_CMP_NE:  return A != B;  \
     }
     switch (type) {
-#       define X(NAME, VALUE, TYPE) case VALUE: BCI__COMPARE(a.NAME, b.NAME)
-        BC_X_PRIMITIVE_TYPES
+#       define X(TYPE, ITEM, NAME) case KAI_##NAME: BCI__COMPARE(a.ITEM, b.ITEM)
+        KAI_X_PRIMITIVE_TYPES
 #       undef X
     }
     return 0;
 #   undef BCI__COMPARE
 }
 
-uint32_t bci_required_memory_size(Bc_Interpreter_Setup* info) {
-    return info->max_register_count     * sizeof(Bc_Value)
-        +  info->max_call_stack_count   * sizeof(Bc_Procedure_Frame)
-        +  info->max_return_value_count * sizeof(Bc_Reg)
-        +  256                          * sizeof(Bc_Reg);
+Kai_u32 kai_interp_required_memory_size(Kai_Interpreter_Setup* info) {
+    return info->max_register_count     * sizeof(Kai_Value)
+        +  info->max_call_stack_count   * sizeof(Kai_BC_Procedure_Frame)
+        +  info->max_return_value_count * sizeof(Kai_Reg)
+        +  256                          * sizeof(Kai_Reg);
 }
 
-int bci_create(Bc_Interpreter* interp, Bc_Interpreter_Setup* info)
+Kai_Result kai_interp_create(Kai_Interpreter* interp, Kai_Interpreter_Setup* info)
 {
-    if (info->memory == 0) return 1;
+    if (info->memory == NULL)
+        return KAI_BC_ERROR_MEMORY;
+
     uint8_t* base = info->memory;
-    interp->registers = (Bc_Value*)base;
-    base += info->max_register_count * sizeof(Bc_Value);
-    interp->call_stack = (Bc_Procedure_Frame*)base;
-    base += info->max_call_stack_count * sizeof(Bc_Procedure_Frame);
-    interp->return_registers = (Bc_Reg*)base;
-    base += info->max_return_value_count * sizeof(Bc_Reg);
+    interp->registers = (Kai_Value*)base;
+    base += info->max_register_count * sizeof(Kai_Value);
+    interp->call_stack = (Kai_BC_Procedure_Frame*)base;
+    base += info->max_call_stack_count * sizeof(Kai_BC_Procedure_Frame);
+    interp->return_registers = (Kai_Reg*)base;
+    base += info->max_return_value_count * sizeof(Kai_Reg);
     interp->scratch_buffer = (uint32_t*)base;
 
     interp->bytecode = 0;
@@ -175,19 +171,19 @@ int bci_create(Bc_Interpreter* interp, Bc_Interpreter_Setup* info)
     return 0;
 }
 
-void bci_load_from_stream(Bc_Interpreter* interp, Bc_Stream* stream)
+void kai_interp_load_from_stream(Kai_Interpreter* interp, Kai_BC_Stream* stream)
 {
     interp->bytecode = stream->data;
     interp->count    = stream->count;
 }
 
-void bci_load_from_memory(Bc_Interpreter* interp, void* code, uint32_t size)
+void kai_interp_load_from_memory(Kai_Interpreter* interp, void* code, uint32_t size)
 {	
     interp->bytecode = code;
     interp->count    = size;
 }
 
-void bci_reset(Bc_Interpreter* interp, uint32_t location)
+void kai_interp_reset(Kai_Interpreter* interp, uint32_t location)
 {
     interp->pc = location;
     interp->flags = 0;
@@ -201,35 +197,35 @@ void bci_reset(Bc_Interpreter* interp, uint32_t location)
 	interp->call_stack[0].return_address = 0; // final return will end exection, not used.
 }
 
-void bci_set_input(Bc_Interpreter* interp, uint32_t index, Bc_Value value)
+void kai_interp_set_input(Kai_Interpreter* interp, uint32_t index, Kai_Value value)
 {
 	interp->registers[index] = value;
 }
 
-void bci_push_output(Bc_Interpreter* interp, Bc_Reg reg)
+void kai_interp_push_output(Kai_Interpreter* interp, Kai_Reg reg)
 {
 	interp->return_registers[interp->return_registers_count++] = reg;
 }
 
 
-#define BC_X_INSTRUCTIONS  \
-    X(BC_OP_NOP          ) \
-    X(BC_OP_LOAD_CONSTANT) \
-    X(BC_OP_ADD          ) \
-    X(BC_OP_SUB          ) \
-    X(BC_OP_MUL          ) \
-    X(BC_OP_DIV          ) \
-    X(BC_OP_COMPARE      ) \
-    X(BC_OP_BRANCH       ) \
-    X(BC_OP_JUMP         ) \
-    X(BC_OP_CALL         ) \
-    X(BC_OP_RETURN       ) \
-    X(BC_OP_NATIVE_CALL  ) \
-    X(BC_OP_LOAD         ) \
-    X(BC_OP_STORE        ) \
-    X(BC_OP_STACK_ALLOC  ) \
-    X(BC_OP_STACK_FREE   ) \
-    X(BC_OP_CHECK_ADDRESS)
+#define BC_X_INSTRUCTIONS    \
+    X(KAI_BOP_NOP          ) \
+    X(KAI_BOP_LOAD_CONSTANT) \
+    X(KAI_BOP_ADD          ) \
+    X(KAI_BOP_SUB          ) \
+    X(KAI_BOP_MUL          ) \
+    X(KAI_BOP_DIV          ) \
+    X(KAI_BOP_COMPARE      ) \
+    X(KAI_BOP_BRANCH       ) \
+    X(KAI_BOP_JUMP         ) \
+    X(KAI_BOP_CALL         ) \
+    X(KAI_BOP_RETURN       ) \
+    X(KAI_BOP_NATIVE_CALL  ) \
+    X(KAI_BOP_LOAD         ) \
+    X(KAI_BOP_STORE        ) \
+    X(KAI_BOP_STACK_ALLOC  ) \
+    X(KAI_BOP_STACK_FREE   ) \
+    X(KAI_BOP_CHECK_ADDRESS)
 
 char const* bc__op_to_name[] = {   
 #define X(NAME) [NAME] = #NAME,
@@ -238,25 +234,31 @@ char const* bc__op_to_name[] = {
 };
 
 // return 0 => done
-int bci_step(Bc_Interpreter* interp)
+int bci_step(Kai_Interpreter* interp)
 {
-    if (interp->pc >= interp->count) {
-        interp->flags |= BC_INTERP_FLAGS_OVERFLOW;
+	if (interp->flags)
+	{
+		return 1;
+	}
+
+    if (interp->pc >= interp->count)
+	{
+        interp->flags |= KAI_INTERP_FLAGS_OVERFLOW;
         return 0;
     }
 
     uint8_t operation = interp->bytecode[interp->pc++];
 
     if (operation < 100) {
-        bc__debug_log("ex %s", bc__op_to_name[operation]);
+        //bc__debug_log("ex %s", bc__op_to_name[operation]);
     }
 
     switch (operation)
     {
-    case BC_OP_LOAD_CONSTANT: {
-        Bc_Reg dst;
+    case KAI_BOP_LOAD_CONSTANT: {
+        Kai_Reg dst;
         uint8_t type;
-        Bc_Value value = {0};
+        Kai_Value value = {0};
 
         if (bci__next_reg(interp, &dst)) return 0;
         if (bci__next_u8(interp, &type)) return 0;
@@ -264,12 +266,12 @@ int bci_step(Bc_Interpreter* interp)
         if (bci__write_register(interp, dst, value)) return 0;
     } break;
 
-    case BC_OP_ADD:
-    case BC_OP_SUB:
-    case BC_OP_MUL:
-    case BC_OP_DIV:
+    case KAI_BOP_ADD:
+    case KAI_BOP_SUB:
+    case KAI_BOP_MUL:
+    case KAI_BOP_DIV:
     {
-        Bc_Reg dst;
+        Kai_Reg dst;
         uint8_t type;
 
         if (bci__next_reg(interp, &dst)) return 0;
@@ -278,9 +280,9 @@ int bci_step(Bc_Interpreter* interp)
         uint8_t is_value = type & 0x80;
         type &= 0x7F;
 
-        Bc_Value va, vb;
+        Kai_Value va, vb;
         {
-            Bc_Reg a;
+            Kai_Reg a;
             if (bci__next_reg(interp, &a)) return 0;
             if (bci__read_register(interp, a, &va)) return 0;
         }
@@ -288,17 +290,17 @@ int bci_step(Bc_Interpreter* interp)
         if (is_value) {
             if (bci__next_value(interp, type, &vb)) return 0;
         } else {
-            Bc_Reg b;
+            Kai_Reg b;
             if (bci__next_reg(interp, &b)) return 0;
             if (bci__read_register(interp, b, &vb)) return 0;
         }
 
-        Bc_Value result = bci__compute_math(type, operation, va, vb);
+        Kai_Value result = bci__compute_math(type, operation, va, vb);
         if (bci__write_register(interp, dst, result)) return 0;
     } break;
 
-    case BC_OP_COMPARE: {
-        Bc_Reg dst;
+    case KAI_BOP_COMPARE: {
+        Kai_Reg dst;
         uint8_t type;
         uint8_t comp;
 		
@@ -309,7 +311,7 @@ int bci_step(Bc_Interpreter* interp)
         uint8_t is_value = type & 0x80;
         type &= 0x7F;
 		
-        Bc_Value va, vb;
+        Kai_Value va, vb;
         {
 			uint32_t a;
             if (bci__next_reg(interp, &a)) return 0;
@@ -325,27 +327,27 @@ int bci_step(Bc_Interpreter* interp)
         }
 
         
-        Bc_Value result = {.U8 = bci__compute_comparison(type, comp, va, vb)};
+        Kai_Value result = {.u8 = bci__compute_comparison(type, comp, va, vb)};
         if (bci__write_register(interp, dst, result)) return 0;
     } break;
 
-    case BC_OP_BRANCH: {
+    case KAI_BOP_BRANCH: {
         uint32_t location;
-        Bc_Reg src;
+        Kai_Reg src;
 
         if (bci__next_u32(interp, &location)) return 0;
         if (bci__next_reg(interp, &src)) return 0;
 
-        Bc_Value value;
+        Kai_Value value;
         if (bci__read_register(interp, src, &value)) return 0;
-        if (value.U8 != 0) interp->pc = location;
+        if (value.u8 != 0) interp->pc = location;
     } break;
 
-    case BC_OP_JUMP: {
+    case KAI_BOP_JUMP: {
         if (bci__next_u32(interp, &interp->pc)) return 0;
     } break;
 
-    case BC_OP_CALL: {
+    case KAI_BOP_CALL: {
         uint32_t location;
         uint8_t ret_count, arg_count;
 
@@ -353,10 +355,10 @@ int bci_step(Bc_Interpreter* interp)
         if (bci__next_u8(interp, &ret_count)) return 0;
         if (bci__next_u8(interp, &arg_count)) return 0;
 
-        Bc_Reg base = interp->call_stack[interp->call_stack_count - 1].base_register;
+        Kai_Reg base = interp->call_stack[interp->call_stack_count - 1].base_register;
         
         bci__for (ret_count) {
-            Bc_Reg reg;
+            Kai_Reg reg;
             bci__next_reg(interp, &reg);
             // TODO: bounds check
             interp->return_registers[interp->return_registers_count + (ret_count - 1) - i] = reg;
@@ -364,15 +366,15 @@ int bci_step(Bc_Interpreter* interp)
         }
         interp->return_registers_count += ret_count;
 
-        Bc_Reg proc_base = base + interp->frame_max_register_written + 1;
+        Kai_Reg proc_base = base + interp->frame_max_register_written + 1;
 
         bci__for (arg_count) {
-            Bc_Reg reg;
+            Kai_Reg reg;
             bci__next_reg(interp, &reg);
             interp->registers[proc_base + i] = interp->registers[base + reg];
         }
 
-        interp->call_stack[interp->call_stack_count++] = (Bc_Procedure_Frame) {
+        interp->call_stack[interp->call_stack_count++] = (Kai_BC_Procedure_Frame) {
             .return_address = interp->pc,
             .base_register  = proc_base,
         };
@@ -380,19 +382,19 @@ int bci_step(Bc_Interpreter* interp)
         interp->pc = location;
     } break;
 
-    case BC_OP_RETURN: {
+    case KAI_BOP_RETURN: {
         uint8_t ret_count;
         if (bci__next_u8(interp, &ret_count)) return 0;
 
-        Bc_Reg base = interp->call_stack[interp->call_stack_count - 1].base_register;
-        Bc_Reg ret_base = (interp->call_stack_count <= 1) ? 0
+        Kai_Reg base = interp->call_stack[interp->call_stack_count - 1].base_register;
+        Kai_Reg ret_base = (interp->call_stack_count <= 1) ? 0
                         : interp->call_stack[interp->call_stack_count - 2].base_register;
 
         bci__for (ret_count) {
-            Bc_Reg src;
+            Kai_Reg src;
             if (bci__next_reg(interp, &src)) return 0;
             // TODO: bounds check
-            Bc_Reg dst = interp->return_registers[interp->return_registers_count - 1];
+            Kai_Reg dst = interp->return_registers[interp->return_registers_count - 1];
             interp->registers[ret_base + dst] = interp->registers[base + src];
             interp->return_registers_count -= 1;
         }
@@ -400,17 +402,17 @@ int bci_step(Bc_Interpreter* interp)
         interp->call_stack_count -= 1;
 
         if (interp->call_stack_count == 0) {
-            interp->flags |= BC_INTERP_FLAGS_DONE;
+            interp->flags |= KAI_INTERP_FLAGS_DONE;
             return 0;
         }
 
         interp->pc = interp->call_stack[interp->call_stack_count].return_address;
     } break;
 
-    case BC_OP_NATIVE_CALL: {
+    case KAI_BOP_NATIVE_CALL: {
         uintptr_t address;
         uint8_t use_dst;
-        Bc_Reg dst = 0;
+        Kai_Reg dst = 0;
         uint8_t input_count;
 
         if (bci__next_address(interp, &address)) return 0;
@@ -418,16 +420,16 @@ int bci_step(Bc_Interpreter* interp)
         if (use_dst && bci__next_reg(interp, &dst)) return 0;
         if (bci__next_u8(interp, &input_count)) return 0;
 
-        Bc_Value* args = interp->scratch_buffer;
+        Kai_Value* args = interp->scratch_buffer;
         bci__for (input_count) {
-            Bc_Reg reg;
+            Kai_Reg reg;
             if (bci__next_reg(interp, &reg)) return 0;
             if (bci__read_register(interp, reg, args + i)) return 0;
         }
 
         union {
             uintptr_t in;
-            Bc_Value value;
+            Kai_Value value;
         } result = { .in = bci__call_native_procedure(address, (uintptr_t*)args, input_count) };
 
         if (use_dst) {
@@ -435,36 +437,38 @@ int bci_step(Bc_Interpreter* interp)
         }
     } break;
 
-    case BC_OP_LOAD: {
+    case KAI_BOP_LOAD: {
         // reg dst
         // u8  type
         // reg addr
         // u32 offset
-        bc__debug_log("BC_OP_LOAD not implemented!");
+        kai__unreachable();
+        //bc__debug_log("KAI_BOP_LOAD not implemented!");
     } break;
 
-    case BC_OP_STORE: {
+    case KAI_BOP_STORE: {
         // reg src
         // u8  type
         // reg addr
         // u32 offset
-        bc__debug_log("BC_OP_STORE not implemented!");
+        kai__unreachable();
     } break;
 
-    case BC_OP_STACK_ALLOC: {
+    case KAI_BOP_STACK_ALLOC: {
         // reg dst
         // u32 size
-        bc__debug_log("BC_OP_STACK_ALLOC not implemented!");
+        kai__unreachable();
     } break;
 
-    case BC_OP_STACK_FREE: {
+    case KAI_BOP_STACK_FREE: {
         // u32 size
-        bc__debug_log("BC_OP_STACK_FREE not implemented!");
+        kai__unreachable();
     } break;
     
     default: {
-        bc__debug_log("invalid bytecode instruction! (pc=%x op=%d)", interp->pc - 1, operation);
-        interp->flags |= BC_INTERP_FLAGS_INCOMPLETE;
+        kai__unreachable();
+        //bc__debug_log("invalid bytecode instruction! (pc=%x op=%d)", interp->pc - 1, operation);
+        interp->flags |= KAI_INTERP_FLAGS_INCOMPLETE;
         return 0;
     } break;
     }

@@ -1,7 +1,6 @@
 #ifndef PROGRAM__H
 #define PROGRAM__H
 #include "kai/kai.h"
-#include "bytecode.h"
 
 typedef struct {
 	Kai_u32 flags; // (LOCAL_VARIABLE, TYPE)
@@ -15,9 +14,9 @@ typedef struct {
 #define KAI__SCOPE_NO_PARENT        0xFFFFFFFF
 
 typedef union {
-    Bc_Value bytecode;
-    Kai_Type type;
-	Kai_u32  procedure_location;
+    Kai_Value value;
+    Kai_Type  type;
+	Kai_u32   procedure_location;
 } Kai__DG_Value;
 
 typedef KAI__ARRAY(Kai__DG_Node_Index)      Kai__DG_Dependency_Array;
@@ -49,7 +48,15 @@ typedef struct {
 } Kai__Dependency_Graph;
 
 typedef struct {
-	Bc_Stream stream;
+	Kai_u32  location;
+	Kai_Type type;
+} Kai__Bytecode_Procedure;
+
+typedef KAI__HASH_TABLE(Kai__Bytecode_Procedure) Kai__Bytecode_Procedure_Table;
+
+typedef struct {
+	Kai_BC_Stream                 stream; // Global bytecode stream
+	Kai__Bytecode_Procedure_Table procedure_table;
 } Kai__Bytecode;
 
 typedef struct {

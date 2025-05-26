@@ -1,45 +1,47 @@
-#include "bytecode.h"
-
-//! TODO: remove
-#include "stdlib.h" // --> realloc
-#include "stdio.h" // --> snprintf
+#include "kai/kai.h"
 
 #define bcs__for(N) for (int i = 0; i < (int)N; ++i)
+#define __type_to_size(T) ((T) >> 4)
 
-extern uint8_t bc__type_to_size [16];
 extern char const* bc__op_to_name [100];
 
-uint32_t bcs__grow_function(uint32_t x) {
+uint32_t bcs__grow_function(uint32_t x)
+{
     return x + x / 2;
 }
 
-int bcs__ensure_space(Bc_Stream* stream, uint32_t added_count) {
-    uint32_t const required_capacity = stream->count + added_count;
+Kai_Result bcs__ensure_space(Kai_BC_Stream* stream, uint32_t added_count)
+{
+    uint32_t required_capacity = stream->count + added_count;
+    
     if (stream->capacity >= required_capacity)
-        return BC_STREAM_SUCCESS;
-    uint32_t const new_capacity = bcs__grow_function(required_capacity);
-	//! TODO: replace realloc with custom allocator
-    void* new_data = realloc(stream->data, new_capacity);
+        return KAI_SUCCESS;
+    
+    uint32_t new_capacity = bcs__grow_function(required_capacity);
+
+    Kai_Allocator* allocator = stream->allocator;
+    void* new_data = kai__allocate(stream->data, new_capacity, stream->capacity);
+
     if (new_data == NULL)
-        return BC_STREAM_ERROR_MEMORY;
+        return KAI_BC_ERROR_MEMORY;
+
     stream->data = new_data;
     stream->capacity = new_capacity;
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
-#define bcs__make_space(BYTES_REQUIRED)           \
+#define bcs__make_space(BYTES_REQUIRED)            \
     if (bcs__ensure_space(stream, BYTES_REQUIRED)) \
-        return BC_STREAM_ERROR_MEMORY
+        return KAI_BC_ERROR_MEMORY
 
-// NOTE: NO CHECKS
 #define bcs__push_u8(stream, value) stream->data[stream->count++] = value;
-#define bcs__push_u32(stream, value) *(uint32_t*)(stream->data + stream->count) = value, stream->count += 4
+#define bcs__push_u32(stream, value) *(Kai_u32*)(stream->data + stream->count) = value, stream->count += 4
 #define bcs__push_address(stream, value) *(uintptr_t*)(stream->data + stream->count) = (uintptr_t)value, stream->count += sizeof(uintptr_t)
-static void bcs__push_value(Bc_Stream* stream, Bc_Type type, Bc_Value value) {
-    uint32_t size = bc__type_to_size[type];
-    for (uint32_t i = 0; i < size; ++i) {
-        stream->data[stream->count + i] = ((uint8_t*)&value)[i];
-    }
+
+static void bcs__push_value(Kai_BC_Stream* stream, Kai_u8 type, Kai_Value value)
+{
+    uint32_t size = __type_to_size(type);
+    kai__memory_copy(stream->data + stream->count, &value, size);
     stream->count += size;
 }
 
@@ -60,224 +62,224 @@ static void bcs__push_value(Bc_Stream* stream, Bc_Type type, Bc_Value value) {
 //  LOAD_CONSTANT
 // >> [DST]:R [TYPE]:8 [VALUE]:$
 // ---------------------------------------------------------------------
-int bcs_insert_load_constant(Bc_Stream* stream, uint8_t type, uint32_t reg_dst, Bc_Value value)
+Kai_Result kai_bc_insert_load_constant(Kai_BC_Stream* stream, Kai_u8 type, Kai_Reg reg_dst, Kai_Value value)
 {
-    bcs__make_space(2 + sizeof(Bc_Reg) + bc__type_to_size[type]);
-    bcs__push_u8(stream, BC_OP_LOAD_CONSTANT);
+    bcs__make_space(2 + sizeof(Kai_Reg) + __type_to_size(type));
+    bcs__push_u8(stream, KAI_BOP_LOAD_CONSTANT);
     bcs__push_u32(stream, reg_dst);
     bcs__push_u8(stream, type);
     bcs__push_value(stream, type, value);
-    return BC_STREAM_ERROR_MEMORY;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  ADD, SUB, MUL, DIV, ... with register
 // >> [DST]:R [VALUE_FLAG:1 + TYPE:-]:8 [LEFT]:R [RIGHT]:R
 // ---------------------------------------------------------------------
-int bcs_insert_math(Bc_Stream* stream, uint8_t type, uint8_t operation, uint32_t reg_dst, uint32_t reg_src1, uint32_t reg_src2)
+Kai_Result kai_bc_insert_math(Kai_BC_Stream* stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2)
 {
-    bcs__make_space(2 + sizeof(Bc_Reg) * 3);
+    bcs__make_space(2 + sizeof(Kai_Reg) * 3);
     bcs__push_u8(stream, operation);
     bcs__push_u32(stream, reg_dst);
     bcs__push_u8(stream, type);
     bcs__push_u32(stream, reg_src1);
     bcs__push_u32(stream, reg_src2);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  ADD, SUB, MUL, DIV, ... with value 
 // >> [DST]:R [VALUE_FLAG:1 + TYPE:-]:8 [LEFT]:R [VALUE]:$
 // ---------------------------------------------------------------------
-int bcs_insert_math_value(Bc_Stream* stream, uint8_t type, uint8_t operation, uint32_t reg_dst, uint32_t reg_src1, Bc_Value value)
+Kai_Result kai_bc_insert_math_value(Kai_BC_Stream* stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value)
 {
-    bcs__make_space(2 + sizeof(Bc_Reg) * 2 + bc__type_to_size[type]);
+    bcs__make_space(2 + sizeof(Kai_Reg) * 2 + __type_to_size(type));
     bcs__push_u8(stream, operation);
     bcs__push_u32(stream, reg_dst);
     bcs__push_u8(stream, 0x80 | type);
     bcs__push_u32(stream, reg_src1);
     bcs__push_value(stream, type, value);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  COMPARE
 // >> [DST]:R [VALUE_FLAG:1 + TYPE:-]:8 [COMPARISON]:8 [LEFT]:R [RIGHT]:R
 // ---------------------------------------------------------------------
-int bcs_insert_compare(Bc_Stream* stream, uint8_t type, uint8_t comparison, uint32_t reg_dst, uint32_t reg_src1, uint32_t reg_src2)
+Kai_Result kai_bc_insert_compare(Kai_BC_Stream* stream, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2)
 {
-    bcs__make_space(3 + sizeof(Bc_Reg) * 3);
-    bcs__push_u8(stream, BC_OP_COMPARE);
+    bcs__make_space(3 + sizeof(Kai_Reg) * 3);
+    bcs__push_u8(stream, KAI_BOP_COMPARE);
     bcs__push_u32(stream, reg_dst);
     bcs__push_u8(stream, type);
     bcs__push_u8(stream, comparison);
     bcs__push_u32(stream, reg_src1);
     bcs__push_u32(stream, reg_src2);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  COMPARE
 // >> [DST]:R [VALUE_FLAG:1 + TYPE:-]:8 [COMPARISON]:8 [LEFT]:R [VALUE]:$
 // ---------------------------------------------------------------------
-int bcs_insert_compare_value(Bc_Stream* stream, uint8_t type, uint8_t comparison, uint32_t reg_dst, uint32_t reg_src1, Bc_Value value)
+Kai_Result kai_bc_insert_compare_value(Kai_BC_Stream* stream, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value)
 {
-    bcs__make_space(3 + sizeof(Bc_Reg) * 2 + bc__type_to_size[type]);
-    bcs__push_u8(stream, BC_OP_COMPARE);
+    bcs__make_space(3 + sizeof(Kai_Reg) * 2 + __type_to_size(type));
+    bcs__push_u8(stream, KAI_BOP_COMPARE);
     bcs__push_u32(stream, reg_dst);
     bcs__push_u8(stream, 0x80 | type);
     bcs__push_u8(stream, comparison);
     bcs__push_u32(stream, reg_src1);
     bcs__push_value(stream, type, value);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  BRANCH
 // >> [LOCATION]:32 [SRC]:R
 // ---------------------------------------------------------------------
-int bcs_insert_branch_location(Bc_Stream* stream, uint32_t location, uint32_t reg_src)
+Kai_Result kai_bc_insert_branch_location(Kai_BC_Stream* stream, uint32_t location, Kai_Reg reg_src)
 {
-    bcs__make_space(1 + sizeof(Bc_Reg) * 2);
-    bcs__push_u8(stream, BC_OP_BRANCH);
+    bcs__make_space(1 + sizeof(Kai_Reg) * 2);
+    bcs__push_u8(stream, KAI_BOP_BRANCH);
     bcs__push_u32(stream, location);
     bcs__push_u32(stream, reg_src);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
-int bcs_insert_branch(Bc_Stream* stream, uint32_t* branch, uint32_t reg_src)
+Kai_Result kai_bc_insert_branch(Kai_BC_Stream* stream, uint32_t* branch, Kai_Reg reg_src)
 {
-    bcs__make_space(1 + sizeof(Bc_Reg) * 2);
-    bcs__push_u8(stream, BC_OP_BRANCH);
+    bcs__make_space(1 + sizeof(Kai_Reg) * 2);
+    bcs__push_u8(stream, KAI_BOP_BRANCH);
     *branch = stream->count;
     bcs__push_u32(stream, 0xFFFFFFFF); // location not set yet
     bcs__push_u32(stream, reg_src);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  JUMP
 // >> [LOCATION]:32
 // ---------------------------------------------------------------------
-int bcs_insert_jump_location(Bc_Stream* stream, uint32_t location)
+Kai_Result kai_bc_insert_jump_location(Kai_BC_Stream* stream, uint32_t location)
 {
     bcs__make_space(1 + sizeof(uint32_t));
-    bcs__push_u8(stream, BC_OP_JUMP);
+    bcs__push_u8(stream, KAI_BOP_JUMP);
     bcs__push_u32(stream, location);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
-int bcs_insert_jump(Bc_Stream* stream, uint32_t* branch)
+Kai_Result kai_bc_insert_jump(Kai_BC_Stream* stream, uint32_t* branch)
 {
     bcs__make_space(1 + sizeof(uint32_t));
-    bcs__push_u8(stream, BC_OP_JUMP);
+    bcs__push_u8(stream, KAI_BOP_JUMP);
     *branch = stream->count;
     bcs__push_u32(stream, 0xFFFFFFFF); // location not set yet
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  CALL
 // >> [LOCATION]:32 [RET_COUNT]:8 [ARG_COUNT]:8 ([DST]:R ...) ([SRC]:R ...)
 // ---------------------------------------------------------------------
-int bcs_insert_call(Bc_Stream* stream, uint32_t* branch, uint8_t ret_count, uint32_t* reg_ret, uint8_t arg_count, uint32_t* reg_arg)
+Kai_Result kai_bc_insert_call(Kai_BC_Stream* stream, uint32_t* branch, Kai_u8 ret_count, Kai_Reg* reg_ret, Kai_u8 arg_count, Kai_Reg* reg_arg)
 {
-    bcs__make_space(3 + sizeof(uint32_t) + sizeof(Bc_Reg) * (ret_count + arg_count));
-    bcs__push_u8(stream, BC_OP_CALL);
+    bcs__make_space(3 + sizeof(uint32_t) + sizeof(Kai_Reg) * (ret_count + arg_count));
+    bcs__push_u8(stream, KAI_BOP_CALL);
     *branch = stream->count;
     bcs__push_u32(stream, 0xFFFFFFFF); // location not set yet
     bcs__push_u8(stream, ret_count);
     bcs__push_u8(stream, arg_count);
     bcs__for (ret_count) bcs__push_u32(stream, reg_ret[i]);
     bcs__for (arg_count) bcs__push_u32(stream, reg_arg[i]);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  RETURN
 // >> [COUNT]:8 ([SRC]:R ...)
 // ---------------------------------------------------------------------
-int bcs_insert_return(Bc_Stream* stream, uint8_t count, uint32_t* regs)
+Kai_Result kai_bc_insert_return(Kai_BC_Stream* stream, Kai_u8 count, Kai_Reg* regs)
 {
-    bcs__make_space(2 + sizeof(Bc_Reg) * count);
-    bcs__push_u8(stream, BC_OP_RETURN);
+    bcs__make_space(2 + sizeof(Kai_Reg) * count);
+    bcs__push_u8(stream, KAI_BOP_RETURN);
     bcs__push_u8(stream, count);
     bcs__for (count) bcs__push_u32(stream, regs[i]);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  NATIVE_CALL
 // >> [ADDRESS]:S [USE_DST]:8 ([DST]:R) [COUNT]:8 ([SRC]:R ...)
 // ---------------------------------------------------------------------
-int bcs_insert_native_call(Bc_Stream* stream, uint8_t use_dst, uint32_t reg_dst, Bc_Native_Procedure* proc, uint32_t* reg_src)
+Kai_Result kai_bc_insert_native_call(Kai_BC_Stream* stream, Kai_u8 use_dst, Kai_Reg reg_dst, Kai_Native_Procedure* proc, Kai_Reg* reg_src)
 {
-    bcs__make_space(3 + sizeof(uintptr_t) + (use_dst? sizeof(Bc_Reg):0) + sizeof(Bc_Reg) * proc->input_count);
-    bcs__push_u8(stream, BC_OP_NATIVE_CALL);
+    bcs__make_space(3 + sizeof(uintptr_t) + (use_dst? sizeof(Kai_Reg):0) + sizeof(Kai_Reg) * proc->input_count);
+    bcs__push_u8(stream, KAI_BOP_NATIVE_CALL);
     bcs__push_address(stream, proc->address);
     bcs__push_u8(stream, use_dst? 1:0);
     if (use_dst) bcs__push_u32(stream, reg_dst);
     bcs__push_u8(stream, proc->input_count);
     bcs__for (proc->input_count) bcs__push_u32(stream, reg_src[i]);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  LOAD, STORE
 // >> [DST_OR_SRC]:R [TYPE]:8 [ADDR]:R [OFFSET]:32
 // ---------------------------------------------------------------------
-int bcs_insert_load(Bc_Stream* stream, uint32_t reg_dst, uint8_t type, uint32_t reg_addr, uint32_t offset)
+Kai_Result kai_bc_insert_load(Kai_BC_Stream* stream, Kai_Reg reg_dst, Kai_u8 type, Kai_Reg reg_addr, uint32_t offset)
 {
-    bcs__make_space(2 + sizeof(Bc_Reg) * 2 + sizeof(uint32_t));
-    bcs__push_u8(stream, BC_OP_LOAD);
+    bcs__make_space(2 + sizeof(Kai_Reg) * 2 + sizeof(uint32_t));
+    bcs__push_u8(stream, KAI_BOP_LOAD);
     bcs__push_u32(stream, reg_dst);
     bcs__push_u8(stream, type);
     bcs__push_u32(stream, reg_addr);
     bcs__push_u32(stream, offset);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
-int bcs_insert_store(Bc_Stream* stream, uint32_t reg_src, uint8_t type, uint32_t reg_addr, uint32_t offset)
+Kai_Result kai_bc_insert_store(Kai_BC_Stream* stream, Kai_Reg reg_src, Kai_u8 type, Kai_Reg reg_addr, uint32_t offset)
 {
-    bcs__make_space(2 + sizeof(Bc_Reg) * 2 + sizeof(uint32_t));
-    bcs__push_u8(stream, BC_OP_STORE);
+    bcs__make_space(2 + sizeof(Kai_Reg) * 2 + sizeof(uint32_t));
+    bcs__push_u8(stream, KAI_BOP_STORE);
     bcs__push_u32(stream, reg_src);
     bcs__push_u8(stream, type);
     bcs__push_u32(stream, reg_addr);
     bcs__push_u32(stream, offset);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  STACK_ALLOC (type of R = u32)
 // >> [DST]:R [SIZE]:32
 // ---------------------------------------------------------------------
-int bcs_insert_stack_alloc(Bc_Stream* stream, uint32_t reg_dst, uint32_t size)
+Kai_Result kai_bc_insert_stack_alloc(Kai_BC_Stream* stream, Kai_Reg reg_dst, uint32_t size)
 {
-    bcs__make_space(1 + sizeof(Bc_Reg) + sizeof(uint32_t));
-    bcs__push_u8(stream, BC_OP_STACK_ALLOC);
+    bcs__make_space(1 + sizeof(Kai_Reg) + sizeof(uint32_t));
+    bcs__push_u8(stream, KAI_BOP_STACK_ALLOC);
     bcs__push_u32(stream, reg_dst);
     bcs__push_u32(stream, size);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
 // ---------------------------------------------------------------------
 //  STACK_FREE
 // >> [SIZE]:32
 // ---------------------------------------------------------------------
-int bcs_insert_stack_free(Bc_Stream* stream, uint32_t size)
+Kai_Result kai_bc_insert_stack_free(Kai_BC_Stream* stream, uint32_t size)
 {
     bcs__make_space(1 + sizeof(uint32_t));
-    bcs__push_u8(stream, BC_OP_STACK_FREE);
+    bcs__push_u8(stream, KAI_BOP_STACK_FREE);
     bcs__push_u32(stream, size);
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
-int bcs_set_branch(Bc_Stream* stream, uint32_t branch, uint32_t location)
+Kai_Result kai_bc_set_branch(Kai_BC_Stream* stream, uint32_t branch, uint32_t location)
 {
-    if (branch >= stream->count) return BC_STREAM_ERROR_BRANCH;
+    if (branch >= stream->count) return KAI_BC_ERROR_BRANCH;
     *(uint32_t*)(stream->data + branch) = location;
-    return BC_STREAM_SUCCESS;
+    return KAI_SUCCESS;
 }
 
-void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
+Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
 {
 #ifndef __WASM__
     //! TODO: use type info
@@ -289,27 +291,27 @@ void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
     #define bcc__write(...) \
     { \
         int length = snprintf(temp_buffer, sizeof(temp_buffer), __VA_ARGS__); \
-        writer(user, temp_buffer, length); \
+        writer->write(writer->user, (Kai_str) {.data = temp_buffer, .count = length}); \
     } (void)0
 
     #define bcc__indent() bcc__write(";   ")
     #define bcc__branch_check() \
-    bcs__for (def->branch_count) { \
-        if (cursor == def->branch_hints[i]) { \
+    bcs__for (bytecode->branch_count) { \
+        if (cursor == bytecode->branch_hints[i]) { \
             bcc__write("__loc_%i:\n", i); \
             break; \
         } \
     }    
 
-    uint8_t const* bytecode = def->bytecode;
+    Kai_u8 const* data = bytecode->data;
     uint32_t cursor = 0;
 
     bcc__write("int32_t func(int32_t __0) {\n");
 
-    while (cursor < def->count) {
+    while (cursor < bytecode->count) {
         bcc__branch_check();
 
-        uint8_t operation = bytecode[cursor++];
+        Kai_u8 operation = data[cursor++];
 
         //if (operation < 100) {
         //    bc__debug_log("decode %s", bc__op_to_name[operation]);
@@ -317,81 +319,81 @@ void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
 
         switch (operation)
         {
-        case BC_OP_LOAD_CONSTANT: {
-            Bc_Reg dst;
-            dst = *(Bc_Reg*)(bytecode + cursor);
-            cursor += sizeof(Bc_Reg);
+        case KAI_BOP_LOAD_CONSTANT: {
+            Kai_Reg dst;
+            dst = *(Kai_Reg*)(data + cursor);
+            cursor += sizeof(Kai_Reg);
 
-            Bc_Type type;
-            type = *(Bc_Type*)(bytecode + cursor);
-            cursor += sizeof(Bc_Type);
+            Kai_u8 type;
+            type = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
 
-            Bc_Value value = {0};
-            value = *(Bc_Value*)(bytecode + cursor);
-            cursor += bc__type_to_size[type];
+            Kai_Value value = {0};
+            value = *(Kai_Value*)(data + cursor);
+            cursor += __type_to_size(type);
 
             bcc__indent();
-            bcc__write("%s __%d = %d;\n", "int32_t", dst, value.S32);
+            bcc__write("%s __%d = %d;\n", "int32_t", dst, value.s32);
         } break;
 
-        case BC_OP_ADD:
-        case BC_OP_SUB:
+        case KAI_BOP_ADD:
+        case KAI_BOP_SUB:
         {
-            Bc_Reg dst;
-            dst = *(Bc_Reg*)(bytecode + cursor);
-            cursor += sizeof(Bc_Reg);
+            Kai_Reg dst;
+            dst = *(Kai_Reg*)(data + cursor);
+            cursor += sizeof(Kai_Reg);
 
-            Bc_Type type;
-            type = *(Bc_Type*)(bytecode + cursor);
-            cursor += sizeof(Bc_Type);
+            Kai_u8 type;
+            type = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
 
-            uint8_t is_value = type & 0x80;
+            Kai_u8 is_value = type & 0x80;
             type &= 0x7F;
 
-            Bc_Reg a;
-            a = *(Bc_Reg*)(bytecode + cursor);
-            cursor += sizeof(Bc_Reg);
+            Kai_Reg a;
+            a = *(Kai_Reg*)(data + cursor);
+            cursor += sizeof(Kai_Reg);
 
             bcc__indent();
             if (is_value) {
-                Bc_Value value;
-                uint8_t size = bc__type_to_size[type];
-                uint8_t* u8_out = (uint8_t*)&value;
+                Kai_Value value;
+                Kai_u8 size = __type_to_size(type);
+                Kai_u8* u8_out = (Kai_u8*)&value;
                 for (int i = 0; i < size; ++i)
-                    u8_out[i] = bytecode[cursor + i];
+                    u8_out[i] = data[cursor + i];
                 cursor += size;
-                bcc__write("%s __%d = __%d %s %i;\n", "int32_t", dst, a, operation==BC_OP_ADD? "+":"-", value.S32);
+                bcc__write("%s __%d = __%d %s %i;\n", "int32_t", dst, a, operation==KAI_BOP_ADD? "+":"-", value.s32);
             } else {
-                uint32_t b = *(Bc_Reg*)(bytecode + cursor);
-                cursor += sizeof(Bc_Reg);
-                bcc__write("%s __%d = __%d %s __%d;\n", "int32_t", dst, a, operation==BC_OP_ADD? "+":"-", b);
+                Kai_Reg b = *(Kai_Reg*)(data + cursor);
+                cursor += sizeof(Kai_Reg);
+                bcc__write("%s __%d = __%d %s __%d;\n", "int32_t", dst, a, operation==KAI_BOP_ADD? "+":"-", b);
             }
 
         } break;
 
-        case BC_OP_NATIVE_CALL: {
+        case KAI_BOP_NATIVE_CALL: {
             uintptr_t address;
-            address = *(uintptr_t*)(bytecode + cursor);
+            address = *(uintptr_t*)(data + cursor);
             cursor += sizeof(uintptr_t);
 
-            uint8_t use_dst = 0;
-            use_dst = *(uint8_t*)(bytecode + cursor);
-            cursor += sizeof(uint8_t);
+            Kai_u8 use_dst = 0;
+            use_dst = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
 
-            Bc_Reg dst = 0;
+            Kai_Reg dst = 0;
             if (use_dst) {
-                dst = *(Bc_Reg*)(bytecode + cursor);
-                cursor += sizeof(Bc_Reg);
+                dst = *(Kai_Reg*)(data + cursor);
+                cursor += sizeof(Kai_Reg);
             }
 
-            uint8_t input_count;
-            input_count = *(uint8_t*)(bytecode + cursor);
-            cursor += sizeof(uint8_t);
+            Kai_u8 input_count;
+            input_count = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
 
             char const* name = "???";
-            bcs__for (def->native_count) {
-                if (address == (uintptr_t)def->natives[i].address) {
-                    name = def->natives[i].name;
+            bcs__for (bytecode->native_count) {
+                if (address == (uintptr_t)bytecode->natives[i].address) {
+                    name = bytecode->natives[i].name;
                     break;
                 }
             }
@@ -404,9 +406,9 @@ void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
             }
 
             bcs__for (input_count) {
-                Bc_Reg reg;
-                reg = *(Bc_Reg*)(bytecode + cursor);
-                cursor += sizeof(Bc_Reg);
+                Kai_Reg reg;
+                reg = *(Kai_Reg*)(data + cursor);
+                cursor += sizeof(Kai_Reg);
 
                 bcc__write("__%d", reg);
 
@@ -418,25 +420,25 @@ void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
             bcc__write(");\n");
         } break;
 
-        case BC_OP_COMPARE: {
-            Bc_Reg dst;
-            dst = *(Bc_Reg*)(bytecode + cursor);
-            cursor += sizeof(Bc_Reg);
+        case KAI_BOP_COMPARE: {
+            Kai_Reg dst;
+            dst = *(Kai_Reg*)(data + cursor);
+            cursor += sizeof(Kai_Reg);
 
-            uint8_t type;
-            type = *(uint8_t*)(bytecode + cursor);
-            cursor += sizeof(uint8_t);
+            Kai_u8 type;
+            type = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
 
-            uint8_t is_value = type & 0x80;
+            Kai_u8 is_value = type & 0x80;
             type &= 0x7F;
 
-            uint8_t comp;
-            comp = *(uint8_t*)(bytecode + cursor);
-            cursor += sizeof(uint8_t);
+            Kai_u8 comp;
+            comp = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
 
-            Bc_Reg a;
-            a = *(Bc_Reg*)(bytecode + cursor);
-            cursor += sizeof(Bc_Reg);
+            Kai_Reg a;
+            a = *(Kai_Reg*)(data + cursor);
+            cursor += sizeof(Kai_Reg);
 
             char const* tab[] = { "<", ">=", ">", "<=", "==", "!=" };
 
@@ -444,84 +446,85 @@ void bc_convert_to_c(Bc_Def* def, Bc_Writer_Proc* writer, void* user)
             bcc__write("%s __%d = __%d %s ", "int32_t", dst, a, tab[comp]);
 
             if (is_value) {
-                Bc_Value value;
-                uint8_t size = bc__type_to_size[type];
-                uint8_t* u8_out = (uint8_t*)&value;
+                Kai_Value value;
+                Kai_u8 size = __type_to_size(type);
+                Kai_u8* u8_out = (Kai_u8*)&value;
                 for (int i = 0; i < size; ++i)
-                    u8_out[i] = bytecode[cursor + i];
+                    u8_out[i] = data[cursor + i];
                 cursor += size;
-                bcc__write("%i;\n", value.S32);
+                bcc__write("%i;\n", value.s32);
             } else {
-                uint32_t b = *(Bc_Reg*)(bytecode + cursor);
-                cursor += sizeof(Bc_Reg);
+                Kai_Reg b = *(Kai_Reg*)(data + cursor);
+                cursor += sizeof(Kai_Reg);
                 bcc__write("__%d;\n", b);
             }
         } break;
 
-        case BC_OP_BRANCH: {
-            uint32_t location = *(uint32_t*)(bytecode + cursor);
+        case KAI_BOP_BRANCH: {
+            uint32_t location = *(uint32_t*)(data + cursor);
             cursor += sizeof(uint32_t);
 
-            Bc_Reg src = *(Bc_Reg*)(bytecode + cursor);
-            cursor += sizeof(Bc_Reg);
+            Kai_Reg src = *(Kai_Reg*)(data + cursor);
+            cursor += sizeof(Kai_Reg);
 
             bcc__indent();
-            bcs__for (def->branch_count) {
-                if (location == def->branch_hints[i]) {
+            bcs__for (bytecode->branch_count) {
+                if (location == bytecode->branch_hints[i]) {
                     bcc__write("if (__%d) goto __loc_%i;\n", src, i);
                     break;
                 }
             }
         } break;
 
-        case BC_OP_JUMP: {
+        case KAI_BOP_JUMP: {
             cursor += sizeof(uint32_t);
             bcc__indent();
             bcc__write("goto __endif;\n");
             bcc__write("__else:\n");
         } break;
 
-        case BC_OP_CALL: {
-            //uint32_t location = *(uint32_t*)(bytecode + cursor);
+        case KAI_BOP_CALL: {
+            //uint32_t location = *(uint32_t*)(data + cursor);
             cursor += sizeof(uint32_t);
 
-            uint8_t ret_count = *(uint8_t*)(bytecode + cursor);
-            cursor += sizeof(uint8_t);
+            Kai_u8 ret_count = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
 
-            uint8_t arg_count = *(uint8_t*)(bytecode + cursor);
-            cursor += sizeof(uint8_t);
+            Kai_u8 arg_count = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
             
             bcc__indent();
             bcs__for (ret_count) {
-                uint32_t dst = *(uint32_t*)(bytecode + cursor);
-                cursor += sizeof(uint32_t);
+                Kai_Reg dst = *(Kai_Reg*)(data + cursor);
+                cursor += sizeof(Kai_Reg);
                 bcc__write("%s __%d = ", "int32_t", dst);
             }
             bcc__write("%s(", "func");
             bcs__for (arg_count) {
-                uint32_t src = *(uint32_t*)(bytecode + cursor);
-                cursor += sizeof(uint32_t);
+                Kai_Reg src = *(Kai_Reg*)(data + cursor);
+                cursor += sizeof(Kai_Reg);
                 bcc__write("__%d%s", src, i == arg_count - 1 ? "" : ", ");
             }
             bcc__write(");\n");
         } break;
 
-        case BC_OP_RETURN: {
-            uint8_t ret_count;
-            ret_count = *(uint8_t*)(bytecode + cursor);
-            cursor += sizeof(uint8_t);
+        case KAI_BOP_RETURN: {
+            Kai_u8 ret_count;
+            ret_count = *(Kai_u8*)(data + cursor);
+            cursor += sizeof(Kai_u8);
 
-            Bc_Reg a;
+            Kai_Reg a;
             bcc__indent();
             bcs__for (ret_count) {
-                a = *(Bc_Reg*)(bytecode + cursor);
-                cursor += sizeof(Bc_Reg);
+                a = *(Kai_Reg*)(data + cursor);
+                cursor += sizeof(Kai_Reg);
                 bcc__write("return __%d;\n", a);
             }
         } break;
         
         default: {
-            bc__debug_log("invalid bytecode instruction! (pc=%x op=%d)", cursor - 1, operation);
+            kai__unreachable();
+            //bc__debug_log("invalid bytecode instruction! (pc=%x op=%d)", cursor - 1, operation);
             return;
         } break;
         }

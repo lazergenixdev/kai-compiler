@@ -1,3 +1,3 @@
-func :: (x: s32, y: s32) {
+add :: (x: s32, y: s32) -> s32 {
     ret x + y;
 }

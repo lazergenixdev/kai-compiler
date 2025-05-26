@@ -4,7 +4,7 @@ int parser() {
     TEST();
 
     Kai_Allocator allocator = {0};
-    kai_create_memory(&allocator);
+    kai_memory_create(&allocator);
 
     Kai_Error error = {0};
     Kai_Syntax_Tree tree = {0};
@@ -39,7 +39,7 @@ int parser() {
     }
 
     kai_destroy_syntax_tree(&tree);
-    kai_destroy_memory(&allocator);
+    kai_memory_destroy(&allocator);
 
     return (result != KAI_SUCCESS) ? FAIL : PASS;
 }
