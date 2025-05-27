@@ -1,6 +1,6 @@
 ﻿#define KAI_USE_DEBUG_API
 #define KAI_USE_MEMORY_API
-#include "kai/kai.h"
+#include "kai.h"
 #include "timer.h"
 #include <stdio.h>
 #include <stdlib.h>

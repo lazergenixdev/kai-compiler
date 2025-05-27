@@ -1,6 +1,6 @@
 /**
  *  < Kai >---< Scripting Language >
- * 
+ *
  * @author:       lazergenixdev@gmail.com
  * @development:  https://github.com/lazergenixdev/kai-compiler
  * @license:      GNU GPLv3 (see end of file)
@@ -11,17 +11,17 @@
 #include <stddef.h> // --> NULL
 
 /*
-    CONVENTIONS:
-  
+--- CONVENTIONS -----------------------------------------------------------------------------------------
+
     Types:           begin with "Kai_"
     Functions:       begin with "kai_"
     Enums/Macros:    begin with "KAI_"
     Internal API:    begin with "KAI__" or "kai__" or "Kai__"
-    
+
     define  KAI_USE_MEMORY_API  to enable default memory allocator
     define  KAI_USE_DEBUG_API   to enable debug functionality (such as a function to print errors)
     define  KAI_USE_CPP_API     to enable C++ API (experimental)
-  
+
     This header is divided into sections with `KAI__SECTION` for convenience
         KAI__SECTION_BUILTIN_TYPES
         KAI__SECTION_TYPE_INFO_STRUCTS
@@ -29,7 +29,12 @@
         KAI__SECTION_SYNTAX_TREE
         KAI__SECTION_PROGRAM
         KAI__SECTION_CORE_API
- */
+
+---------------------------------------------------------------------------------------------------------
+*/
+
+// TODO: remove this
+#define KAI_IMPLEMENTATION
    
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
@@ -61,8 +66,20 @@
 #   define KAI__PLATFORM_WASM
 #else
 #	define KAI__PLATFORM_UNKNOWN
-// TODO: do something better here
-#   error "[KAI] Platform not recognized!"
+#	pragma message("[KAI] warning: Platform not recognized! (KAI__PLATFORM_UNKNOWN defined)")
+#endif
+
+// Detect Architecture
+#if defined(__WASM__)
+#	define KAI__MACHINE_WASM // God bless your soul 🙏
+#elif defined(__x86_64__) || defined(_M_X64)
+#	define KAI__MACHINE_AMD64
+#elif defined(__i386__) || defined(_M_IX86)
+#	define KAI__MACHINE_X86
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#	define KAI__MACHINE_ARM64
+#else
+#	error "[KAI] Architecture not supported!"
 #endif
 
 #if defined(__cplusplus)
@@ -83,12 +100,9 @@
 #define KAI_STRING(LITERAL) KAI_STRUCT(Kai_str){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
 #define KAI_BOOL(EXPR)      ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
 
-//#if !defined(KAI_IMPLEMENTATION)
-//#	define KAI__SECTION_INTERNAL_API
-//#endif
-
-#ifdef __cplusplus
-extern "C" {
+// TODO: remove this too please
+#if !defined(KAI_IMPLEMENTATION)
+#	define KAI__SECTION_INTERNAL_API
 #endif
 
 #if defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GCC)
@@ -98,6 +112,10 @@ extern "C" {
 #elif defined(KAI__COMPILER_MSVC)
 #	pragma warning(push)
 #	pragma warning(disable : 4201) // " nonstandard extension used: nameless struct/union
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 #ifndef KAI__SECTION_BUILTIN_TYPES
@@ -224,7 +242,10 @@ typedef struct {
 #endif
 #ifndef KAI__SECTION_CORE_STRUCTS
 
-// TODO: should writer be allowed to fail? (probably not)
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Base Writer -----------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 typedef void Kai_P_Write(void* User, Kai_str String);
 
 typedef struct {
@@ -239,6 +260,10 @@ enum {
 
 	KAI_MEMORY_ACCESS_READ_WRITE = KAI_MEMORY_ACCESS_READ | KAI_MEMORY_ACCESS_WRITE,
 };
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Base Memory Allocator -------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 typedef void* Kai_P_Memory_Allocate      (void* User, Kai_u32 Num_Bytes, Kai_u32 access);
 typedef void  Kai_P_Memory_Free          (void* User, void* Ptr, Kai_u32 Num_Bytes);
@@ -258,6 +283,10 @@ typedef struct {
 	void*   data;
 	Kai_u32 size;
 } Kai_Memory;
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Errors ----------------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 enum {
 	KAI_SUCCESS = 0,
@@ -356,6 +385,26 @@ typedef struct {
     Kai_u32             bucket_size;
     Kai_Allocator       allocator;
 } Kai__Dynamic_Arena_Allocator;
+
+
+#if 0
+struct Kai__String_Format {
+	Kai_u32 flags;
+	Kai_u32 min_count; // default is 0 (no minimum)
+	Kai_u32 max_count; // default is 0 (no maximum)
+};
+
+typedef KAI__ARRAY(Kai_u8) Kai__String_Builder;
+
+static inline void __string_builder_example()
+{
+	Kai__String_Builder builder;
+	kai__string_builder_reserve(&builder, 100);
+	kai__string_builder_append(&builder, "not handled ");
+	kai__string_builder_append_u64(&builder, expr->id);
+	kai__string_builder_release(&builder);
+}
+#endif
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Tokens ----------------------------------------------------------------
@@ -580,7 +629,7 @@ enum {
     KAI_F64 = (8 << 4) | 9,
 };
 
-// Bytecode OPerations (BOP)
+// Bytecode Operations (BOP)
 enum {
     KAI_BOP_NOP           = 0,  //  nop
     KAI_BOP_LOAD_CONSTANT = 1,  //  %0 <- load_constant.u32 8
@@ -1408,16 +1457,6 @@ KAI_API (void) kai_debug_write_expression(Kai_Debug_String_Writer* Writer, Kai_E
 
 #endif
 
-#if defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GCC)
-#	pragma GCC diagnostic pop
-#elif defined(KAI__COMPILER_MSVC)
-#	pragma warning(pop)
-#endif
-
-#ifdef __cplusplus
-}
-#endif
-
 #ifdef KAI_USE_CPP_API
 #include <string>
 #include <fstream>
@@ -1486,6 +1525,19 @@ namespace Kai {
         }
     };
 }
+#endif
+
+#ifdef KAI_IMPLEMENTATION
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#if defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GCC)
+#	pragma GCC diagnostic pop
+#elif defined(KAI__COMPILER_MSVC)
+#	pragma warning(pop)
 #endif
 
 #endif // KAI__H

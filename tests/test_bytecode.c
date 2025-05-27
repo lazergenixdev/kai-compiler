@@ -55,7 +55,7 @@ int bytecode() {
 	    kai_bc_insert_branch(&stream, &branch_endif, 1);
 	    kai_bc_insert_load_constant(&stream, KAI_S32, 2, (Kai_Value) {.s32 = 1});
 	    kai_bc_insert_return(&stream, 1, (uint32_t[]) {2});
-	    Kai_u32 location_endif = stream.count;
+	    location_endif = stream.count;
 	    kai_bc_insert_math_value(&stream, KAI_S32, KAI_BOP_SUB, 3, 0, (Kai_Value) {.s32 = 1});
 	    kai_bc_insert_call(&stream, &branch_call0, 1, (uint32_t[]) {4}, 1, (uint32_t[]) {3});
 	    kai_bc_insert_math_value(&stream, KAI_S32, KAI_BOP_SUB, 5, 0, (Kai_Value) {.s32 = 2});

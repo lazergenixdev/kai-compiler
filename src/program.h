@@ -1,6 +1,6 @@
 #ifndef PROGRAM__H
 #define PROGRAM__H
-#include "kai/kai.h"
+#include "../include/kai.h"
 
 typedef struct {
 	Kai_u32 flags; // (LOCAL_VARIABLE, TYPE)

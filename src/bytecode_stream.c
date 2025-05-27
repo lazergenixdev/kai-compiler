@@ -1,4 +1,4 @@
-#include "kai/kai.h"
+#include "../include/kai.h"
 
 // TODO: remove this
 #include <stdio.h>
