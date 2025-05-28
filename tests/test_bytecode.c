@@ -7,7 +7,7 @@ int run(Kai_Interpreter* interp, Kai_s32 value, Kai_s32* out) {
 	kai_interp_push_output(interp, 0);
 
     int i = 0, max_step_count = 1000;
-    while(bci_step(interp) && ++i < max_step_count);
+    while(kai_interp_step(interp) && ++i < max_step_count);
 
     if (interp->flags != KAI_INTERP_FLAGS_DONE) {
         return 1;

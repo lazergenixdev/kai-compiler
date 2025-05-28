@@ -13,6 +13,7 @@ uint32_t bcs__grow_function(uint32_t x)
     return x + x / 2;
 }
 
+// TODO: no reason why this should be specific to Bytecode Arrays
 Kai_Result bcs__ensure_space(Kai_BC_Stream* stream, uint32_t added_count)
 {
     uint32_t required_capacity = stream->count + added_count;

@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <windows.h> // --> EXCEPTION_ACCESS_VIOLATION
-#include <excpt.h>
+#if defined(KAI_PLATFORM_WINDOWS)
+#   include <windows.h> // --> EXCEPTION_ACCESS_VIOLATION
+#   include <excpt.h>
+#endif
 
 void set_underline(int enable) {
     printf("\x1b[%im", enable ? 4 : 24);

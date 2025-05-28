@@ -1333,6 +1333,25 @@ void kai__stdout_write(void* User, Kai_str String)
 	kai_debug_stdout_writer()->write_string(NULL, String);
 }
 
+// TODO: Now we can give our compiler options like:
+typedef struct {
+	Kai_u32 Interpreter_Max_Step_Count;
+	Kai_u32 Interpreter_Max_Call_Depth;
+} Kai_Compile_Options;
+
+#define KAI_DEFAULT_COMPILE_OPTIONS            \
+	(Kai_Compile_Options) {                    \
+		.Interpreter_Max_Call_Depth = 1024,    \
+		.Interpreter_Max_Step_Count = 1000000, \
+	}
+
+void __example() {
+	Kai_Compile_Options options = KAI_DEFAULT_COMPILE_OPTIONS;
+	Kai_Program_Create_Info info = {0};
+	Kai_Program program;
+	kai_create_program(&info, &program);
+}
+
 Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr, Kai_Type* type)
 {
 	Kai_Allocator* allocator = &Context->dependency_graph->allocator;
@@ -1437,8 +1456,8 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 			// TODO: don't assume only one return value
 			kai_interp_push_output(interp, 0);
 
-			int i = 0, max_step_count = 65536;
-			while(bci_step(interp) && ++i < max_step_count);
+			int max_step_count = 65536;
+			kai_interp_run(interp, max_step_count);
 
 			if (interp->flags != KAI_INTERP_FLAGS_DONE) {
 				panic_with_message("failed to interpret bytecode...");

@@ -693,6 +693,8 @@ typedef struct {
     Kai_Allocator* allocator;
 } Kai_BC_Stream;
 
+typedef KAI__ARRAY(Kai_u8) Kai__Byte_Array;
+
 typedef struct {
     Kai_Reg base_register;
     Kai_u32 return_address;
@@ -773,55 +775,64 @@ typedef struct {
 #endif
 #ifndef KAI__SECTION_CORE_API
 
-KAI_API (Kai_bool) kai_str_equals(Kai_str A, Kai_str B);
-KAI_API (Kai_str)  kai_str_from_cstring(char const* String);
+KAI_API (Kai_bool) kai_str_equals       (Kai_str A, Kai_str B);
+KAI_API (Kai_str)  kai_str_from_cstring (char const* String);
 
-KAI_API (Kai_vector3_u32) kai_get_version(void);
-KAI_API (Kai_str)         kai_get_version_string(void);
+KAI_API (Kai_vector3_u32) kai_get_version        (void);
+KAI_API (Kai_str)         kai_get_version_string (void);
 
 /// @param out_Syntax_Tree Must be freed using @ref(kai_destroy_syntax_tree)
-KAI_API (Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
+KAI_API (Kai_Result) kai_create_syntax_tree (Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
 
 KAI_API (void)       kai_destroy_syntax_tree        (Kai_Syntax_Tree* Syntax_Tree);
 KAI_API (Kai_Result) kai_create_program             (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
 KAI_API (Kai_Result) kai_create_program_from_source (Kai_str Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program);
 KAI_API (void)       kai_destroy_program            (Kai_Program Program);
-KAI_API (void*)      kai_find_procedure             (Kai_Program Program, Kai_str Name, Kai_Type opt_Type);
-KAI_API (void)       kai_destroy_error              (Kai_Error* Error, Kai_Allocator* Allocator);
 
-KAI_API (Kai_Result) kai_bc_insert_load_constant    (Kai_BC_Stream* Stream, Kai_u8 type, Kai_Reg reg_dst, Kai_Value value);
-KAI_API (Kai_Result) kai_bc_insert_math             (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2);
-KAI_API (Kai_Result) kai_bc_insert_math_value       (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value);
-KAI_API (Kai_Result) kai_bc_insert_compare          (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2);
-KAI_API (Kai_Result) kai_bc_insert_compare_value    (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value);
-KAI_API (Kai_Result) kai_bc_insert_branch_location  (Kai_BC_Stream* Stream, Kai_u32 location, Kai_Reg reg_src);
-KAI_API (Kai_Result) kai_bc_insert_branch           (Kai_BC_Stream* Stream, Kai_u32* branch, Kai_Reg reg_src);
-KAI_API (Kai_Result) kai_bc_insert_jump_location    (Kai_BC_Stream* Stream, Kai_u32 location);
-KAI_API (Kai_Result) kai_bc_insert_jump             (Kai_BC_Stream* Stream, Kai_u32* branch);
-KAI_API (Kai_Result) kai_bc_insert_call             (Kai_BC_Stream* Stream, Kai_u32* branch, Kai_u8 ret_count, Kai_Reg* reg_ret, Kai_u8 arg_count, Kai_Reg* reg_arg);
-KAI_API (Kai_Result) kai_bc_insert_return           (Kai_BC_Stream* Stream, Kai_u8 count, Kai_Reg* regs);
-KAI_API (Kai_Result) kai_bc_insert_native_call      (Kai_BC_Stream* Stream, Kai_u8 use_dst, Kai_Reg reg_dst, Kai_Native_Procedure* proc, Kai_Reg* reg_src);
-KAI_API (Kai_Result) kai_bc_insert_load             (Kai_BC_Stream* Stream, Kai_Reg reg_dst, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
-KAI_API (Kai_Result) kai_bc_insert_store            (Kai_BC_Stream* Stream, Kai_Reg reg_src, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
-KAI_API (Kai_Result) kai_bc_insert_check_address    (Kai_BC_Stream* Stream, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
-KAI_API (Kai_Result) kai_bc_insert_stack_alloc      (Kai_BC_Stream* Stream, Kai_Reg reg_dst, Kai_u32 size);
-KAI_API (Kai_Result) kai_bc_insert_stack_free       (Kai_BC_Stream* Stream, Kai_u32 size);
-KAI_API (Kai_Result) kai_bc_set_branch              (Kai_BC_Stream* Stream, Kai_u32 branch, Kai_u32 location);
-KAI_API (Kai_Result) kai_bc_reserve                 (Kai_BC_Stream* Stream, Kai_u32 byte_count);
-KAI_API (Kai_u32)    kai_interp_required_memory_size(Kai_Interpreter_Setup* info);
-KAI_API (Kai_Result) kai_interp_create              (Kai_Interpreter* Interp, Kai_Interpreter_Setup* info);
+//! @note With WASM backend you cannot get any function pointers
+//!       (because WASM is complete garbage and doesn't support it)
+KAI_API (void*) kai_find_procedure (Kai_Program Program, Kai_str Name, Kai_Type opt_Type);
+KAI_API (void)  kai_destroy_error  (Kai_Error* Error, Kai_Allocator* Allocator);
+
+KAI_API (Kai_Result) kai_bc_insert_load_constant   (Kai_BC_Stream* Stream, Kai_u8 type, Kai_Reg reg_dst, Kai_Value value);
+KAI_API (Kai_Result) kai_bc_insert_math            (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2);
+KAI_API (Kai_Result) kai_bc_insert_math_value      (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value);
+KAI_API (Kai_Result) kai_bc_insert_compare         (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2);
+KAI_API (Kai_Result) kai_bc_insert_compare_value   (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value);
+KAI_API (Kai_Result) kai_bc_insert_branch_location (Kai_BC_Stream* Stream, Kai_u32 location, Kai_Reg reg_src);
+KAI_API (Kai_Result) kai_bc_insert_branch          (Kai_BC_Stream* Stream, Kai_u32* branch, Kai_Reg reg_src);
+KAI_API (Kai_Result) kai_bc_insert_jump_location   (Kai_BC_Stream* Stream, Kai_u32 location);
+KAI_API (Kai_Result) kai_bc_insert_jump            (Kai_BC_Stream* Stream, Kai_u32* branch);
+KAI_API (Kai_Result) kai_bc_insert_call            (Kai_BC_Stream* Stream, Kai_u32* branch, Kai_u8 ret_count, Kai_Reg* reg_ret, Kai_u8 arg_count, Kai_Reg* reg_arg);
+KAI_API (Kai_Result) kai_bc_insert_return          (Kai_BC_Stream* Stream, Kai_u8 count, Kai_Reg* regs);
+KAI_API (Kai_Result) kai_bc_insert_native_call     (Kai_BC_Stream* Stream, Kai_u8 use_dst, Kai_Reg reg_dst, Kai_Native_Procedure* proc, Kai_Reg* reg_src);
+KAI_API (Kai_Result) kai_bc_insert_load            (Kai_BC_Stream* Stream, Kai_Reg reg_dst, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
+KAI_API (Kai_Result) kai_bc_insert_store           (Kai_BC_Stream* Stream, Kai_Reg reg_src, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
+KAI_API (Kai_Result) kai_bc_insert_check_address   (Kai_BC_Stream* Stream, Kai_u8 type, Kai_Reg reg_addr, Kai_u32 offset);
+KAI_API (Kai_Result) kai_bc_insert_stack_alloc     (Kai_BC_Stream* Stream, Kai_Reg reg_dst, Kai_u32 size);
+KAI_API (Kai_Result) kai_bc_insert_stack_free      (Kai_BC_Stream* Stream, Kai_u32 size);
+KAI_API (Kai_Result) kai_bc_set_branch             (Kai_BC_Stream* Stream, Kai_u32 branch, Kai_u32 location);
+KAI_API (Kai_Result) kai_bc_reserve                (Kai_BC_Stream* Stream, Kai_u32 byte_count);
+
+#define kai_interp_run(Interpreter, Max_Step_Count) \
+	for (int __iteration__ = 0; kai_interp_step(Interpreter) && ++__iteration__ < Max_Step_Count;)
 
 /// @brief Execute one bytecode instruction
 /// @return 1 if done executing or error, 0 otherwise
-int bci_step(Kai_Interpreter* interp); // TODO: rename
+int kai_interp_step(Kai_Interpreter* interp);
 
-KAI_API (void)       kai_interp_reset            (Kai_Interpreter* Interp, Kai_u32 location);
-KAI_API (void)       kai_interp_set_input        (Kai_Interpreter* Interp, Kai_u32 index, Kai_Value value);
-KAI_API (void)       kai_interp_push_output      (Kai_Interpreter* Interp, Kai_Reg reg);
-KAI_API (void)       kai_interp_load_from_stream (Kai_Interpreter* Interp, Kai_BC_Stream* stream);
-KAI_API (void)       kai_interp_load_from_memory (Kai_Interpreter* Interp, void* code, Kai_u32 size);
-KAI_API (Kai_Result) kai_bytecode_to_string      (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
-KAI_API (Kai_Result) kai_bytecode_to_c           (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
+KAI_API (Kai_u32)    kai_interp_required_memory_size (Kai_Interpreter_Setup* info);
+KAI_API (Kai_Result) kai_interp_create               (Kai_Interpreter* Interp, Kai_Interpreter_Setup* info);
+KAI_API (void)       kai_interp_reset                (Kai_Interpreter* Interp, Kai_u32 location);
+KAI_API (void)       kai_interp_set_input            (Kai_Interpreter* Interp, Kai_u32 index, Kai_Value value);
+KAI_API (void)       kai_interp_push_output          (Kai_Interpreter* Interp, Kai_Reg reg);
+
+// TODO: rename -> kai_interp_load_from_array(Kai_Interpreter* Interp, Kai__Byte_Array* array)
+KAI_API (void) kai_interp_load_from_stream (Kai_Interpreter* Interp, Kai_BC_Stream* stream);
+KAI_API (void) kai_interp_load_from_memory (Kai_Interpreter* Interp, void* code, Kai_u32 size);
+
+KAI_API (Kai_Result) kai_bytecode_to_string (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
+KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
 
 #endif
 #ifndef KAI__SECTION_INTERNAL_API

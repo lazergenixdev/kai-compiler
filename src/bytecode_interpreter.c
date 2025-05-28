@@ -1,4 +1,5 @@
 #include "kai.h"
+#include <stdio.h>
 
 #define bci__for(N) for (int i = 0; i < (int)N; ++i)
 #define __type_to_size(T) ((T) >> 4)
@@ -234,7 +235,7 @@ char const* bc__op_to_name[] = {
 };
 
 // return 0 => done
-int bci_step(Kai_Interpreter* interp)
+int kai_interp_step(Kai_Interpreter* interp)
 {
 	if (interp->flags)
 	{
