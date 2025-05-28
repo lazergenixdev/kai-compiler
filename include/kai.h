@@ -813,7 +813,7 @@ KAI_API (Kai_Result) kai_interp_create              (Kai_Interpreter* Interp, Ka
 
 /// @brief Execute one bytecode instruction
 /// @return 1 if done executing or error, 0 otherwise
-int bci_step(Kai_Interpreter* interp);
+int bci_step(Kai_Interpreter* interp); // TODO: rename
 
 KAI_API (void)       kai_interp_reset            (Kai_Interpreter* Interp, Kai_u32 location);
 KAI_API (void)       kai_interp_set_input        (Kai_Interpreter* Interp, Kai_u32 index, Kai_Value value);

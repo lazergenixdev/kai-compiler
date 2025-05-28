@@ -594,7 +594,7 @@ Kai_Debug_String_Writer* kai_debug_stdout_writer(void)
         .write_string   = kai__stdout_writer_write_string,
         .write_c_string = kai__stdout_writer_write_c_string,
         .write_char     = kai__stdout_writer_write_char,
-        //.set_color      = kai__stdout_writer_set_color,
+        .set_color      = kai__stdout_writer_set_color,
         .user           = NULL
     };
     return &writer;

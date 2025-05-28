@@ -1112,43 +1112,7 @@ Kai__DG_Node* kai__dg_find_node(Kai__Dependency_Graph* graph, Kai_str name)
 	return NULL;
 }
 
-Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr expr, Kai_Type* type)
-{
-	switch (expr->id)
-	{
-		/*case KAI_EXPR_PROCEDURE: {
-			Kai_u32 location = 0;
-			Kai_Result result = kai__bytecode_emit_procedure(Info, node->expr, &location);
-
-			if (result != KAI_SUCCESS)
-				return result;
-
-			return (Kai__DG_Value) {
-				.procedure_location = location,
-			};
-		} break;*/
-
-		case KAI_EXPR_IDENTIFIER: {
-			void* base = expr;
-			Kai_Expr_Identifier* expr = base;
-			Kai__DG_Node* other_node = kai__dg_find_node(Context->dependency_graph, expr->source_code);
-
-			if (other_node == NULL)
-			{
-				return (Kai__DG_Value) {};
-			}
-
-			*type = other_node->type;
-			return other_node->value;
-		} break;
-
-		default: {
-			printf("How did we get here? %i\n", expr->id);
-		}
-	}
-
-	return (Kai__DG_Value) {};
-}
+Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr, Kai_Type* type);
 
 Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr expr) {
 	switch (expr->id) {
@@ -1179,6 +1143,29 @@ Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Ka
 			}
 			return (Kai_Type)type_info;
 		}
+		case KAI_EXPR_PROCEDURE_CALL: {
+			Kai_Expr_Procedure_Call* node = expr;
+			// Find type of the procedure we are calling
+			if (node->proc->id != KAI_EXPR_IDENTIFIER)
+				panic_with_message("procedure calls only implemented for identifiers");
+
+			Kai_Expr_Identifier* proc = node->proc;
+			Kai__DG_Node* dg_node = kai__dg_find_node(Context->dependency_graph, proc->source_code);
+
+			if (dg_node == NULL)
+				panic_with_message("could not resolve node");
+
+			Kai_Type type = dg_node->type;
+			if (type->type != KAI_TYPE_PROCEDURE)
+				panic_with_message("calling something that does not have procedure type!");
+
+			Kai_Type_Info_Procedure* proc_type = type;
+
+			if (proc_type->out_count == 0)
+				panic_with_message("procedure does not have a return");
+
+			return proc_type->sub_types[proc_type->in_count];
+		} break;
 
 		default: {
 			panic_with_message("not handled %i", expr->id);
@@ -1253,6 +1240,7 @@ Kai_Result kai__bytecode_emit_expression(
 {
 	switch (Expr->id) {
 		case KAI_EXPR_NUMBER: {
+			// TODO: Only Parse number HERE, generate error if number can not be represented by the type
 			Kai_Expr_Number* node = Expr;
 			Kai_Reg dst = kai__bytecode_allocate_register(Context);
 			Kai_Value value;
@@ -1345,17 +1333,19 @@ void kai__stdout_write(void* User, Kai_str String)
 	kai_debug_stdout_writer()->write_string(NULL, String);
 }
 
-Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Context, Kai__DG_Node* node)
+Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr, Kai_Type* type)
 {
-	if (node->value_flags & KAI__DG_NODE_EVALUATED)
-		return KAI_SUCCESS;
-
 	Kai_Allocator* allocator = &Context->dependency_graph->allocator;
-
-	switch (node->expr->id)
+	switch (Expr->id)
 	{
+		case KAI_EXPR_NUMBER: {
+			// TODO: Only Parse number HERE, generate error if number can not be represented by the type
+			Kai_Expr_Number* node = Expr;
+			return (Kai__DG_Value) {.value = {.u64 = node->value.Whole_Part}};
+		} break;
+
 		case KAI_EXPR_PROCEDURE: {
-			Kai_Expr_Procedure* procedure = node->expr;
+			Kai_Expr_Procedure* procedure = Expr;
 
 			// Add all input registers
 			Kai_Expr current = procedure->in_out_expr;
@@ -1389,44 +1379,94 @@ Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Contex
 			kai__stdout_write(NULL, KAI_STRING("\n"));
 
 			if (result != KAI_SUCCESS)
-				return result;
+				panic_with_message("something else went wrong...");
 
-			node->value = (Kai__DG_Value) {
+			return (Kai__DG_Value) {
 				.procedure_location = location,
 			};
-
-			return KAI_SUCCESS;
 		} break;
 
 		case KAI_EXPR_IDENTIFIER: {
-			void* base = node->expr;
+			void* base = Expr;
 			Kai_Expr_Identifier* expr = base;
 			Kai__DG_Node* other_node = kai__dg_find_node(Context->dependency_graph, expr->source_code);
 
 			if (other_node == NULL)
 			{
-				return kai__error_internal(Context->error, KAI_STRING("I did not think this through..."));
+				panic_with_message("something went wrong");
+				//return kai__error_internal(Context->error, KAI_STRING("I did not think this through..."));
 			}
 
-			node->value = (Kai__DG_Value) {
-				.type = other_node->value.type,
-			};
+			if (type != NULL)
+				*type = other_node->type;
+			return other_node->value;
+		} break;
 
-			return KAI_SUCCESS;
+		case KAI_EXPR_PROCEDURE_CALL: {
+			// TODO: check that procedure type matches call input
+			Kai_Expr_Procedure_Call* call = Expr;
+
+			if (call->proc->id != KAI_EXPR_IDENTIFIER)
+				panic_with_message("procedure must be identifier");
+
+			Kai_Expr_Identifier* proc = call->proc;
+			Kai__DG_Node* proc_node = kai__dg_find_node(Context->dependency_graph, proc->source_code);
+
+			// Generate procedure input
+			// Note: have to put this here since interpreter must be free
+			//       for recursive calls to use
+			Kai_Value values[8] = {0};
+			{
+				Kai_Expr current = call->arg_head;
+				for (Kai_u32 i = 0; i < call->arg_count; i++)
+				{
+					values[i] = kai__value_from_expression(Context, current, NULL).value;
+					current = current->next;
+				}
+			}
+
+			Kai_Interpreter* interp = &Context->bytecode->interp;
+			kai_interp_load_from_stream(interp, &Context->bytecode->stream);
+			kai_interp_reset(interp, proc_node->value.procedure_location);
+
+			for (Kai_u32 i = 0; i < call->arg_count; i++)
+			{
+				kai_interp_set_input(interp, i, values[i]);
+			}
+
+			// TODO: don't assume only one return value
+			kai_interp_push_output(interp, 0);
+
+			int i = 0, max_step_count = 65536;
+			while(bci_step(interp) && ++i < max_step_count);
+
+			if (interp->flags != KAI_INTERP_FLAGS_DONE) {
+				panic_with_message("failed to interpret bytecode...");
+			}
+
+			return (Kai__DG_Value) { .value = interp->registers[0] };
 		} break;
 
 		default: {
-			printf("How did we get here? %i\n", node->expr->id);
+			panic_with_message("kai__bytecode_generate_value ? %i", Expr->id);
 		}
 	}
+}
 
-	return kai__error_internal(Context->error, KAI_STRING("kai__bytecode_generate_value not implemented"));
+Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Context, Kai__DG_Node* node)
+{
+	if (node->value_flags & KAI__DG_NODE_EVALUATED)
+		return KAI_SUCCESS;
+
+	node->value = kai__value_from_expression(Context, node->expr, NULL);
+	return KAI_SUCCESS;
 }
 
 Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode* out_Bytecode)
 {
 	Kai_Result result = KAI_SUCCESS;
 	Kai__Dependency_Graph* graph = Info->dependency_graph;
+	Kai_Allocator* allocator = &graph->allocator;
 	int* order = graph->compilation_order;
 
 	Kai__Bytecode_Generation_Context context = {
@@ -1434,7 +1474,18 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 		.dependency_graph = Info->dependency_graph,
 		.bytecode = out_Bytecode,
 	};
-	context.bytecode->stream.allocator = &Info->dependency_graph->allocator;
+
+	// Initialization
+	{
+		Kai_Interpreter_Setup interp_info = {
+			.max_register_count     = 4096,
+			.max_call_stack_count   = 1024,
+			.max_return_value_count = 1024,
+		};
+		interp_info.memory = kai__allocate(NULL, kai_interp_required_memory_size(&interp_info), 0);
+		kai_interp_create(&context.bytecode->interp, &interp_info);
+		context.bytecode->stream.allocator = allocator;
+	}
 
 	kai__dynamic_arena_allocator_create(&context.arena, &Info->dependency_graph->allocator);
 
@@ -1476,10 +1527,29 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 		else {
 			result = kai__bytecode_generate_value(&context, node);
 
-			if (node->type->type == KAI_TYPE_TYPE) {
-				kai_debug_stdout_writer()->write_c_string(0, "--> ");
-				kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
-				kai_debug_stdout_writer()->write_char(0, '\n');
+			// TODO: write a function that does EXACTLY THIS!
+			switch (node->type->type)
+			{
+				case KAI_TYPE_TYPE: {
+					kai_debug_stdout_writer()->write_c_string(0, "--> Type ");
+					kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
+					kai_debug_stdout_writer()->write_char(0, '\n');
+				} break;
+				case KAI_TYPE_INTEGER: {
+					printf("--> Value %lli\n", node->value.value.s64);
+				} break;
+				case KAI_TYPE_FLOAT: {
+					if (((Kai_Type_Info_Float*)node->type)->bits == 32)
+						printf("--> Value %f\n", node->value.value.f32);
+					else
+						printf("--> Value %f\n", node->value.value.f64);
+				} break;
+				case KAI_TYPE_PROCEDURE: {
+					printf("--> Procedure %u\n", node->value.procedure_location);
+				} break;
+				default: {
+					panic_with_message("Excuse me, what type IS THIS?! %i", node->type->type);
+				}
 			}
 		}
 
