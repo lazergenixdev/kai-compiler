@@ -1,5 +1,5 @@
 #define KAI_USE_MEMORY_API
-#include "../include/kai.h"
+#include "kai.h"
 
 typedef struct {
 	Kai_s64 total_allocated;

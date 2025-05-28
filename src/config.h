@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "../include/kai.h"
+#include "kai.h"
 #include <stdio.h>   // --> printf
 
 

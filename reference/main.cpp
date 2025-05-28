@@ -2,7 +2,7 @@
 #define KAI_USE_DEBUG_API
 #define KAI_USE_MEMORY_API
 #define KAI_USE_CPP_API
-#include "../include/kai/kai.h"
+#include "kai.h"
 
 using P_main = Kai_s32(Kai_slice);
 

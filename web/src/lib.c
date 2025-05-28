@@ -1,6 +1,6 @@
 #define KAI_USE_DEBUG_API
 #define KAI_USE_MEMORY_API
-#include "../../include/kai/kai.h"
+#include "kai.h"
 extern void __wasm_console_log(const char* message, int value);
 extern void __wasm_write_string(Kai_ptr User, Kai_str String);
 extern void __wasm_write_c_string(Kai_ptr User, char const* C_String);

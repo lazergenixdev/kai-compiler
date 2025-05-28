@@ -1,4 +1,4 @@
-#include "../include/kai.h"
+#include "kai.h"
 
 #if defined(KAI__MACHINE_AMD64)
 // Each x86 64-bit instruction can be up to 16 bytes (or more possibly.. idk)
