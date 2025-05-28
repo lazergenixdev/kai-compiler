@@ -83,7 +83,7 @@ void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 acc
     flags |= (access & KAI_MEMORY_ACCESS_WRITE)?   PROT_WRITE : 0;
     flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)? PROT_EXEC  : 0;
     mprotect(ptr, size, flags);
-    Kai__Memory_Internal* internal = user;
+    //Kai__Memory_Internal* internal = user;
     //if (internal->debug_level == KAI_MEMORY_DEBUG_VERBOSE)
     //{
     //    printf("[KAI] Changed Access of [%p,%p) to %x\n", ptr, (Kai_u8*)ptr + size, access);

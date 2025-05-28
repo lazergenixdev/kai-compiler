@@ -1,7 +1,11 @@
 #include "kai.h"
 
-// TODO: remove this
+#if 0
 #include <stdio.h>
+#define __debug_log(...) printf(__VA_ARGS__)
+#else
+#define __debug_log(...) (void)0
+#endif
 
 #define bcs__for(N) for (int i = 0; i < (int)N; ++i)
 #define __type_to_size(T) ((T) >> 4)
@@ -88,7 +92,7 @@ Kai_Result kai_bc_insert_math(Kai_BC_Stream* stream, Kai_u8 type, Kai_u8 operati
     bcs__push_u8(stream, type);
     bcs__push_u32(stream, reg_src1);
     bcs__push_u32(stream, reg_src2);
-    printf("math %%%i <- %%%i, %%%i\n", reg_dst, reg_src1, reg_src2);
+    __debug_log("math %%%i <- %%%i, %%%i\n", reg_dst, reg_src1, reg_src2);
     return KAI_SUCCESS;
 }
 
@@ -208,7 +212,7 @@ Kai_Result kai_bc_insert_return(Kai_BC_Stream* stream, Kai_u8 count, Kai_Reg* re
     bcs__push_u8(stream, KAI_BOP_RETURN);
     bcs__push_u8(stream, count);
     bcs__for (count) bcs__push_u32(stream, regs[i]);
-    printf("ret %%%i\n", regs[0]);
+    __debug_log("ret %%%i\n", regs[0]);
     return KAI_SUCCESS;
 }
 

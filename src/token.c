@@ -1,8 +1,7 @@
 #include "config.h"
 
-//! @TODO: Implement Comments (multi-line)
 //! @TODO: String Escape \"
-//! @TODO: Add "false" and "true" keywords (re2c)
+//! @TODO: Add "false" and "true" keywords ?
 
 #if 1
 void kai__token_type_string(Kai_u32 Type, Kai_str* out_String)

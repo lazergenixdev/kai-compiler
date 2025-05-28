@@ -11,16 +11,23 @@
 #include <stddef.h> // --> NULL
 
 /*
+--- INCLUDE OPTIONS -------------------------------------------------------------------------------------
+
+	define  KAI_IMPLEMENTATION  in one compilation unit (.c/.cpp file) to use the library
+	--> TODO: header only
+
+    define  KAI_USE_MEMORY_API  to enable default memory allocator
+    define  KAI_USE_WRITER_API  to enable stdout and file writer
+    define  KAI_USE_CPP_API     to enable C++ API (experimental)
+
+	NOTE: When not using these APIs, no C standard libraries are used!
+
 --- CONVENTIONS -----------------------------------------------------------------------------------------
 
     Types:           begin with "Kai_"
     Functions:       begin with "kai_"
     Enums/Macros:    begin with "KAI_"
     Internal API:    begin with "KAI__" or "kai__" or "Kai__"
-
-    define  KAI_USE_MEMORY_API  to enable default memory allocator
-    define  KAI_USE_DEBUG_API   to enable debug functionality (such as a function to print errors)
-    define  KAI_USE_CPP_API     to enable C++ API (experimental)
 
     This header is divided into sections with `KAI__SECTION` for convenience
         KAI__SECTION_BUILTIN_TYPES
@@ -56,14 +63,14 @@
 #endif
 
 // Detect Platform
-#if defined(_WIN32)
+#if defined(__WASM__)
+#   define KAI__PLATFORM_WASM
+#elif defined(_WIN32)
 #	define KAI__PLATFORM_WINDOWS
 #elif defined(__APPLE__)
 #   define KAI__PLATFORM_APPLE
 #elif defined(__linux__)
 #   define KAI__PLATFORM_LINUX
-#elif defined(__WASM__)
-#   define KAI__PLATFORM_WASM
 #else
 #	define KAI__PLATFORM_UNKNOWN
 #	pragma message("[KAI] warning: Platform not recognized! (KAI__PLATFORM_UNKNOWN defined)")
@@ -248,6 +255,7 @@ typedef struct {
 
 typedef void Kai_P_Write(void* User, Kai_str String);
 
+// TODO: unify with debug writer + want formatting options + writing numbers
 typedef struct {
 	Kai_P_Write * write;
 	void        * user;
@@ -850,7 +858,7 @@ KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_Writer*
 #define kai__unused(VAR) (void)VAR
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-// --- Error Handling --------------------------------------------------------
+// --- (Fatal) Error Handling + Debug Assertions -----------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 #if defined(KAI__DISABLE_ALL_CHECKS)
@@ -863,16 +871,20 @@ KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_Writer*
 
 KAI_API (void) kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line);
 
+#define KAI__FATAL_ERROR(Desc, Message) \
+	kai__fatal_error(Desc, Message, __FILE__, __LINE__);
+
 #define kai__assert(EXPR) \
 	if (!(EXPR))          \
-		kai__fatal_error("Assertion Failed", #EXPR, __FILE__, __LINE__)
+		KAI__FATAL_ERROR("Assertion Failed", #EXPR)
 		
 #define kai__unreachable() \
-	kai__fatal_error("Assertion Failed", "Unreachable code", __FILE__, __LINE__)
+	KAI__FATAL_ERROR("Assertion Failed", "Unreachable was reached! D:")
 
+// TODO: never check allocations -> move checks to memory allocator API
 #define kai__check_allocation(PTR) \
 	if ((PTR) == NULL)             \
-		kai__fatal_error("Allocation Error", #PTR " was null", __FILE__, __LINE__)
+		KAI__FATAL_ERROR("Allocation Error", #PTR " was null")
 
 #endif
 		
@@ -971,7 +983,7 @@ static inline void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* Arena, Kai
 	kai__assert(Arena != NULL);
 
     if (Size > Arena->bucket_size)
-        return NULL;
+        KAI__FATAL_ERROR("Arena Allocator", "Object size greater than bucket size (incorrect usage)");
     
     if (Arena->current_allocated + Size > Arena->bucket_size)
     {
@@ -1422,14 +1434,14 @@ static inline void kai__error_unexpected(Kai__Parser* parser, Kai__Token* token,
 #endif
 #ifdef KAI_USE_MEMORY_API
 
-	enum {
+enum {
 	KAI_MEMORY_ERROR_OUT_OF_MEMORY  = 1, //! @see kai_memory_create implementation
 	KAI_MEMORY_ERROR_MEMORY_LEAK    = 2, //! @see kai_memory_destroy implementation
 };
 
-	KAI_API (Kai_Result) kai_memory_create   (Kai_Allocator* out_Allocator);
-	KAI_API (Kai_Result) kai_memory_destroy  (Kai_Allocator* Allocator);
-	KAI_API (Kai_u64)    kai_memory_usage    (Kai_Allocator* Allocator);
+KAI_API (Kai_Result) kai_memory_create   (Kai_Allocator* out_Allocator);
+KAI_API (Kai_Result) kai_memory_destroy  (Kai_Allocator* Allocator);
+KAI_API (Kai_u64)    kai_memory_usage    (Kai_Allocator* Allocator);
 
 #endif
 #ifdef KAI_USE_DEBUG_API
@@ -1445,11 +1457,13 @@ enum {
 };
 typedef Kai_u32 Kai_Debug_Color;
 
+// TODO: move to main API
 typedef void Kai_P_Write_String   (Kai_ptr User, Kai_str String);
 typedef void Kai_P_Write_C_String (Kai_ptr User, char const* C_String);
 typedef void Kai_P_Write_Char     (Kai_ptr User, Kai_u8 Char);
 typedef void Kai_P_Set_Color      (Kai_ptr User, Kai_Debug_Color Color);
 
+// TODO: move to main API
 typedef struct {
 	Kai_P_Write_String*   write_string;
 	Kai_P_Write_C_String* write_c_string;
@@ -1461,13 +1475,14 @@ typedef struct {
 KAI_API (Kai_Debug_String_Writer*) kai_debug_stdout_writer(void);
 KAI_API (void) kai_debug_open_file_writer(Kai_Debug_String_Writer* out_Writer, const char* Path);
 KAI_API (void) kai_debug_close_file_writer(Kai_Debug_String_Writer* Writer);
+
+// TODO: move to main API
 KAI_API (void) kai_debug_write_syntax_tree(Kai_Debug_String_Writer* Writer, Kai_Syntax_Tree* Tree);
 KAI_API (void) kai_debug_write_error(Kai_Debug_String_Writer* Writer, Kai_Error* Error);
 KAI_API (void) kai_debug_write_type(Kai_Debug_String_Writer* Writer, Kai_Type Type);
 KAI_API (void) kai_debug_write_expression(Kai_Debug_String_Writer* Writer, Kai_Expr Expr);
 
 #endif
-
 #ifdef KAI_USE_CPP_API
 #include <string>
 #include <fstream>

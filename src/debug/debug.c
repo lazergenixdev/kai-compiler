@@ -1,7 +1,5 @@
 #define KAI_USE_DEBUG_API
 #include "../config.h"
-#include <stdio.h>
-#include <locale.h>
 
 static char const* const kai__result_string_map[KAI_RESULT_COUNT] = {
     [KAI_SUCCESS]         = "Success",
@@ -158,6 +156,7 @@ repeat:
 
 void kai_debug_write_type(Kai_Debug_String_Writer* writer, Kai_Type Type)
 {
+    void* void_Type = Type;
     char temp[64];
     if (Type == NULL) {
         kai__write("[null]");
@@ -167,16 +166,16 @@ void kai_debug_write_type(Kai_Debug_String_Writer* writer, Kai_Type Type)
         default:                 { kai__write("[Unknown]"); } break;
         case KAI_TYPE_TYPE:      { kai__write("Type");      } break;
         case KAI_TYPE_INTEGER: {
-            Kai_Type_Info_Integer* info = Type;
+            Kai_Type_Info_Integer* info = void_Type;
             kai__write_format("%s%i", info->is_signed? "s":"u", info->bits);
         } break;
         case KAI_TYPE_FLOAT: {
-            Kai_Type_Info_Float* info = Type;
+            Kai_Type_Info_Float* info = void_Type;
             kai__write_format("f%i", info->bits);
         } break;
         case KAI_TYPE_POINTER:   { kai__write("Pointer");   } break;   
         case KAI_TYPE_PROCEDURE: {
-            Kai_Type_Info_Procedure* info = Type;
+            Kai_Type_Info_Procedure* info = void_Type;
             kai__write("(");
             for (int i = 0;;) {
                 kai_debug_write_type(writer, info->sub_types[i]);
@@ -553,7 +552,10 @@ kai_debug_write_expression(Kai_Debug_String_Writer* writer, Kai_Expr expr) {
 
 // ****************************************************************************
 
-#ifndef __WASM__
+#if !defined(KAI__PLATFORM_WASM)
+#include <stdio.h>
+#include <locale.h>
+
 char const* kai__term_debug_colors [KAI_DEBUG_COLOR_COUNT] = {
     [KAI_DEBUG_COLOR_PRIMARY]     = "\x1b[0;37m",
     [KAI_DEBUG_COLOR_SECONDARY]   = "\x1b[1;97m",
@@ -563,24 +565,23 @@ char const* kai__term_debug_colors [KAI_DEBUG_COLOR_COUNT] = {
 };
 
 void kai__stdout_writer_write_string(Kai_ptr user, Kai_str string) {
-    (void)user;
+    kai__unused(user);
     fwrite(string.data, 1, string.count, stdout);
 }
 void kai__stdout_writer_write_c_string(Kai_ptr user, char const* string) {
-    (void)user;
+    kai__unused(user);
     printf("%s", string);
 }
 void kai__stdout_writer_write_char(Kai_ptr user, Kai_u8 c) {
-    (void)user;
+    kai__unused(user);
     putchar(c);
 }
 void kai__stdout_writer_set_color(Kai_ptr user, Kai_Debug_Color color) {
-    (void)user;
+    kai__unused(user);
     printf("%s", kai__term_debug_colors[color]);
 }
 
 #if defined(KAI__PLATFORM_WINDOWS)
-// including Windows.h results in a compiler warning :/
 int __stdcall SetConsoleOutputCP(unsigned int wCodePageID);
 #endif
 
@@ -613,8 +614,8 @@ void kai__file_writer_write_char(Kai_ptr user, Kai_u8 c) {
     fputc(c, user);
 }
 void kai__file_writer_set_color(Kai_ptr user, Kai_Debug_Color color) {
-    (void)user, (void)color;
-    //fprintf(user, "%s", kai__term_debug_colors[color]);
+    kai__unused(user);
+    kai__unused(color);
 }
 
 #if defined(KAI__COMPILER_MSVC)
@@ -640,6 +641,7 @@ void kai_debug_open_file_writer(Kai_Debug_String_Writer* writer, const char* pat
 
 void kai_debug_close_file_writer(Kai_Debug_String_Writer* writer)
 {
-    fclose(writer->user);
+    if (writer->user != NULL)
+        fclose(writer->user);
 }
 #endif

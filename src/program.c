@@ -1112,18 +1112,19 @@ Kai__DG_Node* kai__dg_find_node(Kai__Dependency_Graph* graph, Kai_str name)
 	return NULL;
 }
 
-Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr, Kai_Type* type);
+Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr, Kai_Type* Type);
 
-Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr expr) {
-	switch (expr->id) {
+Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr) {
+	void* void_Expr = Expr;
+	switch (Expr->id) {
 		case KAI_EXPR_IDENTIFIER: {
-			Kai__DG_Node* d = kai__dg_find_node(Context->dependency_graph, expr->source_code);
+			Kai__DG_Node* d = kai__dg_find_node(Context->dependency_graph, Expr->source_code);
 			kai__assert(d != NULL);
 			return d->type;
 		} break;
 
 		case KAI_EXPR_PROCEDURE: {
-			Kai_Expr_Procedure* node = expr;
+			Kai_Expr_Procedure* node = void_Expr;
 			Kai_Type_Info_Procedure* type_info = kai__arena_allocate(&Context->arena, sizeof(Kai_Type_Info_Procedure));
 			type_info->type = KAI_TYPE_PROCEDURE;
 			type_info->in_count = node->in_count;
@@ -1144,12 +1145,12 @@ Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Ka
 			return (Kai_Type)type_info;
 		}
 		case KAI_EXPR_PROCEDURE_CALL: {
-			Kai_Expr_Procedure_Call* node = expr;
+			Kai_Expr_Procedure_Call* node = void_Expr;
 			// Find type of the procedure we are calling
 			if (node->proc->id != KAI_EXPR_IDENTIFIER)
 				panic_with_message("procedure calls only implemented for identifiers");
 
-			Kai_Expr_Identifier* proc = node->proc;
+			Kai_Expr_Identifier* proc = (Kai_Expr_Identifier*)node->proc;
 			Kai__DG_Node* dg_node = kai__dg_find_node(Context->dependency_graph, proc->source_code);
 
 			if (dg_node == NULL)
@@ -1159,7 +1160,7 @@ Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Ka
 			if (type->type != KAI_TYPE_PROCEDURE)
 				panic_with_message("calling something that does not have procedure type!");
 
-			Kai_Type_Info_Procedure* proc_type = type;
+			Kai_Type_Info_Procedure* proc_type = (Kai_Type_Info_Procedure*)type;
 
 			if (proc_type->out_count == 0)
 				panic_with_message("procedure does not have a return");
@@ -1168,7 +1169,7 @@ Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Ka
 		} break;
 
 		default: {
-			panic_with_message("not handled %i", expr->id);
+			panic_with_message("not handled %i", Expr->id);
 		}
 	}
 
@@ -1238,10 +1239,11 @@ Kai_Result kai__bytecode_emit_expression(
 	Kai_Expr Expr,
 	Kai_u32* output_register)
 {
+	void* void_Expr = Expr;
 	switch (Expr->id) {
 		case KAI_EXPR_NUMBER: {
 			// TODO: Only Parse number HERE, generate error if number can not be represented by the type
-			Kai_Expr_Number* node = Expr;
+			Kai_Expr_Number* node = void_Expr;
 			Kai_Reg dst = kai__bytecode_allocate_register(Context);
 			Kai_Value value;
 			value.s32 = node->value.Whole_Part;
@@ -1250,12 +1252,12 @@ Kai_Result kai__bytecode_emit_expression(
 		} break;
 
 		case KAI_EXPR_IDENTIFIER: {
-			Kai_Expr_Identifier* node = Expr;
+			Kai_Expr_Identifier* node = void_Expr;
 			kai__bytecode_find_register(Context, node->source_code, output_register);
 		} break;
 
 		case KAI_EXPR_BINARY: {
-			Kai_Expr_Binary* node = Expr;
+			Kai_Expr_Binary* node = void_Expr;
 			Kai_Reg left, right;
 			kai__bytecode_emit_expression(Context, node->left, &left);
 			kai__bytecode_emit_expression(Context, node->right, &right);
@@ -1278,15 +1280,18 @@ Kai_Result kai__bytecode_emit_expression(
 			kai__write_format("Emit %i Expression\n", Expr->id);
 		} break;
 	}
+
+	return KAI_SUCCESS;
 }
 
 Kai_Result kai__bytecode_emit_statement(
 	Kai__Bytecode_Generation_Context* Context,
 	Kai_Expr Expr)
 {
+	void* void_Expr = Expr;
 	switch (Expr->id) {
 		case KAI_STMT_COMPOUND: {
-			Kai_Stmt_Compound* node = Expr;
+			Kai_Stmt_Compound* node = void_Expr;
 			Kai_Expr current = node->head;
 			while (current != NULL)
 			{
@@ -1296,8 +1301,7 @@ Kai_Result kai__bytecode_emit_statement(
 		} break;
 
 		case KAI_STMT_RETURN: {
-			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
-			Kai_Stmt_Return* node = Expr;
+			Kai_Stmt_Return* node = void_Expr;
 			Kai_Reg result;
 			kai__bytecode_emit_expression(Context, node->expr, &result);
 			kai_bc_insert_return(&Context->bytecode->stream, 1, &result);
@@ -1333,6 +1337,7 @@ void kai__stdout_write(void* User, Kai_str String)
 	kai_debug_stdout_writer()->write_string(NULL, String);
 }
 
+#if 0
 // TODO: Now we can give our compiler options like:
 typedef struct {
 	Kai_u32 Interpreter_Max_Step_Count;
@@ -1351,20 +1356,22 @@ void __example() {
 	Kai_Program program;
 	kai_create_program(&info, &program);
 }
+#endif
 
 Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr, Kai_Type* type)
 {
 	Kai_Allocator* allocator = &Context->dependency_graph->allocator;
+	void* void_Expr = Expr;
 	switch (Expr->id)
 	{
 		case KAI_EXPR_NUMBER: {
 			// TODO: Only Parse number HERE, generate error if number can not be represented by the type
-			Kai_Expr_Number* node = Expr;
+			Kai_Expr_Number* node = void_Expr;
 			return (Kai__DG_Value) {.value = {.u64 = node->value.Whole_Part}};
 		} break;
 
 		case KAI_EXPR_PROCEDURE: {
-			Kai_Expr_Procedure* procedure = Expr;
+			Kai_Expr_Procedure* procedure = void_Expr;
 
 			// Add all input registers
 			Kai_Expr current = procedure->in_out_expr;
@@ -1406,8 +1413,7 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 		} break;
 
 		case KAI_EXPR_IDENTIFIER: {
-			void* base = Expr;
-			Kai_Expr_Identifier* expr = base;
+			Kai_Expr_Identifier* expr = void_Expr;
 			Kai__DG_Node* other_node = kai__dg_find_node(Context->dependency_graph, expr->source_code);
 
 			if (other_node == NULL)
@@ -1423,12 +1429,12 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 
 		case KAI_EXPR_PROCEDURE_CALL: {
 			// TODO: check that procedure type matches call input
-			Kai_Expr_Procedure_Call* call = Expr;
+			Kai_Expr_Procedure_Call* call = void_Expr;
 
 			if (call->proc->id != KAI_EXPR_IDENTIFIER)
 				panic_with_message("procedure must be identifier");
 
-			Kai_Expr_Identifier* proc = call->proc;
+			Kai_Expr_Identifier* proc = (Kai_Expr_Identifier*)call->proc;
 			Kai__DG_Node* proc_node = kai__dg_find_node(Context->dependency_graph, proc->source_code);
 
 			// Generate procedure input
@@ -1470,6 +1476,8 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 			panic_with_message("kai__bytecode_generate_value ? %i", Expr->id);
 		}
 	}
+
+	return (Kai__DG_Value) {.value = {.u64 = 0xDEADBEEFDEADBEEF}};
 }
 
 Kai_Result kai__bytecode_generate_value(Kai__Bytecode_Generation_Context* Context, Kai__DG_Node* node)
