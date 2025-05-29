@@ -73,6 +73,8 @@ int main(int argc, char** argv) {
 
     Kai_Error     error     = {0};
 	Kai_Allocator allocator = {0};
+    Kai_Program   program   = {0};
+    
 	kai_memory_create(&allocator);
 
     if (options.parse_only) {
@@ -80,7 +82,6 @@ int main(int argc, char** argv) {
         goto cleanup;
     }
 
-    Kai_Program program = {0};
     Timer timer = {0};
     Timer_Init();
 
@@ -143,6 +144,7 @@ int main(int argc, char** argv) {
     }
 	
 cleanup:
+    kai_destroy_program(program);
     kai_destroy_error(&error, &allocator);
     {
         Kai_Result result = kai_memory_destroy(&allocator);

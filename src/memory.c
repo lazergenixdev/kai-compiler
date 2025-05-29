@@ -1,6 +1,10 @@
 #define KAI_USE_MEMORY_API
 #include "kai.h"
 
+#ifdef __WASM__
+extern void __wasm_console_log(const char* message, int value);
+#endif
+
 typedef struct {
 	Kai_s64 total_allocated;
 	//Kai_Memory_Tracker tracker;

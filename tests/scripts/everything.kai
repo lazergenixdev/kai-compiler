@@ -1,3 +1,24 @@
+
+lensq :: builtin.math.dot(v0, v0);
+
+//using builtin;
+
+//dot :: (x, y: [$N] $T) #builtin;
+//length :: (x: [$N] $T) #builtin;
+
+//tau : f32 : #pi * 2;
+
+//vector1 : [4] f32;
+//matrix1 : [3,3] f32 = math.transpose(other);
+
+test :: ()
+{
+    file := builtin.io.open("what.txt");
+    //defer builtin.io.close(file);
+}
+
+what :: builtin.memory_copy(dst, src, size);
+
 str :: u64;
 
 main :: (argv: [] str) -> s32 {
@@ -23,6 +44,8 @@ main :: (argv: [] str) -> s32 {
     ret 0;
 }
 
+// TODO: add "required" option to parser for native functions
+//       ... #native "required";
 beer :: (a: u32, b: f32) -> u32 #native;
 
 Environment :: u32;

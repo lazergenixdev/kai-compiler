@@ -1,5 +1,14 @@
 # TODO
-- [ ] Make todo list
+- [x] Make todo list
+- [x] Fix a bunch of compile warnings
+- [ ] Fix corruption in error messages
+- [ ] Fix procedure location in bytecode generation
+- [ ] Add declaration and assignment to bytecode generation
+- [ ] Scopes in bytecode generation
+- [ ] Simple machine code generation (ARM64)
+- [ ] Linear register allocation with spilling
+## Website test compiler playground thing
 - [ ] Fix random use of stdio
-- [ ] Fix a bunch of compile warnings
-- [ ] Get bytecode interpreter working (for compile-time execution)
+- [x] Fix WASM cmake toolchain, somehow...
+- [ ] Fix WASM page allocator (debug memory issues)
+- [ ] Get program creation working in WASM

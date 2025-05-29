@@ -11,5 +11,5 @@ if (NOT WASM)
     add_subdirectory("kai")   # Compiler
     add_subdirectory("tests")
 else ()
-    add_subdirectory("web/src")
+    add_subdirectory("web")
 endif ()

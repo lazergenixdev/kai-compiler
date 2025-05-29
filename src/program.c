@@ -73,9 +73,9 @@ Kai_Result kai_create_program_from_source(
 	kai__check(result);
 
 cleanup:
-	kai_destroy_syntax_tree(&syntax_tree);
-	kai__destroy_dependency_graph(&dependency_graph);
 	kai__destroy_bytecode(&bytecode);
+	kai__destroy_dependency_graph(&dependency_graph);
+	kai_destroy_syntax_tree(&syntax_tree);
 	return result;
 }
 #undef kai__check
@@ -1277,7 +1277,9 @@ Kai_Result kai__bytecode_emit_expression(
 		default: {
 			char temp[64];
 			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
-			kai__write_format("Emit %i Expression\n", Expr->id);
+			kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
+			kai__write_format("[emit_expression] skipping Expr(%i)\n", Expr->id);
+			kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
 		} break;
 	}
 
@@ -1310,7 +1312,9 @@ Kai_Result kai__bytecode_emit_statement(
 		default: {
 			char temp[64];
 			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
-			kai__write_format("Emit %i Statment\n", Expr->id);
+			kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
+			kai__write_format("[emit_statement] skipping Stmt(%i)\n", Expr->id);
+			kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
 		} break;
 	}
 
@@ -1387,6 +1391,7 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 			Kai_u32 location = 0;
 			Kai_Result result = kai__bytecode_emit_procedure(Context, procedure, &location);
 
+#ifdef DEBUG_CODE_GENERATION
 			Kai_Bytecode bytecode = {
 				.data = Context->bytecode->stream.data,
 				.count = Context->bytecode->stream.count,
@@ -1403,6 +1408,7 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 			};
 			kai_bytecode_to_c(&bytecode, &writer);
 			kai__stdout_write(NULL, KAI_STRING("\n"));
+#endif
 
 			if (result != KAI_SUCCESS)
 				panic_with_message("something else went wrong...");
@@ -1502,6 +1508,7 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 		.bytecode = out_Bytecode,
 	};
 
+	Kai_u32 _size = 0;
 	// Initialization
 	{
 		Kai_Interpreter_Setup interp_info = {
@@ -1509,7 +1516,8 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 			.max_call_stack_count   = 1024,
 			.max_return_value_count = 1024,
 		};
-		interp_info.memory = kai__allocate(NULL, kai_interp_required_memory_size(&interp_info), 0);
+		_size = kai_interp_required_memory_size(&interp_info);
+		interp_info.memory = kai__allocate(NULL, _size, 0);
 		kai_interp_create(&context.bytecode->interp, &interp_info);
 		context.bytecode->stream.allocator = allocator;
 	}
@@ -1540,25 +1548,30 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
         #endif
 
 #ifdef DEBUG_CODE_GENERATION
+		kai_debug_stdout_writer()->set_color(0, KAI_DEBUG_COLOR_IMPORTANT_2);
 		printf("Generating %i -> %.*s\n", i, node->name.count, node->name.data);
+		kai_debug_stdout_writer()->set_color(0, KAI_DEBUG_COLOR_PRIMARY);
 #endif
 
 		if (node_index.flags & KAI__DG_NODE_TYPE)
 		{
 			result = kai__bytecode_generate_type(&context, node);
 
-			kai_debug_stdout_writer()->write_c_string(0, "--> ");
+#ifdef DEBUG_CODE_GENERATION
+			kai_debug_stdout_writer()->write_c_string(0, "--> Type ");
 			kai_debug_write_type(kai_debug_stdout_writer(), node->type);
 			kai_debug_stdout_writer()->write_char(0, '\n');
+#endif
 		}
 		else {
 			result = kai__bytecode_generate_value(&context, node);
 
+#ifdef DEBUG_CODE_GENERATION
 			// TODO: write a function that does EXACTLY THIS!
 			switch (node->type->type)
 			{
 				case KAI_TYPE_TYPE: {
-					kai_debug_stdout_writer()->write_c_string(0, "--> Type ");
+					kai_debug_stdout_writer()->write_c_string(0, "--> Value ");
 					kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
 					kai_debug_stdout_writer()->write_char(0, '\n');
 				} break;
@@ -1578,11 +1591,16 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 					panic_with_message("Excuse me, what type IS THIS?! %i", node->type->type);
 				}
 			}
+#endif
 		}
 
 		if (result != KAI_SUCCESS)
 			return result;
 	}
+
+	kai__array_destroy(&context.registers);
+	kai__free(context.bytecode->interp.registers, _size);
+	kai__dynamic_arena_allocator_destroy(&context.arena);
 	return result;
 }
 
@@ -1644,6 +1662,7 @@ Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_
 
 	// Allocate memory to store machine code
 	Kai_Program program = {0};
+	program.allocator = *allocator;
 	program.platform_machine_code = allocator->allocate(allocator->user, allocator->page_size, KAI_MEMORY_ACCESS_WRITE);
 	program.code_size = allocator->page_size;
 
@@ -1653,8 +1672,15 @@ Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_
 	//	arm64_machine_code.count * sizeof(uint32_t)
 	//);
 
+	uint32_t arm_instructions[] = {
+		kai__arm64_movz(0, 0xA, 0),
+		kai__arm64_ret(),
+	};
+
+	//kai__memory_copy(program.platform_machine_code,
+    //                     "\xB8\x45\x00\x00\x00\xC3", 7);
 	kai__memory_copy(program.platform_machine_code,
-                         "\xB8\x45\x00\x00\x00\xC3", 7);
+                         arm_instructions, sizeof(arm_instructions));
 
 	// Set memory as executable
 	allocator->set_access(allocator->user, program.platform_machine_code, program.code_size, KAI_MEMORY_ACCESS_EXECUTE);
@@ -1663,7 +1689,9 @@ Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_
 
 	*out_Program = program;
 
-	return KAI_SUCCESS;
+	Info->error->result = KAI_ERROR_FATAL;
+	Info->error->message = KAI_STRING("todo");
+	return KAI_ERROR_FATAL;
 }
 
 void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
@@ -1684,12 +1712,20 @@ void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
 
 void kai__destroy_bytecode(Kai__Bytecode* Bytecode)
 {
-	(void)Bytecode; // TODO: remove
+	Kai_Allocator* allocator = Bytecode->stream.allocator;
+	kai__free(Bytecode->stream.data, Bytecode->stream.capacity);
 }
 
 void kai_destroy_program(Kai_Program Program)
 {
-	Program.allocator.free(Program.allocator.user, Program.platform_machine_code, Program.code_size);
+	Kai_Allocator* allocator = &Program.allocator;
+	kai__hash_table_destroy(Program.procedure_table);
+	if (Program.code_size != 0)
+		Program.allocator.free(
+			Program.allocator.user,
+			Program.platform_machine_code,
+			Program.code_size
+		);
 }
 
 void* kai_find_procedure(Kai_Program Program, Kai_str Name, Kai_Type Type)

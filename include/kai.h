@@ -101,7 +101,11 @@
 #	define KAI_UTF8(STRING) STRING
 #endif
 
+#if defined(KAI__PLATFORM_WASM)
+#define KAI_API(RETURN_TYPE) __attribute__((__visibility__("default"))) extern RETURN_TYPE
+#else
 #define KAI_API(RETURN_TYPE) extern RETURN_TYPE
+#endif
 
 #define KAI_EMPTY_STRING    KAI_STRUCT(Kai_str){0}
 #define KAI_STRING(LITERAL) KAI_STRUCT(Kai_str){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
@@ -853,7 +857,7 @@ KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_Writer*
 	allocator->heap_allocate(allocator->user, Old, New_Size, Old_Size)
 
 #define kai__free(Ptr,Size) \
-	allocator->heap_allocate(allocator->user, Ptr, Size, 0)
+	allocator->heap_allocate(allocator->user, Ptr, 0, Size)
 
 #define kai__unused(VAR) (void)VAR
 
@@ -1399,7 +1403,7 @@ static inline void kai__error_unexpected(Kai__Parser* parser, Kai__Token* token,
 
     Kai__Dynamic_Buffer buffer = {0};
     kai__dynamic_buffer_append_string(&buffer, KAI_STRING("unexpected "));
-    Kai_u8 temp [32];
+    Kai_u8 temp [32] = {};
     Kai_str type = { .data = temp, .count = sizeof(temp) };
 	kai__token_type_string(token->type, &type);
     kai__dynamic_buffer_append_string(&buffer, type);

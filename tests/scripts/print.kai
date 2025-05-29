@@ -1,0 +1,3 @@
+
+print_string :: (value: str) #native;
+print_value  :: (value: u32) #native;

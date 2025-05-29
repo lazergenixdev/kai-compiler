@@ -7,11 +7,12 @@ extern void __wasm_write_c_string(Kai_ptr User, char const* C_String);
 extern void __wasm_write_char(Kai_ptr User, Kai_u8 Char);
 extern void __wasm_set_color(Kai_ptr User, Kai_Debug_Color Color_Index);
 
+__attribute__((__visibility__("default")))
 int test(const char* source) {
     Kai_Allocator allocator = {0};
     Kai_Error error = {0};
 
-    kai_create_memory(&allocator);
+    kai_memory_create(&allocator);
 
     Kai_Syntax_Tree tree = {0};
     Kai_Syntax_Tree_Create_Info info = {
@@ -35,5 +36,5 @@ int test(const char* source) {
 
     kai_destroy_error(&error, &allocator);
     kai_destroy_syntax_tree(&tree);
-    return kai_destroy_memory(&allocator);
+    return kai_memory_destroy(&allocator);
 }
