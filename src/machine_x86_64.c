@@ -1,6 +1,6 @@
 #include "kai.h"
 
-#if defined(KAI__MACHINE_AMD64)
+#if defined(KAI__MACHINE_X86_64) && 0
 // Each x86 64-bit instruction can be up to 16 bytes (or more possibly.. idk)
 // so the caller will need to make sure that at least this amount of
 // space is available before each function call

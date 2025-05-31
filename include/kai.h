@@ -5,11 +5,6 @@
  * @development:  https://github.com/lazergenixdev/kai-compiler
  * @license:      GNU GPLv3 (see end of file)
  */
-#ifndef KAI__H
-#define KAI__H
-#include <stdint.h> // --> uint32, uint64, ...
-#include <stddef.h> // --> NULL
-
 /*
 --- INCLUDE OPTIONS -------------------------------------------------------------------------------------
 
@@ -38,10 +33,22 @@
         KAI__SECTION_CORE_API
 
 ---------------------------------------------------------------------------------------------------------
-*/
 
-// TODO: remove this
-#define KAI_IMPLEMENTATION
+	CODE STYLE:
+
+	I have one very simple rule, "always" choose formatting that increases visibility
+
+	This means:
+		- Strict following of 'CONVENTIONS' above
+			- Note: Macros that act like functions are allowed to look like functions
+		- No complicated macros (anything that makes the code NOT look like C)
+		- Align similar lines together
+
+*/
+#ifndef KAI__H
+#define KAI__H
+#include <stdint.h> // --> uint32, uint64, ...
+#include <stddef.h> // --> NULL
    
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
@@ -80,7 +87,7 @@
 #if defined(__WASM__)
 #	define KAI__MACHINE_WASM // God bless your soul 🙏
 #elif defined(__x86_64__) || defined(_M_X64)
-#	define KAI__MACHINE_AMD64
+#	define KAI__MACHINE_X86_64
 #elif defined(__i386__) || defined(_M_IX86)
 #	define KAI__MACHINE_X86
 #elif defined(__aarch64__) || defined(_M_ARM64)
@@ -102,9 +109,9 @@
 #endif
 
 #if defined(KAI__PLATFORM_WASM)
-#define KAI_API(RETURN_TYPE) __attribute__((__visibility__("default"))) extern RETURN_TYPE
+#	define KAI_API(RETURN_TYPE) __attribute__((__visibility__("default"))) extern RETURN_TYPE
 #else
-#define KAI_API(RETURN_TYPE) extern RETURN_TYPE
+#	define KAI_API(RETURN_TYPE) extern RETURN_TYPE
 #endif
 
 #define KAI_EMPTY_STRING    KAI_STRUCT(Kai_str){0}
@@ -698,6 +705,7 @@ typedef struct {
     Kai_u8       input_count;
 } Kai_Native_Procedure;
 
+	// TODO: replace with Kai_Byte_Array
 typedef struct {
     Kai_u8*        data;
     Kai_u32        count;
