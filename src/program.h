@@ -57,6 +57,7 @@ typedef KAI__HASH_TABLE(Kai__Bytecode_Procedure) Kai__Bytecode_Procedure_Table;
 typedef struct {
 	Kai_BC_Stream                 stream; // Global bytecode stream
 	Kai_Interpreter               interp; // <3
+	KAI__ARRAY(Kai_u32)           branch_hints;
 	Kai__Bytecode_Procedure_Table procedure_table;
 } Kai__Bytecode;
 

@@ -1,5 +1,5 @@
 #include "kai.h"
-#include <stdio.h>
+//#include <stdio.h>
 
 #define bci__for(N) for (int i = 0; i < (int)N; ++i)
 #define __type_to_size(T) ((T) >> 4)
@@ -123,12 +123,12 @@ Kai_Value bci__compute_math(uint8_t type, uint8_t op, Kai_Value a, Kai_Value b) 
 uint8_t bci__compute_comparison(uint8_t type, uint8_t comp, Kai_Value a, Kai_Value b) {
 #   define BCI__COMPARE(A,B)              \
     switch (comp) {                       \
-        case KAI_CMP_LT:  return A < B;   \
-        case KAI_CMP_GTE: return A >= B;  \
-        case KAI_CMP_GT:  return A > B;   \
-        case KAI_CMP_LTE: return A <= B;  \
-        case KAI_CMP_EQ:  return A == B;  \
-        case KAI_CMP_NE:  return A != B;  \
+        case KAI_CMP_LT: return A < B;   \
+        case KAI_CMP_GE: return A >= B;  \
+        case KAI_CMP_GT: return A > B;   \
+        case KAI_CMP_LE: return A <= B;  \
+        case KAI_CMP_EQ: return A == B;  \
+        case KAI_CMP_NE: return A != B;  \
     }
     switch (type) {
 #       define X(TYPE, ITEM, NAME) case KAI_##NAME: BCI__COMPARE(a.ITEM, b.ITEM)

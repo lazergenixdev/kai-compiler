@@ -664,7 +664,7 @@ Kai_Result kai__dg_insert_value_dependencies(
     break;
     }
 
-	return KAI_SUCCESS;
+	return result;
 }
 
 Kai_Result kai__dg_insert_type_dependencies(
@@ -822,7 +822,7 @@ Kai_Result kai__create_dependency_graph(
 	//kai__hash_table_create(&global->identifiers);
 
 	// Insert builtin types
-	for (int i = 0, next = 0; i < count_of(kai__builtin_types); ++i)
+	for (int i = 0, next = 0; i < kai__count(kai__builtin_types); ++i)
 	{
 		kai__array_append(&out_Graph->nodes, (Kai__DG_Node) {
 			.type        = &kai__type_info_type,
@@ -994,7 +994,7 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
 	//}
 
 	// Perform DFS traversal
-	for_n (Graph->nodes.count) {
+	kai__array_iterate (Graph->nodes, i) {
 		Kai__DG_Node_Index node_index = {.value = (Kai_u32)i};
 		Kai_u32 v = kai__node_index_to_index(node_index);
 		if (!dfs.visited[v]) dfs_explore(&dfs, node_index);
@@ -1009,7 +1009,7 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
 	{
 		Kai_u32 next = 0;
 		Kai_u32 count = 0;
-		for_n (Graph->nodes.count * 2) {
+		kai__for_n (Graph->nodes.count * 2) {
 			cont:
 			if (dfs.post[i] == next) {
 				Graph->compilation_order[count++] = (int)i;
@@ -1102,19 +1102,17 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
 
 Kai__DG_Node* kai__dg_find_node(Kai__Dependency_Graph* graph, Kai_str name)
 {
-	for_n (graph->nodes.count)
-	{
+	kai__array_iterate (graph->nodes, i) {
 		if (kai_str_equals(graph->nodes.elements[i].name, name))
-		{
 			return &graph->nodes.elements[i];
-		}
 	}
 	return NULL;
 }
 
 Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr, Kai_Type* Type);
 
-Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr) {
+Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr)
+{
 	void* void_Expr = Expr;
 	switch (Expr->id) {
 		case KAI_EXPR_IDENTIFIER: {
@@ -1186,37 +1184,11 @@ Kai_Result kai__bytecode_generate_type(Kai__Bytecode_Generation_Context* Context
 	return KAI_SUCCESS;
 }
 
-/*
-	fibonacci :: (n: int) -> int {
-		if n <= 2 ret 1;
-		ret fibonacci(n-2) + fibonacci(n-1);
-	}
-
-	fibonacci_location = stream.get_location();
-	insert_if(expr, body, else_body)
-		r = insert_expr(expr)
-			r = allocate register
-			stream.insert_compare(r, 'n', comp_gt, '2')
-			return r
-		stream.insert_branch(&endif_branch, r)
-		insert_statement(body)
-			stream.insert_return('1')
-		else_location = stream.get_location();
-		if (...) insert_statement(else_body);
-		endif_location = stream.get_location();
-		stream.set_branch(endif_branch, endif_location)
-	insert_statement()
-		r = insert_expr()
-		stream.insert_return(r)
-*/
-
 Kai_bool kai__bytecode_find_register(Kai__Bytecode_Generation_Context* Context, Kai_str Name, Kai_Reg* out)
 {
-	for (int i = Context->registers.count - 1; i >= 0; i--)
-	{
-		Kai__Bytecode_Register br = Context->registers.elements[i];
-		if (kai_str_equals(br.name, Name))
-		{
+	kai__array_iterate (Context->registers, i) {
+		Kai__Bytecode_Register br = Context->registers.elements[Context->registers.count-1-i];
+		if (kai_str_equals(br.name, Name)) {
 			*out = br.reg;
 			return KAI_TRUE;
 		}
@@ -1241,46 +1213,78 @@ Kai_Result kai__bytecode_emit_expression(
 {
 	void* void_Expr = Expr;
 	switch (Expr->id) {
-		case KAI_EXPR_NUMBER: {
-			// TODO: Only Parse number HERE, generate error if number can not be represented by the type
-			Kai_Expr_Number* node = void_Expr;
-			Kai_Reg dst = kai__bytecode_allocate_register(Context);
-			Kai_Value value;
-			value.s32 = node->value.Whole_Part;
-			kai_bc_insert_load_constant(&Context->bytecode->stream, KAI_S32, dst, value);
-			*output_register = dst;
-		} break;
+	case KAI_EXPR_NUMBER: {
+		// TODO: Only Parse number HERE, generate error if number can not be represented by the type
+		Kai_Expr_Number* node = void_Expr;
+		Kai_Reg dst = kai__bytecode_allocate_register(Context);
+		Kai_Value value;
+		value.s32 = (Kai_s32)node->value.Whole_Part;
+		kai_bc_insert_load_constant(&Context->bytecode->stream, KAI_S32, dst, value);
+		*output_register = dst;
+	} break;
 
-		case KAI_EXPR_IDENTIFIER: {
-			Kai_Expr_Identifier* node = void_Expr;
-			kai__bytecode_find_register(Context, node->source_code, output_register);
-		} break;
+	case KAI_EXPR_IDENTIFIER: {
+		Kai_Expr_Identifier* node = void_Expr;
+		kai__bytecode_find_register(Context, node->source_code, output_register);
+	} break;
 
-		case KAI_EXPR_BINARY: {
-			Kai_Expr_Binary* node = void_Expr;
-			Kai_Reg left, right;
-			kai__bytecode_emit_expression(Context, node->left, &left);
-			kai__bytecode_emit_expression(Context, node->right, &right);
-			Kai_Reg dst = kai__bytecode_allocate_register(Context);
-			Kai_u8 op = 0;
-			switch (node->op)
-			{
-				case '+': op = KAI_BOP_ADD; break;
-				case '-': op = KAI_BOP_SUB; break;
-				case '*': op = KAI_BOP_MUL; break;
-				case '/': op = KAI_BOP_DIV; break;
-			}
-			kai_bc_insert_math(&Context->bytecode->stream, KAI_S32, op, dst, left, right);
-			*output_register = dst;
-		} break;
+	case KAI_EXPR_BINARY: {
+		Kai_Expr_Binary* node = void_Expr;
+		Kai_Reg left, right;
+		kai__bytecode_emit_expression(Context, node->left, &left);
+		kai__bytecode_emit_expression(Context, node->right, &right);
+		Kai_Reg dst = kai__bytecode_allocate_register(Context);
+		Kai_u8 op = 0;
+		Kai_u8 cmp = 0;
+		switch (node->op)
+		{
+			default: panic_with_message("not implemented");
+			case '+': op = KAI_BOP_ADD; goto insert_math;
+			case '-': op = KAI_BOP_SUB; goto insert_math;
+			case '*': op = KAI_BOP_MUL; goto insert_math;
+			case '/': op = KAI_BOP_DIV; goto insert_math;
 
-		default: {
-			char temp[64];
-			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
-			kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
-			kai__write_format("[emit_expression] skipping Expr(%i)\n", Expr->id);
-			kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
-		} break;
+			insert_math: {
+				kai_bc_insert_math(&Context->bytecode->stream, KAI_S32, op, dst, left, right);
+			} break;
+
+			case '>':  cmp = KAI_CMP_LE; goto insert_compare;
+			case '<':  cmp = KAI_CMP_GE; goto insert_compare;
+			case '>=': cmp = KAI_CMP_LT; goto insert_compare;
+			case '<=': cmp = KAI_CMP_GT; goto insert_compare;
+			case '==': cmp = KAI_CMP_NE; goto insert_compare;
+			case '!=': cmp = KAI_CMP_EQ; goto insert_compare;
+
+			insert_compare: {
+				kai_bc_insert_compare(&Context->bytecode->stream, KAI_S32, cmp, dst, left, right);
+			} break;
+		}
+		*output_register = dst;
+	} break;
+
+	case KAI_EXPR_PROCEDURE_CALL: {
+		Kai_Expr_Procedure_Call* node = void_Expr;
+		Kai_Expr current = node->arg_head;
+		Kai_Reg inputs[8];
+		int i = 0;
+		while (current != NULL)
+		{
+			kai__bytecode_emit_expression(Context, current, inputs + i++);
+			current = current->next;
+		}
+		Kai_u32 branch;
+		Kai_Reg dst = kai__bytecode_allocate_register(Context);
+		kai_bc_insert_call(&Context->bytecode->stream, &branch, 1, (Kai_Reg[]){dst}, node->arg_count, inputs);
+		*output_register = dst;
+	} break;
+
+	default: {
+		char temp[64];
+		Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
+		kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
+		kai__write_format("[emit_expression] skipping Expr(%i)\n", Expr->id);
+		kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+	} break;
 	}
 
 	return KAI_SUCCESS;
@@ -1309,6 +1313,20 @@ Kai_Result kai__bytecode_emit_statement(
 			kai_bc_insert_return(&Context->bytecode->stream, 1, &result);
 		} break;
 
+		case KAI_STMT_IF: {
+			Kai_Stmt_If* node = void_Expr;
+			Kai_Reg expr;
+			kai__bytecode_emit_expression(Context, node->expr, &expr);
+			Kai_u32 branch = 0;
+			kai_bc_insert_branch(&Context->bytecode->stream, &branch, expr);
+			kai__bytecode_emit_statement(Context, node->body);
+			Kai_u32 location = Context->bytecode->stream.count;
+			kai_bc_set_branch(&Context->bytecode->stream, branch, location);
+			Kai_Allocator* allocator = &Context->dependency_graph->allocator;
+			kai__array_append(&Context->bytecode->branch_hints, location);
+			// TODO: else body
+		} break;
+
 		default: {
 			char temp[64];
 			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
@@ -1326,6 +1344,8 @@ Kai_Result kai__bytecode_emit_procedure(
 	Kai_Expr_Procedure* Procedure,
 	Kai_u32* out_Location)
 {
+	*out_Location = Context->bytecode->stream.count;
+
 	Kai_Expr current = Procedure->body;
 	while (current != NULL)
 	{
@@ -1338,7 +1358,7 @@ Kai_Result kai__bytecode_emit_procedure(
 
 void kai__stdout_write(void* User, Kai_str String)
 {
-	kai_debug_stdout_writer()->write_string(NULL, String);
+	kai_debug_stdout_writer()->write_string(User, String);
 }
 
 #if 0
@@ -1377,6 +1397,12 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 		case KAI_EXPR_PROCEDURE: {
 			Kai_Expr_Procedure* procedure = void_Expr;
 
+			if (procedure->body == NULL)
+			{
+				printf("Skip native procedure...\n");
+				return (Kai__DG_Value) {};
+			}
+
 			// Add all input registers
 			Kai_Expr current = procedure->in_out_expr;
 			for (int i = 0; i < procedure->in_count; i++)
@@ -1393,14 +1419,14 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 
 #ifdef DEBUG_CODE_GENERATION
 			Kai_Bytecode bytecode = {
-				.data = Context->bytecode->stream.data,
+				.data = Context->bytecode->stream.data + location,
 				.count = Context->bytecode->stream.count,
 				.ret_count = 1,
-				.arg_count = 2,
+				.arg_count = procedure->in_count,
 				.natives = NULL,
 				.native_count = 0,
-				.branch_hints = NULL,
-				.branch_count = 0
+				.branch_hints = Context->bytecode->branch_hints.elements,
+				.branch_count = Context->bytecode->branch_hints.count,
 			};
 			Kai_Writer writer = {
 				.write = kai__stdout_write,
@@ -1697,13 +1723,13 @@ Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_
 void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
 {
 	Kai_Allocator* allocator = &Graph->allocator;
-	for (Kai_u32 i = 0; i < Graph->nodes.count; ++i) {
+	kai__array_iterate (Graph->nodes, i) {
 		Kai__DG_Node* node = &Graph->nodes.elements[i];
 		kai__array_destroy(&node->value_dependencies);
 		kai__array_destroy(&node->type_dependencies);
 	}
 	kai__array_destroy(&Graph->nodes);
-	for (Kai_u32 i = 0; i < Graph->scopes.count; ++i) {
+	kai__array_iterate (Graph->scopes, i) {
 		Kai__DG_Scope* scope = &Graph->scopes.elements[i];
 		kai__hash_table_destroy(scope->identifiers);
 	}
@@ -1712,8 +1738,11 @@ void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph)
 
 void kai__destroy_bytecode(Kai__Bytecode* Bytecode)
 {
-	Kai_Allocator* allocator = Bytecode->stream.allocator;
-	kai__free(Bytecode->stream.data, Bytecode->stream.capacity);
+	if (Bytecode->stream.capacity) {
+		Kai_Allocator* allocator = Bytecode->stream.allocator;
+		kai__free(Bytecode->stream.data, Bytecode->stream.capacity);
+		kai__array_destroy(&Bytecode->branch_hints);
+	}
 }
 
 void kai_destroy_program(Kai_Program Program)

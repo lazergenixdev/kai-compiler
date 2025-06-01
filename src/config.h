@@ -25,25 +25,7 @@ extern void __wasm_console_log(const char* message, int value);
 
 KAI__CLANG_DISABLE_WARNING("-Wmultichar")
 
-// ==============================<< Shortcuts >>===============================
-
-#define for_n(N)  for (Kai_int i = 0; i < (Kai_int)(N); ++i)
-#define for_(I,N) for (Kai_int I = 0; I < (Kai_int)(N); ++I)
-#define count_of(ARR) (sizeof(ARR)/sizeof(ARR[0]))
-
 // =============================<< MACROS >>===================================
-
-#if defined(KAI__COMPILER_MSVC)
-#    define FUNCTION __FUNCSIG__
-#else
-#    define FUNCTION __PRETTY_FUNCTION__
-#endif
-
-#if defined(KAI__COMPILER_MSVC)
-#   define KAI_CONSTANT_STRING(S) {(Kai_u8*)(S), sizeof(S)-1}
-#else
-#   define KAI_CONSTANT_STRING(S) KAI_STRING(S)
-#endif
 
 #ifndef __WASM__
 #define panic_with_message(...) print_location(), printf(__VA_ARGS__), panic()
@@ -51,24 +33,14 @@ KAI__CLANG_DISABLE_WARNING("-Wmultichar")
 #define panic_with_message(MESSAGE) kai__fatal_error("Panic", MESSAGE, __FILE__, __LINE__)
 #endif
 
-#define assert(Z, ...) if (!(Z)) panic_with_message(__VA_ARGS__)
-#define log(L,F,N,...) \
-    printf("%s: [%s:%i] ", L, F, N), \
-    printf(__VA_ARGS__), \
-    putchar('\n')
-
 #define print_location() printf("in (%s:%i)\n", __FILE__, __LINE__)
-
-extern void panic(void);
-
-#define UNIMPLEMENTED(...) (void)sizeof(__VA_ARGS__), printf("%s is unimplemented :(", FUNCTION), panic()
 
 // ==========================<< DEBUG WRITER >>================================
 
 #define kai__write(CSTRING)       writer->write_c_string(writer->user, CSTRING)
 #define kai__write_string(STRING) writer->write_string(writer->user, STRING)
 #define kai__write_char(CHAR)     writer->write_char(writer->user, CHAR)
-#define kai__set_color(COLOR)     if (writer->set_color) writer->set_color(writer->user, COLOR)
+#define kai__set_color(COLOR)     if (writer->set_color != NULL) writer->set_color(writer->user, COLOR)
 
 #ifndef __WASM__
 // Must have a buffer declared as "char temp[..]"
@@ -81,13 +53,13 @@ extern void panic(void);
 #define kai__write_format(...)    (void)0
 #endif
 
-#define str_insert_string(Dest, String) \
-memcpy((Dest).data + (Dest).count, String, sizeof(String)-1), (Dest).count += sizeof(String)-1
+#ifndef __WASM__
+#include <stdlib.h>
 
-#define str_insert_str(Dest, Src) \
-memcpy((Dest).data + (Dest).count, (Src).data, (Src).count), (Dest).count += (Src).count
-
-#define str_insert_std(Dest, Src) \
-memcpy((Dest).data + (Dest).count, (Src).data(), (Src).size()), (Dest).count += (Src).size()
+static void panic(void) {
+    puts("\nPanic triggered. Now exiting...");
+    exit(1);
+}
+#endif
 
 #endif // CONFIG_H

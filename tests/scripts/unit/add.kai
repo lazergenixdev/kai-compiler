@@ -1,8 +1,9 @@
 add :: (x: s32, y: s32) -> s32 {
-    h := x + 2;
+    if x > 2 ret 2 + y;
     ret x + y * 2;
 }
 
 value :: add(1, 2);
-another :: add(4, 2);
-wow :: add(1000, 100);
+
+//another :: add(4, 2);
+//wow :: add(1000, 100);

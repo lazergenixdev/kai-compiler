@@ -110,7 +110,7 @@ write_error_message:
 
     kai__set_color(KAI_DEBUG_COLOR_DECORATION);
     Kai_int digits = kai__base10_digit_count(error->location.line);
-    for_n(digits) kai__write_char(' ');
+    kai__for_n (digits) kai__write_char(' ');
     kai__write("  |\n");
 
     //kai__write_format(" %" PRIu32, error->location.line);
@@ -125,7 +125,7 @@ write_error_message:
     kai__write_char('\n');
 
     kai__set_color(KAI_DEBUG_COLOR_DECORATION);
-    for_n(digits) kai__write_char(' ');
+    kai__for_n (digits) kai__write_char(' ');
     kai__write("  | ");
 
     kai__write_source_code_count(writer, begin,
@@ -135,7 +135,7 @@ write_error_message:
     kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
     kai__write_char('^');
     Kai_int n = (Kai_int)error->location.string.count - 1;
-    for_n(n) kai__write_char('~');
+    kai__for_n (n) kai__write_char('~');
 
     kai__write_char(' ');
     kai__write_string(error->context);
@@ -196,8 +196,6 @@ void kai_debug_write_type(Kai_Debug_String_Writer* writer, Kai_Type Type)
             }
             kai__write(")");
         } break;
-        case KAI_TYPE_SLICE:     { kai__write("Slice");     } break; 
-        case KAI_TYPE_STRING:    { kai__write("String");    } break;  
         case KAI_TYPE_STRUCT:    { kai__write("Struct");    } break;  
     }
 }
@@ -275,7 +273,7 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
 
     kai__set_color(KAI_DEBUG_COLOR_DECORATION);
     Kai_int const last = context->stack_count - 1;
-    for_n (context->stack_count)
+    kai__for_n (context->stack_count)
         kai__write(branches[(get_stack(i) << 1) | (i == last)]);
 
     if (prefix) {
@@ -290,6 +288,17 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
         kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
         pop_stack();
         return;
+    }
+
+#define kai__write_name() \
+    if (p->name.count != 0) \
+    { \
+        kai__set_color(KAI_DEBUG_COLOR_PRIMARY); \
+        kai__write(" (name = \""); \
+        kai__set_color(KAI_DEBUG_COLOR_IMPORTANT); \
+        kai__write_string(p->name); \
+        kai__set_color(KAI_DEBUG_COLOR_PRIMARY); \
+        kai__write("\")"); \
     }
 
 #define set_node(TYPE) TYPE* node = (TYPE*)p
@@ -307,13 +316,7 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             set_node(Kai_Expr_Identifier);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("identifier");
-            if (node->name.count != 0)
-            {
-                kai__write(" (");
-                kai__write_string(node->name);
-                kai__write_char(')');
-            }
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+            kai__write_name();
             kai__write(" \"");
             kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
             kai__write_string(node->source_code);
@@ -324,21 +327,21 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             set_node(Kai_Expr_Number);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("number");
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+            kai__write_name();
             kai__write(" \"");
             kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
             kai__write_string(node->source_code);
             kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
             kai__write("\"");
-            kai__write_format(" whole: %llu, frac: %llu, den: %hu",
-				node->value.Whole_Part, node->value.Frac_Part, node->value.Frac_Denom);
+            //kai__write_format(" whole: %llu, frac: %llu, den: %hu",
+			//	node->value.Whole_Part, node->value.Frac_Part, node->value.Frac_Denom);
             kai__write("\n");
         }
         break; case KAI_EXPR_STRING: {
             set_node(Kai_Expr_String);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("string");
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+            kai__write_name();
             kai__write(" \"");
             kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
             kai__write_string(node->source_code);
@@ -349,7 +352,7 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             set_node(Kai_Expr_Unary);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("unary");
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+            kai__write_name();
             kai__write(" (op = ");
             kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
             kai__write(unary_operator_name(node->op));
@@ -362,7 +365,7 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             set_node(Kai_Expr_Binary);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("binary");
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+            kai__write_name();
             kai__write(" (op = ");
             kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
             kai__write(binary_operator_name(node->op));
@@ -376,7 +379,7 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             set_node(Kai_Expr_Procedure_Type);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("procedure type");
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+            kai__write_name();
             kai__write(" (");
             kai__write_format("%u", node->in_count);
             kai__write(" in, ");
@@ -386,13 +389,13 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             Kai_u32 end = node->in_count + node->out_count - 1;
             Kai_Expr current = node->in_out_expr;
 
-            for_n (node->in_count) {
+            kai__for_n (node->in_count) {
                 prefix = "in ";
                 explore(current, i == end);
                 current = current->next;
             }
 
-            for_n (node->out_count) {
+            kai__for_n (node->out_count) {
                 prefix = "out";
                 Kai_int idx = i + node->in_count;
                 explore(current, idx == end);
@@ -402,14 +405,16 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
         break; case KAI_EXPR_PROCEDURE_CALL: {
             set_node(Kai_Expr_Procedure_Call);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
-            kai__write("procedure call\n");
+            kai__write("procedure call");
+            kai__write_name();
+            kai__write_char('\n');
 
             prefix = "proc";
             explore(node->proc, node->arg_count == 0);
 
             Kai_int n = node->arg_count;
             Kai_Expr current = node->arg_head;
-            for_n(n) {
+            kai__for_n (n) {
                 explore(current, i == n - 1);
                 current = current->next;
             }
@@ -418,7 +423,7 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             set_node(Kai_Expr_Procedure);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("procedure");
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+            kai__write_name();
             kai__write(" (");
             kai__write_format("%u", node->in_count);
             kai__write(" in, ");
@@ -427,13 +432,13 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
 
             Kai_Expr current = node->in_out_expr;
 
-            for_n(node->in_count) {
+            kai__for_n (node->in_count) {
                 prefix = "in ";
                 explore(current, 0);
                 current = current->next;
             }
 
-            for_n(node->out_count) {
+            kai__for_n (node->out_count) {
                 prefix = "out";
                 explore(current, 0);
                 current = current->next;
@@ -451,14 +456,9 @@ void _explore(Tree_Traversal_Context* context, Kai_Expr p, Kai_u8 is_last, Kai_b
             set_node(Kai_Stmt_Declaration);
             kai__set_color(KAI_DEBUG_COLOR_SECONDARY);
             kai__write("declaration");
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
-            kai__write(" (name = \"");
-            kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
-            kai__write_string(node->name);
-            kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
-            kai__write("\") ");
+            kai__write_name();
 
-            if (node->flags & KAI_DECL_FLAG_CONST) kai__write("CONST ");
+            if (node->flags & KAI_DECL_FLAG_CONST) kai__write(" CONST");
 
             kai__write_char('\n');
 

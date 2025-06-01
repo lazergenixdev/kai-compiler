@@ -6,10 +6,17 @@ lensq :: builtin.math.dot(v0, v0);
 //dot :: (x, y: [$N] $T) #builtin;
 //length :: (x: [$N] $T) #builtin;
 
-//tau : f32 : #pi * 2;
+//tau :: #pi * 2 -> f32;
 
-//vector1 : [4] f32;
-//matrix1 : [3,3] f32 = math.transpose(other);
+//vector1 : #vec(4) f32;
+//vector2 : [4]f32;
+//matrix1 : #mat(3,3) f32 = math.transpose(other);
+//matrix2 : [3,3]f32;
+
+//vec3 :: f32^3;
+//normalize :: (v: $T^3) -> $T {
+//    ret math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+//}
 
 test :: ()
 {

@@ -1,7 +1,7 @@
 #include "test.h"
 #include <setjmp.h>
 
-#if 1 // Psuedo-code
+#if 0 // Psuedo-code
 typedef Kai_bool Kai_P_Is_Valid_Address(Kai_ptr Address, Kai_u32 Size);
 
 // %3 <- add.u32 %0, %2
@@ -43,6 +43,26 @@ void example(Script script)
 		script.func(7);
 	}
 }
+#endif
+
+#if 0
+typedef struct {
+	Kai_s32 input;
+	Kai_s32 expected_output;
+} Test;
+
+Kai_str test_programs[] = {
+	KAI_STRING(
+		"func :: (a: s32, b: s32) {\n"
+		"\tret a + b;\n"
+		"}\n"
+	),
+	KAI_STRING(
+		"func :: (a: s32, b: s32) {\n"
+		"\tret a + b;\n"
+		"}\n"
+	),
+};
 #endif
 
 int compile_simple_add() {

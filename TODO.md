@@ -1,6 +1,7 @@
 # TODO
 - [x] Make todo list
 - [x] Fix a bunch of compile warnings
+- [ ] Header only
 - [ ] Fix corruption in error messages
 - [ ] Fix procedure location in bytecode generation
 - [ ] Add declaration and assignment to bytecode generation

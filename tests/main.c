@@ -1,6 +1,7 @@
 #include <stdio.h>
 #define KAI_USE_MEMORY_API
 #define KAI_USE_DEBUG_API
+#define KAI_IMPLEMENTATION
 #include "kai.h"
 
 #define test ++test_count, pass_count +=

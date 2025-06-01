@@ -9,7 +9,6 @@
 --- INCLUDE OPTIONS -------------------------------------------------------------------------------------
 
 	define  KAI_IMPLEMENTATION  in one compilation unit (.c/.cpp file) to use the library
-	--> TODO: header only
 
     define  KAI_USE_MEMORY_API  to enable default memory allocator
     define  KAI_USE_WRITER_API  to enable stdout and file writer
@@ -96,6 +95,12 @@
 #	error "[KAI] Architecture not supported!"
 #endif
 
+#if defined(KAI__PLATFORM_WASM)
+#	define KAI_API(RETURN_TYPE) __attribute__((__visibility__("default"))) extern RETURN_TYPE
+#else
+#	define KAI_API(RETURN_TYPE) extern RETURN_TYPE
+#endif
+
 #if defined(__cplusplus)
 #    define KAI_STRUCT(X) X
 #else
@@ -108,29 +113,15 @@
 #	define KAI_UTF8(STRING) STRING
 #endif
 
-#if defined(KAI__PLATFORM_WASM)
-#	define KAI_API(RETURN_TYPE) __attribute__((__visibility__("default"))) extern RETURN_TYPE
-#else
-#	define KAI_API(RETURN_TYPE) extern RETURN_TYPE
-#endif
-
-#define KAI_EMPTY_STRING    KAI_STRUCT(Kai_str){0}
-#define KAI_STRING(LITERAL) KAI_STRUCT(Kai_str){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
 #define KAI_BOOL(EXPR)      ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
 
-// TODO: remove this too please
-#if !defined(KAI_IMPLEMENTATION)
-#	define KAI__SECTION_INTERNAL_API
+#if defined(KAI__COMPILER_MSVC)
+#   define KAI_CONSTANT_STRING(S) {(Kai_u8*)(S), sizeof(S)-1}
+#else
+#   define KAI_CONSTANT_STRING(S) KAI_STRING(S)
 #endif
-
-#if defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GCC)
-#	pragma GCC diagnostic push
-#	pragma GCC diagnostic ignored "-Wc11-extensions"
-#	pragma GCC diagnostic ignored "-Wunused-function"
-#elif defined(KAI__COMPILER_MSVC)
-#	pragma warning(push)
-#	pragma warning(disable : 4201) // " nonstandard extension used: nameless struct/union
-#endif
+#define KAI_STRING(LITERAL) KAI_STRUCT(Kai_str){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
+#define KAI_EMPTY_STRING    KAI_STRUCT(Kai_str){0}
 
 #ifdef __cplusplus
 extern "C" {
@@ -166,32 +157,13 @@ typedef uintptr_t Kai_uint;
 
 typedef struct Kai_Type_Info* Kai_Type;
 
-#define KAI__VECTOR2_STRUCT(TYPE, NAME) \
-	union {                             \
-		struct { TYPE x, y; };          \
-		struct { TYPE r, g; };          \
-	}
-#define KAI__VECTOR3_STRUCT(TYPE, NAME) \
-	union {                             \
-		Kai_vector2_##NAME xy;          \
-		struct { TYPE x, y, z; };       \
-		struct { TYPE r, g, b; };       \
-	}
-#define KAI__VECTOR4_STRUCT(TYPE, NAME) \
-	union {                             \
-		Kai_vector2_##NAME xy;          \
-		Kai_vector3_##NAME xyz;         \
-		struct { TYPE x, y, z, w; };    \
-		struct { TYPE r, g, b, a; };    \
-	}
-
-//! TODO: Complete vector + matrix + ... types
-//! NOTE: probably better idea to just use raw pointers in compiler, to avoid this macro mess
-#define X(TYPE, NAME, _) \
-	typedef KAI__VECTOR2_STRUCT(TYPE, NAME) Kai_vector2_##NAME; \
-	typedef KAI__VECTOR3_STRUCT(TYPE, NAME) Kai_vector3_##NAME; \
-	typedef KAI__VECTOR4_STRUCT(TYPE, NAME) Kai_vector4_##NAME; \
-	typedef int Kai_matrix4x4_##NAME;
+#define X(TYPE, NAME, _)                                         \
+	typedef struct { TYPE x, y;          } Kai_vector2_##NAME;   \
+	typedef struct { TYPE x, y, z;       } Kai_vector3_##NAME;   \
+	typedef struct { TYPE x, y, z, w;    } Kai_vector4_##NAME;   \
+	typedef struct { TYPE elements[2*2]; } Kai_matrix2x2_##NAME; \
+	typedef struct { TYPE elements[3*3]; } Kai_matrix3x3_##NAME; \
+	typedef struct { TYPE elements[4*4]; } Kai_matrix4x4_##NAME;
 	KAI_X_PRIMITIVE_TYPES
 #undef X
 
@@ -219,9 +191,7 @@ enum {
 	KAI_TYPE_FLOAT     = 2,
 	KAI_TYPE_POINTER   = 3,
 	KAI_TYPE_PROCEDURE = 4,
-	KAI_TYPE_SLICE     = 5,
-	KAI_TYPE_STRING    = 6,
-	KAI_TYPE_STRUCT    = 7,
+	KAI_TYPE_STRUCT    = 5,
 };
 
 typedef struct Kai_Type_Info {
@@ -253,6 +223,7 @@ typedef struct {
 
 typedef struct {
 	Kai_u8     type;
+	Kai_u32    member_count;
 	Kai_Type*  member_types;
 	Kai_str*   member_names;
 } Kai_Type_Info_Struct;
@@ -272,17 +243,16 @@ typedef struct {
 	void        * user;
 } Kai_Writer;
 
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- Base Memory Allocator -------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 enum {
 	KAI_MEMORY_ACCESS_READ    = 1 << 0,
 	KAI_MEMORY_ACCESS_WRITE   = 1 << 1,
 	KAI_MEMORY_ACCESS_EXECUTE = 1 << 2,
-
 	KAI_MEMORY_ACCESS_READ_WRITE = KAI_MEMORY_ACCESS_READ | KAI_MEMORY_ACCESS_WRITE,
 };
-
-// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-// --- Base Memory Allocator -------------------------------------------------
-// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 typedef void* Kai_P_Memory_Allocate      (void* User, Kai_u32 Num_Bytes, Kai_u32 access);
 typedef void  Kai_P_Memory_Free          (void* User, void* Ptr, Kai_u32 Num_Bytes);
@@ -309,15 +279,11 @@ typedef struct {
 
 enum {
 	KAI_SUCCESS = 0,
-
 	KAI_ERROR_SYNTAX,
 	KAI_ERROR_SEMANTIC,
 	KAI_ERROR_INFO,
-
-	// 'Meta' Errors
 	KAI_ERROR_FATAL,    // means compiler bug probably
 	KAI_ERROR_INTERNAL, // means compiler error unrelated to source code (e.g. out of memory)
-
 	KAI_RESULT_COUNT,
 };
 typedef Kai_u32 Kai_Result;
@@ -670,12 +636,12 @@ enum {
 };
 
 enum {
-    KAI_CMP_LT  = 0,
-    KAI_CMP_GTE = 1,
-    KAI_CMP_GT  = 2,
-    KAI_CMP_LTE = 3,
-    KAI_CMP_EQ  = 4,
-    KAI_CMP_NE  = 5,
+    KAI_CMP_LT = 0,
+    KAI_CMP_GE = 1,
+    KAI_CMP_GT = 2,
+    KAI_CMP_LE = 3,
+    KAI_CMP_EQ = 4,
+    KAI_CMP_NE = 5,
 };
 
 enum {
@@ -798,6 +764,7 @@ typedef struct {
 KAI_API (Kai_bool) kai_str_equals       (Kai_str A, Kai_str B);
 KAI_API (Kai_str)  kai_str_from_cstring (char const* String);
 
+	// TODO: rename without "get"
 KAI_API (Kai_vector3_u32) kai_get_version        (void);
 KAI_API (Kai_str)         kai_get_version_string (void);
 
@@ -868,6 +835,10 @@ KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_Writer*
 	allocator->heap_allocate(allocator->user, Ptr, 0, Size)
 
 #define kai__unused(VAR) (void)VAR
+
+#define kai__for_n(N) for (Kai_int i = 0; i < (Kai_int)(N); ++i)
+
+#define kai__count(ARRAY) (sizeof(ARRAY)/sizeof(ARRAY[0]))
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- (Fatal) Error Handling + Debug Assertions -----------------------------
@@ -1022,6 +993,9 @@ static inline void* kai__arena_allocate(Kai__Dynamic_Arena_Allocator* Arena, Kai
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Array API -------------------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#define kai__array_iterate(Array, Var) \
+	for (Kai_u32 Var = 0; Var < (Array).count; ++Var)
 
 #define kai__array_reserve(Ptr_Array, Size) \
 	kai__array_reserve_stride(Ptr_Array, Size, allocator, sizeof((Ptr_Array)->elements[0]))
@@ -1566,16 +1540,82 @@ namespace Kai {
 #endif
 
 #ifdef KAI_IMPLEMENTATION
+static Kai_vector3_u32 kai_get_version(void)
+{
+	return (Kai_vector3_u32) {
+		.x = KAI_VERSION_MAJOR,
+		.y = KAI_VERSION_MINOR,
+		.z = KAI_VERSION_PATCH,
+	};
+}
+
+KAI_API (Kai_str) kai_get_version_string(void)
+{
+	return KAI_STRING("Kai Compiler v" KAI_VERSION_STRING);
+}
+
+KAI_API (Kai_bool) kai_str_equals(Kai_str A, Kai_str B)
+{
+	if (A.count != B.count)
+		return KAI_FALSE;
+	for (Kai_int i = 0; i < A.count; ++i) {
+		if (A.data[i] != B.data[i])
+			return KAI_FALSE;
+	}
+	return KAI_TRUE;
+}
+
+KAI_API (Kai_str) kai_str_from_cstring(char const* String)
+{
+	Kai_u32 len = 0;
+	while (String[len] != '\0') ++len;
+	return (Kai_str) {.data = (Kai_u8*)String, .count = len};
+}
+
+KAI_API (void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
+{
+	while (Error) {
+		Kai_Error* next = Error->next;
+		if (Error->memory.size)
+			kai__free(Error->memory.data, Error->memory.size);
+		Error = next;
+	}
+}
+
+// TODO: move to kai_dev
+#if !defined(KAI__PLATFORM_WASM)
+#include <stdio.h>
+#include <stdlib.h>
+static char const* kai__file(char const* cs)
+{
+	Kai_str s = kai_str_from_cstring(cs);
+	Kai_u32 i = s.count - 1;
+	while (i > 0)
+	{
+		if (cs[i] == '/' || cs[i] == '\\')
+		{
+			return cs + i + 1;
+		}
+		i -= 1;
+	}
+	return cs;
+}
+void kai__fatal_error(
+	char const* Desc,
+	char const* Message,
+	char const* File,
+	int         Line)
+{
+	printf("\x1b[91m%s\x1b[0m: %s\nin \x1b[92m%s:%i\x1b[0m",
+		Desc, Message, kai__file(File), Line
+	);
+	exit(1);
+}
+#endif
 #endif
 
 #ifdef __cplusplus
 }
-#endif
-
-#if defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GCC)
-#	pragma GCC diagnostic pop
-#elif defined(KAI__COMPILER_MSVC)
-#	pragma warning(pop)
 #endif
 
 #endif // KAI__H

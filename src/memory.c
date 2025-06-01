@@ -10,6 +10,26 @@ typedef struct {
 	//Kai_Memory_Tracker tracker;
 } Kai__Memory_Internal;
 
+#if defined(KAI__PLATFORM_WASM)
+void* memset(void* dst, int val, size_t size)
+{
+	for (size_t i = 0; i < size; i++)
+	{
+		((char*)dst)[i] = (char)val;
+	}
+	return dst;
+}
+
+void* memcpy(void* dst, void* src, size_t size)
+{
+	for (size_t i = 0; i < size; i++)
+	{
+		((char*)dst)[i] = ((char*)src)[i];
+	}
+	return dst;
+}
+#endif
+
 #if 0
 typedef struct {
 	Kai_s64 total_allocated;

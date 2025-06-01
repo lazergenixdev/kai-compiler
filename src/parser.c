@@ -81,6 +81,8 @@ Op_Info operator_of_token_type(Kai_u32 t) {
     case '==': return (Op_Info){t, 0x0040,    OP_BINARY};
     case '<=': return (Op_Info){t, 0x0040,    OP_BINARY};
     case '>=': return (Op_Info){t, 0x0040,    OP_BINARY};
+    case '<':  return (Op_Info){t, 0x0040,    OP_BINARY};
+    case '>':  return (Op_Info){t, 0x0040,    OP_BINARY};
     case '->': return (Op_Info){t, CAST_PREC, OP_BINARY};
     case '+':  return (Op_Info){t, 0x0100,    OP_BINARY};
     case '-':  return (Op_Info){t, 0x0100,    OP_BINARY};
