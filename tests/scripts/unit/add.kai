@@ -5,5 +5,4 @@ add :: (x: s32, y: s32) -> s32 {
 
 value :: add(1, 2);
 
-//another :: add(4, 2);
 //wow :: add(1000, 100);

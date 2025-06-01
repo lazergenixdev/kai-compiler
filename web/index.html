@@ -2,18 +2,88 @@
 <html>
     <head>
         <title>Kai </title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic+Coding&display=swap" rel="stylesheet">
+        <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
     </head>
     <style>
-        body { font-family: arial, monospace; color: white; background-color: black; }
-        div { width: 100%; height: 80vh; }
-        textarea { color: white; background-color: rgb(22, 22, 22); width: 100%; height: 80vh; border: solid 2px #333; padding: 4px; }
-        pre { color: #CCC; margin: 0; padding: 10px; max-width: 50%; }
+        :root {
+            font-family: 'Nanum Gothic Coding', monospace;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+            background-color: #000;
+            color: white;
+        }
+        #header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background-color: #000;
+            color: white;
+            font-family: sans-serif;
+        }
+        #header a {
+            color: white;
+            text-decoration: none;
+        }
+        #header img {
+            width: 24px;
+            height: 24px;
+            fill: white;
+            vertical-align: middle;
+            background-color: #111;
+            border-radius: 50%;
+            padding: 6px;
+            margin: -6px;
+        }
+        #container {
+            display: flex;
+            height: 100vh;
+            background-color: #111;
+        }
+        #editor-side {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        #editor {
+            flex: 1;
+        }
+        #CompileError {
+            height: 150px;
+            margin: 0;
+            overflow: auto;
+            width: 100%;
+            box-sizing: border-box;
+            background: #000;
+        }
+        #SyntaxTree {
+            flex: 1;
+            margin: 0;
+            padding: 0.5em;
+            overflow: auto;
+            font-family: monospace;
+        }
     </style>
     <body>
-        <h1>hi</h1>
-        <div style="display: flex;">
-            <textarea></textarea>
-            <pre></pre>
+        <div id="header">
+            <div id="title">hi</div>
+            <strong>Playground</strong>
+            <a href="https://github.com/lazergenixdev/kai-compiler" target="_blank" aria-label="GitHub repository">
+                <!-- GitHub SVG Icon -->
+                <img src="github-mark.svg" alt="GitHub repository" >
+            </a>
+        </div>
+        <div id="container">
+            <div id="editor-side">
+                <div id="editor"></div>
+                <pre id="CompileError"></pre>
+            </div>
+            <pre id="SyntaxTree"></pre>
         </div>
     </body>
     <script>
@@ -28,13 +98,24 @@
                     4: "gray"
                 };
                 this.colorActive = false;
+                this.bytes = [];
             }
 
             append(string) {
-                this.parts.push(string);
+                if (string instanceof Uint8Array) {
+                    this.bytes.push(...string.values());
+                }
+                else {
+                    this.bytes.push(string);
+                }
             }
 
             set_color(index) {
+                if (this.bytes.length !== 0) {
+                    this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+                    this.bytes.length = 0;
+                }
+
                 if (index === this.currentColorIndex) {
                     return; // no change
                 }
@@ -57,6 +138,10 @@
 
             finalize() {
                 if (this.colorActive) {
+                    if (this.bytes.length !== 0) {
+                        this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+                        this.bytes.length = 0;
+                    }
                     this.parts.push("</span>");
                     this.colorActive = false;
                 }
@@ -69,7 +154,6 @@
         let c_bytes = null;
         let c_memory = null;
         const page_size = 64 * 1024;
-        const div = document.querySelector("pre");
         
         // Find length of C string
         function c_string_length(address) {
@@ -104,13 +188,13 @@
         const free_list = {};
 
         function __wasm_allocate(size) {
-            for (let ptr in free_list) {
+            /*for (let ptr in free_list) {
                 if (free_list[ptr] >= size) {
                     active_list[ptr] = free_list[ptr];
                     delete free_list[ptr];
                     return ptr;
                 }
-            }
+            }*/
             const prev_num_pages = c_memory.grow(size/page_size + 1);
             c_bytes  = new Uint8Array(c_memory.buffer);
             active_list[prev_num_pages * page_size] = size;
@@ -140,38 +224,37 @@
             const dataView = new DataView(c_memory.buffer);
             let data = dataView.getUint32(string, true);
             let count = dataView.getUint32(string + 4, true);
-            builder.append(c_string(data, count));
+            //builder.append(c_string(data, count));
+            builder.append(c_bytes.slice(data, data + count));
         }
 
-        function __wasm_write_c_string(user, string) {
-            builder.append(c_string(string));
-        }
+        function __wasm_write_value(user, type, value, format) {
+            const view = new DataView(c_memory.buffer);
+            switch (type) {
+                case 0x800: {
+                    let min_count      = view.getUint32(format + 4, true);
+                    let fill_character = view.getUint8(format + 12, true);
+                    //builder.append(String.fromCharCode(fill_character).repeat(min_count));
+                    builder.append(new Uint8Array(min_count).fill(fill_character));
+                } break;
 
-        function __wasm_write_char(user, char) {
-            builder.append(String.fromCharCode(char));
+                case (4 << 4) | 2: {
+                    //builder.append(view.getUint32(value, true).toString());
+                    const string = view.getUint32(value, true).toString();
+                    builder.append(new TextEncoder().encode(string));
+                } break;
+
+                default: {
+                    console.warn("__wasm_write_value", type);
+                } break;
+            }
         }
 
         function __wasm_set_color(user, color) {
             builder.set_color(color);
         }
 
-        const SOURCE = document.querySelector("textarea");
-        SOURCE.addEventListener('keydown', function(e) {
-            if (e.key == 'Tab') {
-                e.preventDefault();
-                var start = this.selectionStart;
-                var end = this.selectionEnd;
-
-                // set textarea value to: text before caret + tab + text after caret
-                this.value = this.value.substring(0, start) +
-                "    " + this.value.substring(end);
-
-                // put caret at right position again
-                this.selectionStart =
-                this.selectionEnd = start + 4;
-            }
-        });
-        SOURCE.value = `fibonacci :: (n: int) -> int {
+        let SOURCE = `fibonacci :: (n: int) -> int {
     if n <= 2 ret 0;
     ret fibonacci(n-2) + fibonacci(n-1);
 }
@@ -187,30 +270,54 @@ main :: () {
         print(fibonacci(i));
     }
 }`;
-
         {
             const src = localStorage.getItem("kai-compiler.playground.code");
             if (src !== null) {
-                SOURCE.value = src;
+                SOURCE = src;
             }
         }
 
+        require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@latest/min/vs' }});
+            require(['vs/editor/editor.main'], function () {
+            const editor = monaco.editor.create(document.getElementById('editor'), {
+                value: SOURCE,
+                language: 'c',
+                theme: 'vs-dark',
+                automaticLayout: true
+            });
+
+            // Run this function when the code changes
+            editor.onDidChangeModelContent(() => {
+                const code = editor.getValue();
+                console.log("Code changed:", code);
+
+                localStorage.setItem("kai-compiler.playground.code", code);
+                compile(code);
+            });
+        });
+
         let scratch_buffer = null;
 
-        function compile() {
+        function compile(code) {
             const encoder = new TextEncoder();
-            const source = SOURCE.value;
-            const encodedString = encoder.encode(source + '\0');
+            const encodedString = encoder.encode(code + '\0');
             console.log(encodedString);
+            c_bytes.fill(0, scratch_buffer, scratch_buffer + page_size);
             c_bytes.set(encodedString, scratch_buffer);
-            //new DataView(c_memory.buffer).setUint8(scratch_buffer + source.length, 0);
             builder = new HTML_Builder();
             try {
-                console.log("test returned:", c.test(scratch_buffer));
-                div.innerHTML = builder.finalize();
+                const result = c.test(scratch_buffer)
+                console.log("test returned:", result);
+                if (result === 0) {
+                    SyntaxTree.innerHTML = builder.finalize();
+                    CompileError.innerHTML = "";
+                }
+                else {
+                    CompileError.innerHTML = builder.finalize();
+                }
             }
             catch (error) {
-                div.innerText = error;
+                CompileError.innerText = error;
                 throw error;
             }
             finally {
@@ -224,8 +331,7 @@ main :: () {
                 __wasm_allocate,
                 __wasm_free,
                 __wasm_write_string,
-                __wasm_write_c_string,
-                __wasm_write_char,
+                __wasm_write_value,
                 __wasm_set_color,
                 kai__fatal_error,
             }
@@ -233,23 +339,15 @@ main :: () {
             c = wasm.instance.exports; // Exported C Functions
             c_bytes  = new Uint8Array(wasm.instance.exports.memory.buffer);
             c_memory = wasm.instance.exports.memory;
-            
 
 			scratch_buffer = __wasm_allocate(page_size);
-			
-            c.kai_get_version_string(scratch_buffer);
-			
+            c.kai_version_string(scratch_buffer);
             const dataView = new DataView(c_memory.buffer);
             let ptr = dataView.getUint32(scratch_buffer    , true);
             let len = dataView.getUint32(scratch_buffer + 4, true);
-            document.querySelector("h1").innerText = c_string(ptr, len);
+            title.innerText = c_string(ptr, len);
 
-            SOURCE.addEventListener("input", e => {
-                localStorage.setItem("kai-compiler.playground.code", SOURCE.value);
-                compile();
-            });
-
-            compile();
+            compile(SOURCE);
         });
     </script>
 </html>

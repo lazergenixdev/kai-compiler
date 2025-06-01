@@ -889,12 +889,12 @@ Kai_Result kai__create_dependency_graph(
 		printf("Node \"\x1b[94m%.*s\x1b[0m\"", node->name.count, node->name.data);
 		if (node->type_flags & KAI__DG_NODE_EVALUATED) {
 			printf(" type: ");
-			kai_debug_write_type(kai_debug_stdout_writer(), node->type);
+			kai_write_type(kai_debug_stdout_writer(), node->type);
 		}
 		if (node->value_flags & KAI__DG_NODE_EVALUATED) {
 			printf(" value: ");
 			if (node->type->type == KAI_TYPE_TYPE) {
-				kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
+				kai_write_type(kai_debug_stdout_writer(), node->value.type);
 			}
 		}
 		putchar('\n');
@@ -1280,10 +1280,10 @@ Kai_Result kai__bytecode_emit_expression(
 
 	default: {
 		char temp[64];
-		Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
-		kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
+		Kai_String_Writer* writer = kai_debug_stdout_writer();
+		kai__set_color(KAI_COLOR_IMPORTANT);
 		kai__write_format("[emit_expression] skipping Expr(%i)\n", Expr->id);
-		kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+		kai__set_color(KAI_COLOR_PRIMARY);
 	} break;
 	}
 
@@ -1329,10 +1329,10 @@ Kai_Result kai__bytecode_emit_statement(
 
 		default: {
 			char temp[64];
-			Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
-			kai__set_color(KAI_DEBUG_COLOR_IMPORTANT);
+			Kai_String_Writer* writer = kai_debug_stdout_writer();
+			kai__set_color(KAI_COLOR_IMPORTANT);
 			kai__write_format("[emit_statement] skipping Stmt(%i)\n", Expr->id);
-			kai__set_color(KAI_DEBUG_COLOR_PRIMARY);
+			kai__set_color(KAI_COLOR_PRIMARY);
 		} break;
 	}
 
@@ -1354,11 +1354,6 @@ Kai_Result kai__bytecode_emit_procedure(
 	}
 
 	return KAI_SUCCESS;
-}
-
-void kai__stdout_write(void* User, Kai_str String)
-{
-	kai_debug_stdout_writer()->write_string(User, String);
 }
 
 #if 0
@@ -1428,12 +1423,9 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 				.branch_hints = Context->bytecode->branch_hints.elements,
 				.branch_count = Context->bytecode->branch_hints.count,
 			};
-			Kai_Writer writer = {
-				.write = kai__stdout_write,
-				.user = NULL,
-			};
-			kai_bytecode_to_c(&bytecode, &writer);
-			kai__stdout_write(NULL, KAI_STRING("\n"));
+			kai_bytecode_to_c(&bytecode, kai_debug_stdout_writer());
+			Kai_String_Writer* writer = kai_debug_stdout_writer();
+			kai__write_char('\n');
 #endif
 
 			if (result != KAI_SUCCESS)
@@ -1574,9 +1566,9 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
         #endif
 
 #ifdef DEBUG_CODE_GENERATION
-		kai_debug_stdout_writer()->set_color(0, KAI_DEBUG_COLOR_IMPORTANT_2);
+		kai_debug_stdout_writer()->set_color(0, KAI_COLOR_IMPORTANT_2);
 		printf("Generating %i -> %.*s\n", i, node->name.count, node->name.data);
-		kai_debug_stdout_writer()->set_color(0, KAI_DEBUG_COLOR_PRIMARY);
+		kai_debug_stdout_writer()->set_color(0, KAI_COLOR_PRIMARY);
 #endif
 
 		if (node_index.flags & KAI__DG_NODE_TYPE)
@@ -1584,9 +1576,9 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 			result = kai__bytecode_generate_type(&context, node);
 
 #ifdef DEBUG_CODE_GENERATION
-			kai_debug_stdout_writer()->write_c_string(0, "--> Type ");
-			kai_debug_write_type(kai_debug_stdout_writer(), node->type);
-			kai_debug_stdout_writer()->write_char(0, '\n');
+			kai_debug_stdout_writer()->write_string(0, KAI_STRING("--> Value "));
+			kai_write_type(kai_debug_stdout_writer(), node->type);
+			kai_debug_stdout_writer()->write_string(0, KAI_STRING("\n"));
 #endif
 		}
 		else {
@@ -1597,9 +1589,9 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
 			switch (node->type->type)
 			{
 				case KAI_TYPE_TYPE: {
-					kai_debug_stdout_writer()->write_c_string(0, "--> Value ");
-					kai_debug_write_type(kai_debug_stdout_writer(), node->value.type);
-					kai_debug_stdout_writer()->write_char(0, '\n');
+					kai_debug_stdout_writer()->write_string(0, KAI_STRING("--> Value "));
+					kai_write_type(kai_debug_stdout_writer(), node->value.type);
+					kai_debug_stdout_writer()->write_string(0, KAI_STRING("\n"));
 				} break;
 				case KAI_TYPE_INTEGER: {
 					printf("--> Value %lli\n", node->value.value.s64);
@@ -1844,7 +1836,7 @@ Kai_Type type_of_expression(Compiler_Context* context, Kai_Expr expr, u32 scope_
 
 		_write("got a type!!\n");
 
-		kai_debug_write_type(writer, node->type);
+		kai_write_type(writer, node->type);
 
 		// set the value of this node??
 		return node->type;

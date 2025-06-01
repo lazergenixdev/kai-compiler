@@ -16,7 +16,7 @@ void set_underline(int enable) {
     printf("\x1b[%im", enable ? 4 : 24);
 }
 int load_file(const char* file_path, Kai_str* out) {
-    FILE* file = fopen(file_path, "rb");
+    FILE* file = kai__stdc_file_open(file_path, "rb");
     if (!file) return 1;
     fseek(file, 0, SEEK_END);
     long size = ftell(file);
@@ -43,12 +43,12 @@ int main(int argc, char** argv) {
         .parse_only = KAI_FALSE,
     };
 
-    Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
+    Kai_String_Writer* writer = kai_debug_stdout_writer();
     
 	set_underline(1);
-    writer->write_string(writer->user, kai_get_version_string());
+    writer->write_string(writer->user, kai_version_string());
     set_underline(0);
-    writer->write_char(writer->user, '\n');
+    writer->write_string(writer->user, KAI_STRING("\n"));
 
     if (argc < 2) {
 		printf("usage: kai [--parse-only] <SOURCE> [args...]\n");
@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
             curr = curr->next;
             i += 1;
         }
-        kai_debug_write_error(writer, &error);
+        kai_write_error(writer, &error);
         goto cleanup;
     }
 
@@ -168,10 +168,10 @@ void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocato
 
     if (result != KAI_SUCCESS) {
 		error->location.file_name = kai_str_from_cstring(file);
-        kai_debug_write_error(kai_debug_stdout_writer(), error);
+        kai_write_error(kai_debug_stdout_writer(), error);
     }
     else {
-        kai_debug_write_syntax_tree(kai_debug_stdout_writer(), &tree);
+        kai_write_syntax_tree(kai_debug_stdout_writer(), &tree);
     }
 
     kai_destroy_syntax_tree(&tree);

@@ -96,7 +96,9 @@ call:
     asm ( "blr %0"      :: "r" (address) : "x30" );
     asm ( "mov %0, x0"  : "=r" (result) );
 #else
-	sizeof(address, args, arg_count);
+    kai__unused(address);
+    kai__unused(args);
+    kai__unused(arg_count);
     kai__unreachable();
 //#   error "Dynamic call not implemented for this architecture!"
 #endif

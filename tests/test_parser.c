@@ -35,7 +35,7 @@ int parser() {
 
     if (result != KAI_SUCCESS) {
         error.location.file_name = KAI_STRING(__FILE__);
-        kai_debug_write_error(&error_writer, &error);
+        kai_write_error(&error_writer, &error);
     }
 
     kai_destroy_syntax_tree(&tree);

@@ -83,7 +83,7 @@ int compile_simple_add() {
 
     if (result != KAI_SUCCESS) {
         error.location.file_name = KAI_STRING(__FUNCTION__);
-        kai_debug_write_error(&error_writer, &error);
+        kai_write_error(&error_writer, &error);
         return FAIL;
     }
 

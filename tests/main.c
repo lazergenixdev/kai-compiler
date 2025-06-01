@@ -11,11 +11,11 @@ extern int parser();
 extern int hash_table();
 extern int compile_simple_add();
 
-Kai_Debug_String_Writer error_writer;
+Kai_String_Writer error_writer;
 
 int main(int argc, char** argv) {
-    Kai_Debug_String_Writer* writer = kai_debug_stdout_writer();
-    writer->write_string(writer->user, kai_get_version_string());
+    Kai_String_Writer* writer = kai_debug_stdout_writer();
+    writer->write_string(writer->user, kai_version_string());
     writer->write_string(writer->user, KAI_STRING("\n\n"));
     kai_debug_open_file_writer(&error_writer, "errors.txt");
 
@@ -31,8 +31,8 @@ int main(int argc, char** argv) {
 
     {
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "\n%d/%d test passed\n", pass_count, test_count);
-        writer->write_c_string(writer->user, buffer);
+        int size = snprintf(buffer, sizeof(buffer), "\n%d/%d test passed\n", pass_count, test_count);
+        writer->write_string(writer->user, (Kai_str){.count = size, .data = (Kai_u8*)buffer});
     }
 
     return 0;

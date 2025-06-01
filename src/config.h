@@ -2,7 +2,10 @@
 #define CONFIG_H
 
 #include "kai.h"
+// TODO: remove
+#if !defined(KAI__PLATFORM_WASM)
 #include <stdio.h>   // --> printf
+#endif
 
 
 #define MACRO_PRAGMA(X) _Pragma(#X)
@@ -10,20 +13,6 @@
 #ifdef __WASM__
 extern void __wasm_console_log(const char* message, int value);
 #endif
-
-#if defined(KAI__COMPILER_MSVC)
-#    define KAI__MSVC_DISABLE_WARNING(WARNING) MACRO_PRAGMA(warning(disable : WARNING))
-#else
-#    define KAI__MSVC_DISABLE_WARNING(WARNING)
-#endif
-
-#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
-#    define KAI__CLANG_DISABLE_WARNING(WARNING) MACRO_PRAGMA(GCC diagnostic ignored WARNING)
-#else
-#    define KAI__CLANG_DISABLE_WARNING(WARNING)
-#endif
-
-KAI__CLANG_DISABLE_WARNING("-Wmultichar")
 
 // =============================<< MACROS >>===================================
 
@@ -36,11 +25,6 @@ KAI__CLANG_DISABLE_WARNING("-Wmultichar")
 #define print_location() printf("in (%s:%i)\n", __FILE__, __LINE__)
 
 // ==========================<< DEBUG WRITER >>================================
-
-#define kai__write(CSTRING)       writer->write_c_string(writer->user, CSTRING)
-#define kai__write_string(STRING) writer->write_string(writer->user, STRING)
-#define kai__write_char(CHAR)     writer->write_char(writer->user, CHAR)
-#define kai__set_color(COLOR)     if (writer->set_color != NULL) writer->set_color(writer->user, COLOR)
 
 #ifndef __WASM__
 // Must have a buffer declared as "char temp[..]"

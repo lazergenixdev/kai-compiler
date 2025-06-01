@@ -6,12 +6,9 @@ set(WASM TRUE)
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR wasm32)
 
-# Set the compiler
-if (MACOS)
-set(CMAKE_C_COMPILER "/opt/homebrew/opt/llvm/bin/clang")
-else ()
-set(CMAKE_C_COMPILER "clang.exe")
-endif ()
+# CMAKE_C_COMPILER
+# "/opt/homebrew/opt/llvm/bin/clang"
+# "clang.exe"
 
 message("Using compiler: " ${CMAKE_C_COMPILER})
 

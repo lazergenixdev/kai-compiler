@@ -17,10 +17,6 @@ int run(Kai_Interpreter* interp, Kai_s32 value, Kai_s32* out) {
     return 0;
 }
 
-static void write_to_file(void* User, Kai_str String) {
-    error_writer.write_string(error_writer.user, String);
-}
-
 int bytecode() {
     TEST();
 
@@ -96,12 +92,8 @@ int bytecode() {
         .branch_hints = &location_endif,
         .branch_count = 1,
     };
-    Kai_Writer writer = {
-        .write = write_to_file,
-        .user = NULL,
-    };
-    kai_bytecode_to_c(&bytecode, &writer);
-    write_to_file(NULL, KAI_STRING("\n"));
+    kai_bytecode_to_c(&bytecode, &error_writer);
+    error_writer.write_string(error_writer.user, KAI_STRING("\n"));
 #endif
 	kai_memory_destroy(&allocator);
 

@@ -113,6 +113,15 @@
 #	define KAI_UTF8(STRING) STRING
 #endif
 
+// TODO: push/pop stupid warnings
+#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
+#    pragma GCC diagnostic ignored "-Wmultichar"
+#    pragma GCC diagnostic ignored "-Wunused-function" // TODO: how to avoid?
+#elif defined(KAI__COMPILER_MSVC)
+// Example: #pragma warning(disable: 4127)
+#endif
+
+
 #define KAI_BOOL(EXPR)      ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
 
 #if defined(KAI__COMPILER_MSVC)
@@ -231,17 +240,61 @@ typedef struct {
 #endif
 #ifndef KAI__SECTION_CORE_STRUCTS
 
+enum {
+    //        SIZE       ID
+    KAI_U8  = (1 << 4) | 0,
+    KAI_U16 = (2 << 4) | 1,
+    KAI_U32 = (4 << 4) | 2,
+    KAI_U64 = (8 << 4) | 3,
+    KAI_S8  = (1 << 4) | 4,
+    KAI_S16 = (2 << 4) | 5,
+    KAI_S32 = (4 << 4) | 6,
+    KAI_S64 = (8 << 4) | 7,
+    KAI_F32 = (4 << 4) | 8,
+    KAI_F64 = (8 << 4) | 9,
+
+	// Special type for String_Writer to
+	// only use the fill_character + min_count
+	KAI_FILL = 0x800,
+};
+
+typedef union {
+#define X(TYPE, NAME, _) Kai_##NAME NAME;
+	KAI_X_PRIMITIVE_TYPES
+#undef X
+} Kai_Value;
+
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-// --- Base Writer -----------------------------------------------------------
+// --- String Writer ---------------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-typedef void Kai_P_Write(void* User, Kai_str String);
+enum {
+	KAI_COLOR_PRIMARY,
+	KAI_COLOR_SECONDARY,
+	KAI_COLOR_IMPORTANT,
+	KAI_COLOR_IMPORTANT_2,
+	KAI_COLOR_DECORATION,
+	KAI__COLOR_COUNT,
+};
+typedef Kai_u32 Kai_Write_Color;
 
-// TODO: unify with debug writer + want formatting options + writing numbers
 typedef struct {
-	Kai_P_Write * write;
-	void        * user;
-} Kai_Writer;
+	Kai_u32 flags;
+	Kai_u32 min_count; // default is 0 (no minimum)
+	Kai_u32 max_count; // default is 0 (no maximum)
+	Kai_u8  fill_character;
+} Kai_Write_Format;
+
+typedef void Kai_P_Write_String (void* User, Kai_str String);
+typedef void Kai_P_Write_Value  (void* User, Kai_u32 Type, Kai_Value Value, Kai_Write_Format Format);
+typedef void Kai_P_Set_Color    (void* User, Kai_Write_Color Color);
+
+typedef struct {
+	Kai_P_Write_String * write_string;
+	Kai_P_Write_Value  * write_value;
+	Kai_P_Set_Color    * set_color;
+	void               * user;
+} Kai_String_Writer;
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Base Memory Allocator -------------------------------------------------
@@ -284,7 +337,7 @@ enum {
 	KAI_ERROR_INFO,
 	KAI_ERROR_FATAL,    // means compiler bug probably
 	KAI_ERROR_INTERNAL, // means compiler error unrelated to source code (e.g. out of memory)
-	KAI_RESULT_COUNT,
+	KAI__RESULT_COUNT,
 };
 typedef Kai_u32 Kai_Result;
 
@@ -373,11 +426,6 @@ typedef struct {
 
 
 #if 0
-struct Kai__String_Format {
-	Kai_u32 flags;
-	Kai_u32 min_count; // default is 0 (no minimum)
-	Kai_u32 max_count; // default is 0 (no maximum)
-};
 
 typedef KAI__ARRAY(Kai_u8) Kai__String_Builder;
 
@@ -600,20 +648,6 @@ typedef struct {
 #endif
 #ifndef KAI__SECTION_BYTECODE
 
-enum {
-    //        SIZE       ID
-    KAI_U8  = (1 << 4) | 0,
-    KAI_U16 = (2 << 4) | 1,
-    KAI_U32 = (4 << 4) | 2,
-    KAI_U64 = (8 << 4) | 3,
-    KAI_S8  = (1 << 4) | 4,
-    KAI_S16 = (2 << 4) | 5,
-    KAI_S32 = (4 << 4) | 6,
-    KAI_S64 = (8 << 4) | 7,
-    KAI_F32 = (4 << 4) | 8,
-    KAI_F64 = (8 << 4) | 9,
-};
-
 // Bytecode Operations (BOP)
 enum {
     KAI_BOP_NOP           = 0,  //  nop
@@ -658,12 +692,6 @@ enum {
 };
 
 typedef Kai_u32 Kai_Reg;
-
-typedef union {
-#define X(TYPE, NAME, _) Kai_##NAME NAME;
-	KAI_X_PRIMITIVE_TYPES
-#undef X
-} Kai_Value;
 
 typedef struct {
     char const * name; // metadata
@@ -764,9 +792,8 @@ typedef struct {
 KAI_API (Kai_bool) kai_str_equals       (Kai_str A, Kai_str B);
 KAI_API (Kai_str)  kai_str_from_cstring (char const* String);
 
-	// TODO: rename without "get"
-KAI_API (Kai_vector3_u32) kai_get_version        (void);
-KAI_API (Kai_str)         kai_get_version_string (void);
+KAI_API (Kai_vector3_u32) kai_version        (void);
+KAI_API (Kai_str)         kai_version_string (void);
 
 /// @param out_Syntax_Tree Must be freed using @ref(kai_destroy_syntax_tree)
 KAI_API (Kai_Result) kai_create_syntax_tree (Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
@@ -780,6 +807,11 @@ KAI_API (void)       kai_destroy_program            (Kai_Program Program);
 //!       (because WASM is complete garbage and doesn't support it)
 KAI_API (void*) kai_find_procedure (Kai_Program Program, Kai_str Name, Kai_Type opt_Type);
 KAI_API (void)  kai_destroy_error  (Kai_Error* Error, Kai_Allocator* Allocator);
+
+KAI_API (void) kai_write_syntax_tree (Kai_String_Writer* Writer, Kai_Syntax_Tree* Tree);
+KAI_API (void) kai_write_error       (Kai_String_Writer* Writer, Kai_Error* Error);
+KAI_API (void) kai_write_type        (Kai_String_Writer* Writer, Kai_Type Type);
+KAI_API (void) kai_write_expression  (Kai_String_Writer* Writer, Kai_Expr Expr);
 
 KAI_API (Kai_Result) kai_bc_insert_load_constant   (Kai_BC_Stream* Stream, Kai_u8 type, Kai_Reg reg_dst, Kai_Value value);
 KAI_API (Kai_Result) kai_bc_insert_math            (Kai_BC_Stream* Stream, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Reg reg_src2);
@@ -818,8 +850,8 @@ KAI_API (void)       kai_interp_push_output          (Kai_Interpreter* Interp, K
 KAI_API (void) kai_interp_load_from_stream (Kai_Interpreter* Interp, Kai_BC_Stream* stream);
 KAI_API (void) kai_interp_load_from_memory (Kai_Interpreter* Interp, void* code, Kai_u32 size);
 
-KAI_API (Kai_Result) kai_bytecode_to_string (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
-KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
+KAI_API (Kai_Result) kai_bytecode_to_string (Kai_Bytecode* Bytecode, Kai_String_Writer* Writer);
+KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_String_Writer* Writer);
 
 #endif
 #ifndef KAI__SECTION_INTERNAL_API
@@ -839,6 +871,29 @@ KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_Writer*
 #define kai__for_n(N) for (Kai_int i = 0; i < (Kai_int)(N); ++i)
 
 #define kai__count(ARRAY) (sizeof(ARRAY)/sizeof(ARRAY[0]))
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// --- String Writer ---------------------------------------------------------
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#define kai__write(C_String) \
+	writer->write_string(writer->user, KAI_STRING(C_String))
+
+#define kai__write_string(String) \
+	writer->write_string(writer->user, String)
+
+#define kai__write_char(Char) \
+	writer->write_string(writer->user, (Kai_str){.data = (Kai_u8[]){Char}, .count = 1})
+
+#define kai__set_color(Color) \
+	if (writer->set_color != NULL) writer->set_color(writer->user, Color)
+
+#define kai__write_fill(Char, Count)                                        \
+	writer->write_value(writer->user, KAI_FILL, (Kai_Value){},              \
+		(Kai_Write_Format){.fill_character = (Kai_u8)Char, .min_count = Count})
+
+#define kai__write_u32(Value) \
+	writer->write_value(writer->user, KAI_U32, (Kai_Value){.u32 = Value}, (Kai_Write_Format){})
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- (Fatal) Error Handling + Debug Assertions -----------------------------
@@ -1367,7 +1422,7 @@ Kai__Token* kai__peek_token(Kai__Tokenizer* context);
 // --- Error Creation API ----------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-static inline Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
+static Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
 {
 	*out_Error = (Kai_Error) {
 		.message = Message,
@@ -1376,7 +1431,7 @@ static inline Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Messa
 	return KAI_ERROR_INTERNAL;
 }
 
-static inline void kai__error_unexpected(Kai__Parser* parser, Kai__Token* token, Kai_str where, Kai_str wanted)
+static void kai__error_unexpected(Kai__Parser* parser, Kai__Token* token, Kai_str where, Kai_str wanted)
 {
     Kai_Allocator* allocator = &parser->arena.allocator;
 
@@ -1432,41 +1487,9 @@ KAI_API (Kai_u64)    kai_memory_usage    (Kai_Allocator* Allocator);
 #endif
 #ifdef KAI_USE_DEBUG_API
 
-enum {
-	KAI_DEBUG_COLOR_PRIMARY,
-	KAI_DEBUG_COLOR_SECONDARY,
-	KAI_DEBUG_COLOR_IMPORTANT,
-	KAI_DEBUG_COLOR_IMPORTANT_2,
-	KAI_DEBUG_COLOR_DECORATION,
-
-	KAI_DEBUG_COLOR_COUNT,
-};
-typedef Kai_u32 Kai_Debug_Color;
-
-// TODO: move to main API
-typedef void Kai_P_Write_String   (Kai_ptr User, Kai_str String);
-typedef void Kai_P_Write_C_String (Kai_ptr User, char const* C_String);
-typedef void Kai_P_Write_Char     (Kai_ptr User, Kai_u8 Char);
-typedef void Kai_P_Set_Color      (Kai_ptr User, Kai_Debug_Color Color);
-
-// TODO: move to main API
-typedef struct {
-	Kai_P_Write_String*   write_string;
-	Kai_P_Write_C_String* write_c_string;
-	Kai_P_Write_Char*     write_char;
-	Kai_P_Set_Color*      set_color;
-	Kai_ptr               user;
-} Kai_Debug_String_Writer;
-
-KAI_API (Kai_Debug_String_Writer*) kai_debug_stdout_writer(void);
-KAI_API (void) kai_debug_open_file_writer(Kai_Debug_String_Writer* out_Writer, const char* Path);
-KAI_API (void) kai_debug_close_file_writer(Kai_Debug_String_Writer* Writer);
-
-// TODO: move to main API
-KAI_API (void) kai_debug_write_syntax_tree(Kai_Debug_String_Writer* Writer, Kai_Syntax_Tree* Tree);
-KAI_API (void) kai_debug_write_error(Kai_Debug_String_Writer* Writer, Kai_Error* Error);
-KAI_API (void) kai_debug_write_type(Kai_Debug_String_Writer* Writer, Kai_Type Type);
-KAI_API (void) kai_debug_write_expression(Kai_Debug_String_Writer* Writer, Kai_Expr Expr);
+KAI_API (Kai_String_Writer*) kai_debug_stdout_writer(void);
+KAI_API (void) kai_debug_open_file_writer(Kai_String_Writer* out_Writer, const char* Path);
+KAI_API (void) kai_debug_close_file_writer(Kai_String_Writer* Writer);
 
 #endif
 #ifdef KAI_USE_CPP_API
@@ -1540,7 +1563,7 @@ namespace Kai {
 #endif
 
 #ifdef KAI_IMPLEMENTATION
-static Kai_vector3_u32 kai_get_version(void)
+KAI_API (Kai_vector3_u32) kai_version(void)
 {
 	return (Kai_vector3_u32) {
 		.x = KAI_VERSION_MAJOR,
@@ -1549,7 +1572,7 @@ static Kai_vector3_u32 kai_get_version(void)
 	};
 }
 
-KAI_API (Kai_str) kai_get_version_string(void)
+KAI_API (Kai_str) kai_version_string(void)
 {
 	return KAI_STRING("Kai Compiler v" KAI_VERSION_STRING);
 }
@@ -1581,6 +1604,689 @@ KAI_API (void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
 		Error = next;
 	}
 }
+
+static Kai_str const kai__result_string_map[KAI__RESULT_COUNT] = {
+	[KAI_SUCCESS]         = KAI_CONSTANT_STRING("Success"),
+	[KAI_ERROR_SYNTAX]    = KAI_CONSTANT_STRING("Syntax Error"),
+	[KAI_ERROR_SEMANTIC]  = KAI_CONSTANT_STRING("Semantic Error"),
+	[KAI_ERROR_INFO]      = KAI_CONSTANT_STRING("Info"),
+	[KAI_ERROR_FATAL]     = KAI_CONSTANT_STRING("Fatal Error"),
+	[KAI_ERROR_INTERNAL]  = KAI_CONSTANT_STRING("Internal Error"),
+};
+
+static Kai_u32 kai__base10_digit_count(Kai_u32 x)
+{
+	if (x <         10) return 1;
+	if (x <        100) return 2;
+	if (x <       1000) return 3;
+	if (x <      10000) return 4;
+	if (x <     100000) return 5;
+	if (x <    1000000) return 6;
+	if (x <   10000000) return 7;
+	if (x <  100000000) return 8;
+	if (x < 1000000000) return 9;
+	return 0;
+}
+
+static Kai_u8* kai__advance_to_line(Kai_u8 const* source, Kai_int line)
+{
+	--line;
+	while (line > 0) {
+		if (*source++ == '\n') --line;
+	}
+	return (Kai_u8*)source;
+}
+
+
+// TODO: Audit code
+static void kai__write_source_code(Kai_String_Writer* writer, Kai_u8* src, Kai_u8** end)
+{
+	while (*src != 0 && *src != '\n') {
+		if (*src == '\t')
+			kai__write_char(' ');
+		else
+			kai__write_char(*src);
+		++src;
+	}
+	*end = src;
+}
+
+// TODO: Audit code
+static uint32_t kai__utf8_decode(Kai_u8 **s) {
+	const unsigned char *p = (const unsigned char *)*s;
+	uint32_t cp = 0;
+	size_t len = 0;
+
+	if (p[0] < 0x80) {
+		cp = p[0];
+		len = 1;
+	} else if ((p[0] & 0xE0) == 0xC0) {
+		cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+		len = 2;
+	} else if ((p[0] & 0xF0) == 0xE0) {
+		cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+		len = 3;
+	} else if ((p[0] & 0xF8) == 0xF0) {
+		cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) |
+			 ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+		len = 4;
+	} else {
+		// Invalid byte, skip
+		cp = 0xFFFD;
+		len = 1;
+	}
+
+	*s += len;
+	return cp;
+}
+
+// TODO: Audit code
+static int kai__unicode_char_width(Kai_String_Writer* writer, uint32_t cp, Kai_u8 first, Kai_u8 ch) {
+	int count = 0;
+	if (cp == 0) return 0;                   // NULL
+	if (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) return 0; // Control
+	if (cp >= 0x300 && cp <= 0x36F) return 0; // Combining marks
+	if (
+		(cp >= 0x1100 && cp <= 0x115F) ||
+		(cp >= 0x2329 && cp <= 0x232A) ||
+		(cp >= 0x2E80 && cp <= 0xA4CF) ||
+		(cp >= 0xAC00 && cp <= 0xD7A3) ||
+		(cp >= 0xF900 && cp <= 0xFAFF) ||
+		(cp >= 0xFE10 && cp <= 0xFE19) ||
+		(cp >= 0xFE30 && cp <= 0xFE6F) ||
+		(cp >= 0xFF00 && cp <= 0xFF60) ||
+		(cp >= 0xFFE0 && cp <= 0xFFE6) ||
+		(cp >= 0x1F300 && cp <= 0x1FAFF)
+	) {
+		kai__write_fill(first, 1);
+		first = ch;
+		count += 1;
+	}
+
+	kai__write_fill(first, 1);
+	first = ch;
+	return count + 1;
+}
+
+// TODO: Audit code
+static void kai__write_source_code_fill(Kai_String_Writer* writer, Kai_u8* src, Kai_u8* end, Kai_u8 first, Kai_u8 ch)
+{
+	while (src < end && *src != 0 && *src != '\n') {
+		uint32_t cp = kai__utf8_decode(&src);
+		kai__unicode_char_width(writer, cp, first, ch);
+		first = ch;
+	}
+}
+
+KAI_API (void) kai_write_error(Kai_String_Writer* writer, Kai_Error* error)
+{
+    for (; error != NULL; error = error->next) {
+        if (error->result == KAI_SUCCESS) {
+            kai__write("[Success]\n");
+            return;
+        }
+        if (error->result >= KAI__RESULT_COUNT) {
+            kai__write("[Invalid result value]\n");
+            return;
+        }
+
+        // ------------------------- Write Error Message --------------------------
+
+        kai__set_color(KAI_COLOR_IMPORTANT_2);
+        kai__write_string(error->location.file_name);
+        kai__set_color(KAI_COLOR_PRIMARY);
+    #if KAI_SHOW_LINE_NUMBER_WITH_FILE
+        kai__write_char(':');
+        kai__set_color(KAI_COLOR_IMPORTANT_2);
+        kai__write_u32(error->location.line);
+        kai__set_color(KAI_COLOR_PRIMARY);
+    #endif
+        kai__write(" --> ");
+        if (error->result != KAI_ERROR_INFO) kai__set_color(KAI_COLOR_IMPORTANT);
+        kai__write_string(kai__result_string_map[error->result]);
+        if (error->result != KAI_ERROR_INFO) kai__set_color(KAI_COLOR_PRIMARY);
+        kai__write(": ");
+        kai__set_color(KAI_COLOR_SECONDARY);
+        kai__write_string(error->message);
+        kai__write_char('\n');
+
+        // -------------------------- Write Source Code ---------------------------
+
+        if (error->result == KAI_ERROR_FATAL || error->result == KAI_ERROR_INTERNAL)
+            continue;
+
+        kai__set_color(KAI_COLOR_DECORATION);
+        Kai_u32 digits = kai__base10_digit_count(error->location.line);
+        kai__write_fill(' ', digits);
+        kai__write("  |\n");
+
+        kai__write_char(' ');
+        kai__write_u32(error->location.line);
+        kai__write(" | ");
+
+    	// TODO: Should start from location.string.data and go back
+        Kai_u8* begin = kai__advance_to_line(error->location.source, error->location.line);
+    	Kai_u8* end = begin;
+
+        kai__set_color(KAI_COLOR_PRIMARY);
+        kai__write_source_code(writer, begin, &end);
+        kai__write_char('\n');
+
+        kai__set_color(KAI_COLOR_DECORATION);
+        kai__write_fill(' ', digits);
+        kai__write("  | ");
+
+        kai__write_source_code_fill(writer, begin, error->location.string.data, ' ', ' ');
+
+        kai__set_color(KAI_COLOR_IMPORTANT);
+        //kai__write_char('^');
+        kai__write_source_code_fill(writer,
+        	error->location.string.data,
+        	error->location.string.data + error->location.string.count,
+        	'^', '~');
+
+        kai__write_char(' ');
+        kai__write_string(error->context);
+
+        kai__write_char('\n');
+        kai__set_color(KAI_COLOR_PRIMARY);
+    }
+}
+
+KAI_API (void) kai_write_type(Kai_String_Writer* writer, Kai_Type Type)
+{
+	void* void_Type = Type;
+	if (Type == NULL) {
+		kai__write("[null]");
+		return;
+	}
+	switch (Type->type) {
+		default:                 { kai__write("[Unknown]"); } break;
+		case KAI_TYPE_TYPE:      { kai__write("Type");      } break;
+		case KAI_TYPE_INTEGER: {
+			Kai_Type_Info_Integer* info = void_Type;
+			kai__write_char(info->is_signed? 's':'u');
+			kai__write_u32(info->bits);
+		} break;
+		case KAI_TYPE_FLOAT: {
+			Kai_Type_Info_Float* info = void_Type;
+			kai__write_char('f');
+			kai__write_u32(info->bits);
+		} break;
+		case KAI_TYPE_POINTER:   { kai__write("Pointer");   } break;
+		case KAI_TYPE_PROCEDURE: {
+			Kai_Type_Info_Procedure* info = void_Type;
+			kai__write("(");
+			for (int i = 0;;) {
+				kai_write_type(writer, info->sub_types[i]);
+				if (++i < info->in_count)
+				{
+					kai__write(", ");
+				}
+				else break;
+			}
+			kai__write(") -> (");
+			for (int i = 0;;) {
+				kai_write_type(writer, info->sub_types[info->in_count+i]);
+				if (++i < info->out_count)
+				{
+					kai__write(", ");
+				}
+				else break;
+			}
+			kai__write(")");
+		} break;
+		case KAI_TYPE_STRUCT:    { kai__write("Struct");    } break;
+	}
+}
+
+static Kai_str kai__tree_branches[4] = {
+    KAI_CONSTANT_STRING(KAI_UTF8("\u2503   ")),
+    KAI_CONSTANT_STRING(KAI_UTF8("\u2523\u2501\u2501 ")),
+    KAI_CONSTANT_STRING(KAI_UTF8("    ")),
+    KAI_CONSTANT_STRING(KAI_UTF8("\u2517\u2501\u2501 ")),
+};
+
+static Kai_str kai__binary_operator_name(Kai_u32 op)
+{
+	switch (op) {
+		case '->': return KAI_STRING("cast");
+		case '&&': return KAI_STRING("and");
+		case '||': return KAI_STRING("or");
+		case '==': return KAI_STRING("equals");
+		case '<=': return KAI_STRING("less or equal");
+		case '>=': return KAI_STRING("greater or equal");
+		case '+':  return KAI_STRING("add");
+		case '-':  return KAI_STRING("subtract");
+		case '*':  return KAI_STRING("multiply");
+		case '/':  return KAI_STRING("divide");
+		case '.':  return KAI_STRING("member access");
+		case '[':  return KAI_STRING("index");
+		default:   return KAI_EMPTY_STRING;
+	}
+}
+
+static Kai_str kai__unary_operator_name(Kai_u32 op)
+{
+	switch (op) {
+		case '-':  return KAI_STRING("negate");
+		case '*':  return KAI_STRING("pointer to");
+		case '[':  return KAI_STRING("array");
+		default:   return KAI_EMPTY_STRING;
+	}
+}
+
+typedef struct {
+	Kai_String_Writer * writer;
+	Kai_u64             stack[256]; // 64 * 256 max depth
+	Kai_u32             stack_count;
+	char const*         prefix;
+} Kai__Tree_Traversal_Context;
+
+#define kai__push_traversal_stack(B)                  \
+    do { Kai_u32 i = Context->stack_count++;          \
+         kai__assert(i < sizeof(Context->stack)*8);   \
+         Kai_u64 mask = 1llu << (i%64);               \
+         if (B) Context->stack[i/64] |= mask;         \
+         else   Context->stack[i/64] &=~ mask;        \
+    } while (0)
+
+#define kai__pop_traversal_stack()                \
+    do { kai__assert(Context->stack_count != 0);  \
+		 Context->stack_count -= 1;               \
+	} while (0)
+
+#define kai__explore(EXPR, IS_LAST) kai__traverse_tree(Context, EXPR, IS_LAST, KAI_TRUE)
+static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Expr, Kai_u8 is_last, Kai_bool push) {
+    Kai_String_Writer* writer = Context->writer;
+
+    if (push) kai__push_traversal_stack(is_last);
+
+    kai__set_color(KAI_COLOR_DECORATION);
+    Kai_int last = Context->stack_count - 1;
+    kai__for_n (Context->stack_count) {
+    	Kai_u32 k = (((Context->stack[i/64] >> i%64) & 1) << 1) | (i == last);
+        kai__write_string(kai__tree_branches[k]);
+    }
+
+    if (Context->prefix) {
+        kai__set_color(KAI_COLOR_IMPORTANT_2);
+        kai__write(Context->prefix);
+        kai__write_char(' ');
+        Context->prefix = NULL;
+    }
+    if (Expr == NULL) {
+        kai__set_color(KAI_COLOR_IMPORTANT_2);
+        kai__write("null\n");
+        kai__set_color(KAI_COLOR_PRIMARY);
+        kai__pop_traversal_stack();
+        return;
+    }
+
+#define kai__write_name() \
+    if (Expr->name.count != 0) \
+    { \
+        kai__set_color(KAI_COLOR_PRIMARY); \
+        kai__write(" (name = \""); \
+        kai__set_color(KAI_COLOR_IMPORTANT); \
+        kai__write_string(Expr->name); \
+        kai__set_color(KAI_COLOR_PRIMARY); \
+        kai__write("\")"); \
+    }
+
+	void* void_Expr = Expr;
+    switch (Expr->id) {
+        default: {
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("unknown");
+            kai__set_color(KAI_COLOR_PRIMARY);
+            kai__write(" (id = ");
+        	kai__write_u32(Expr->id);
+            kai__write_char(')');
+            kai__write_char('\n');
+        }
+        break; case KAI_EXPR_IDENTIFIER: {
+            Kai_Expr_Identifier* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("identifier");
+            kai__write_name();
+            kai__write(" \"");
+            kai__set_color(KAI_COLOR_IMPORTANT);
+            kai__write_string(node->source_code);
+            kai__set_color(KAI_COLOR_PRIMARY);
+            kai__write("\"\n");
+        }
+        break; case KAI_EXPR_NUMBER: {
+            Kai_Expr_Number* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("number");
+            kai__write_name();
+            kai__write(" \"");
+            kai__set_color(KAI_COLOR_IMPORTANT);
+            kai__write_string(node->source_code);
+            kai__set_color(KAI_COLOR_PRIMARY);
+            kai__write("\"");
+            //kai__write_format(" whole: %llu, frac: %llu, den: %hu",
+			//	node->value.Whole_Part, node->value.Frac_Part, node->value.Frac_Denom);
+            kai__write("\n");
+        }
+        break; case KAI_EXPR_STRING: {
+            Kai_Expr_String* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("string");
+            kai__write_name();
+            kai__write(" \"");
+            kai__set_color(KAI_COLOR_IMPORTANT);
+            kai__write_string(node->source_code);
+            kai__set_color(KAI_COLOR_PRIMARY);
+            kai__write("\"\n");
+        }
+        break; case KAI_EXPR_UNARY: {
+            Kai_Expr_Unary* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("unary");
+            kai__write_name();
+            kai__write(" (op = ");
+            kai__set_color(KAI_COLOR_IMPORTANT);
+            kai__write_string(kai__unary_operator_name(node->op));
+            kai__set_color(KAI_COLOR_PRIMARY);
+            kai__write(")\n");
+
+            kai__explore(node->expr, 1);
+        }
+        break; case KAI_EXPR_BINARY: {
+            Kai_Expr_Binary* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("binary");
+            kai__write_name();
+            kai__write(" (op = ");
+            kai__set_color(KAI_COLOR_IMPORTANT);
+            kai__write_string(kai__binary_operator_name(node->op));
+            kai__set_color(KAI_COLOR_PRIMARY);
+            kai__write(")\n");
+
+            kai__explore(node->left,  0);
+            kai__explore(node->right, 1);
+        }
+        break; case KAI_EXPR_PROCEDURE_TYPE: {
+            Kai_Expr_Procedure_Type* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("procedure type");
+            kai__write_name();
+            kai__write(" (");
+        	kai__write_u32(node->in_count);
+            kai__write(" in, ");
+        	kai__write_u32(node->out_count);
+            kai__write(" out)\n");
+
+            Kai_u32 end = node->in_count + node->out_count - 1;
+            Kai_Expr current = node->in_out_expr;
+
+            kai__for_n (node->in_count) {
+                Context->prefix = "in ";
+                kai__explore(current, i == end);
+                current = current->next;
+            }
+
+            kai__for_n (node->out_count) {
+                Context->prefix = "out";
+                Kai_int idx = i + node->in_count;
+                kai__explore(current, idx == end);
+                current = current->next;
+            }
+        }
+        break; case KAI_EXPR_PROCEDURE_CALL: {
+            Kai_Expr_Procedure_Call* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("procedure call");
+            kai__write_name();
+            kai__write_char('\n');
+
+            Context->prefix = "proc";
+            kai__explore(node->proc, node->arg_count == 0);
+
+            Kai_int n = node->arg_count;
+            Kai_Expr current = node->arg_head;
+            kai__for_n (n) {
+                kai__explore(current, i == n - 1);
+                current = current->next;
+            }
+        }
+        break; case KAI_EXPR_PROCEDURE: {
+            Kai_Expr_Procedure* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("procedure");
+            kai__write_name();
+        	kai__write(" (");
+        	kai__write_u32(node->in_count);
+            kai__write(" in, ");
+        	kai__write_u32(node->out_count);
+            kai__write(" out)\n");
+
+            Kai_Expr current = node->in_out_expr;
+
+            kai__for_n (node->in_count) {
+                Context->prefix = "in ";
+                kai__explore(current, 0);
+                current = current->next;
+            }
+
+            kai__for_n (node->out_count) {
+                Context->prefix = "out";
+                kai__explore(current, 0);
+                current = current->next;
+            }
+
+            kai__explore(node->body, 1);
+        }
+        break; case KAI_STMT_RETURN: {
+            Kai_Stmt_Return* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("return\n");
+            kai__explore(node->expr, 1);
+        }
+        break; case KAI_STMT_DECLARATION: {
+            Kai_Stmt_Declaration* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("declaration");
+            kai__write_name();
+
+            if (node->flags & KAI_DECL_FLAG_CONST) kai__write(" CONST");
+
+            kai__write_char('\n');
+
+            if (node->type) {
+                Context->prefix = "type";
+                kai__explore(node->type, 0);
+            }
+
+            kai__explore(node->expr, 1);
+        }
+        break; case KAI_STMT_ASSIGNMENT: {
+            Kai_Stmt_Assignment* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("assignment\n");
+
+            Context->prefix = "left ";
+            kai__explore(node->left, 0);
+            Context->prefix = "right";
+            kai__explore(node->expr, 1);
+        }
+        break; case KAI_STMT_COMPOUND: {
+            Kai_Stmt_Compound* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("compound statement\n");
+
+            Kai_Stmt current = node->head;
+            while (current) {
+                kai__explore(current, current->next == NULL);
+                current = current->next;
+            }
+        }
+        break; case KAI_STMT_IF: {
+            Kai_Stmt_If* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("if statement\n");
+
+            Context->prefix = "expr";
+            kai__explore(node->expr, 0);
+            kai__explore(node->body, node->else_body == NULL);
+            if (node->else_body != NULL) {
+                kai__explore(node->else_body, 1);
+            }
+        }
+        break; case KAI_STMT_FOR: {
+            Kai_Stmt_For* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("for statement");
+            kai__set_color(KAI_COLOR_PRIMARY);
+            kai__write("(iterator name = ");
+            kai__set_color(KAI_COLOR_IMPORTANT);
+            kai__write_string(node->iterator_name);
+            kai__set_color(KAI_COLOR_PRIMARY);
+            kai__write(")\n");
+
+            Context->prefix = "from";
+            kai__explore(node->from, 0);
+
+            Context->prefix = "to";
+            kai__explore(node->to, 0);
+
+            kai__explore(node->body, 1);
+        }
+    }
+
+    if (push) kai__pop_traversal_stack();
+}
+
+
+KAI_API (void) kai_write_syntax_tree(Kai_String_Writer* writer, Kai_Syntax_Tree* tree)
+{
+	Kai__Tree_Traversal_Context context = {
+		.writer = writer,
+	};
+	kai__write("Top Level\n");
+	kai__traverse_tree(&context, (Kai_Stmt)&tree->root, 1, KAI_TRUE);
+}
+
+KAI_API (void) kai_write_expression(Kai_String_Writer* writer, Kai_Expr expr)
+{
+	Kai__Tree_Traversal_Context context = {
+		.writer = writer,
+	};
+	kai__traverse_tree(&context, expr, KAI_TRUE, KAI_FALSE);
+}
+
+#ifdef KAI_USE_MEMORY_API
+// TODO
+#endif
+#ifdef KAI_USE_DEBUG_API
+#include <stdio.h>
+#include <locale.h>
+
+char const* kai__term_debug_colors [KAI__COLOR_COUNT] = {
+    [KAI_COLOR_PRIMARY]     = "\x1b[0;37m",
+    [KAI_COLOR_SECONDARY]   = "\x1b[1;97m",
+    [KAI_COLOR_IMPORTANT]   = "\x1b[1;91m",
+    [KAI_COLOR_IMPORTANT_2] = "\x1b[1;94m",
+    [KAI_COLOR_DECORATION]  = "\x1b[0;90m",
+};
+
+static void kai__file_writer_write_value(void* User, Kai_u32 Type, Kai_Value Value, Kai_Write_Format Format)
+{
+    if (User == NULL) return;
+	FILE* f = User;
+    switch (Type) {
+        case KAI_FILL: {
+            kai__for_n (Format.min_count) {
+                fputc(Format.fill_character, f);
+            }
+        } break;
+
+        case KAI_U32: {
+            fprintf(f, "%u", Value.u32);
+        } break;
+
+        default: {
+            fprintf(f, "[StdOut Writer] -- Case not defined for type %i\n", Type);
+        } break;
+    }
+}
+
+static void kai__file_writer_write_string(Kai_ptr User, Kai_str string)
+{
+	if (User == NULL) return;
+	fwrite(string.data, 1, string.count, User);
+}
+
+static void kai__file_writer_set_color(Kai_ptr user, Kai_Write_Color color)
+{
+    kai__unused(user);
+    kai__unused(color);
+}
+
+static void kai__stdout_write_value(void* User, Kai_u32 Type, Kai_Value Value, Kai_Write_Format Format)
+{
+	kai__file_writer_write_value(stdout, Type, Value, Format);
+}
+
+static void kai__stdout_write_string(Kai_ptr User, Kai_str string)
+{
+	fwrite(string.data, 1, string.count, stdout);
+}
+
+static void kai__stdout_writer_set_color(Kai_ptr User, Kai_Write_Color color)
+{
+	printf("%s", kai__term_debug_colors[color]);
+}
+
+#if defined(KAI__PLATFORM_WINDOWS)
+__declspec(dllimport) int __stdcall SetConsoleOutputCP(unsigned int wCodePageID);
+#endif
+
+#if defined(KAI__PLATFORM_WINDOWS)
+static FILE* kai__stdc_file_open(char const* path, char const* mode) {
+    FILE* handle = NULL;
+    fopen_s(&handle, path, mode); // this is somehow more safe? :/
+    return (void*)handle;
+}
+#else
+#    define kai__stdc_file_open fopen
+#endif
+
+KAI_API (Kai_String_Writer*) kai_debug_stdout_writer(void)
+{
+#if defined(KAI__PLATFORM_WINDOWS)
+	SetConsoleOutputCP(65001);
+#endif
+	setlocale(LC_CTYPE, ".UTF8");
+	static Kai_String_Writer writer = {
+		.write_string   = kai__stdout_write_string,
+		.write_value    = kai__stdout_write_value,
+		.set_color      = kai__stdout_writer_set_color,
+		.user           = NULL,
+	};
+	writer.user = stdout;
+	return &writer;
+}
+
+KAI_API (void) kai_debug_open_file_writer(Kai_String_Writer* writer, const char* path)
+{
+    *writer = (Kai_String_Writer) {
+        .write_string   = kai__file_writer_write_string,
+    	.write_value    = kai__file_writer_write_value,
+        .set_color      = kai__file_writer_set_color,
+        .user           = kai__stdc_file_open(path, "wb"),
+    };
+}
+
+KAI_API (void) kai_debug_close_file_writer(Kai_String_Writer* writer)
+{
+    if (writer->user != NULL)
+        fclose(writer->user);
+}
+
+#endif
 
 // TODO: move to kai_dev
 #if !defined(KAI__PLATFORM_WASM)

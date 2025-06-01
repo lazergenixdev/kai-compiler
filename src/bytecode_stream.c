@@ -304,7 +304,7 @@ const char* __math_op_to_string(Kai_u8 op)
     }
 }
 
-Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
+Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
 {
     //! TODO: use type info
     //! TODO: find all branch locations
@@ -315,7 +315,7 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
     #define bcc__write(...) \
     { \
         int length = snprintf(temp_buffer, sizeof(temp_buffer), __VA_ARGS__); \
-        writer->write(writer->user, (Kai_str) {.data = (Kai_u8*)temp_buffer, .count = length}); \
+        writer->write_string(writer->user, (Kai_str) {.data = (Kai_u8*)temp_buffer, .count = length}); \
     } (void)0
 
     #define bcc__indent() bcc__write(";   ")
