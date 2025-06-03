@@ -1,6 +1,7 @@
 # TODO
 - [x] Make todo list
 - [x] Fix a bunch of compile warnings
+- [ ] Rename KAI_USE_DEBUG_API -> KAI_USE_IO_API ; kai_debug -> kai_io
 - [ ] Header only
 - [ ] Fix corruption in error messages
 - [x] Fix procedure location in bytecode generation

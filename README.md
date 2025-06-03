@@ -3,8 +3,7 @@
 
 - Strict static type checking
 - Written in C with **no external dependencies**
-- Language is most similar to WASM in execution model
-- Compile-then-execute model (no JIT/Interpreter)
+- More of an [Ahead-of-time](https://en.wikipedia.org/wiki/Ahead-of-time_compilation) model (no JIT/Interpreter)
 	- *there is a bytecode interpreter for compile-time execution
 - Runtime Safety will be achieved with runtime checks (able to be toggled off for faster performance)
 - Kai is a place-holder name, I an have no idea what to call this language
