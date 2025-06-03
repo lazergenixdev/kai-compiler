@@ -2,21 +2,26 @@
 <html>
     <head>
         <title>Kai </title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic+Coding&display=swap" rel="stylesheet">
-        <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
+		<script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
     </head>
     <style>
-        :root {
-            font-family: 'Nanum Gothic Coding', monospace;
-        }
+		.monospaced-font {
+			font-family: monospace;
+			font-optical-sizing: auto;
+			font-weight: 400;
+			font-style: normal;
+			font-size: small;
+		}
         html, body {
             height: 100%;
             margin: 0;
             background-color: #000;
             color: white;
+			font-family: Calibri, sans-serif;
         }
+		#title {
+			color: #BBB;
+		}
         #header {
             display: flex;
             justify-content: space-between;
@@ -24,7 +29,6 @@
             padding: 0.75rem 1rem;
             background-color: #000;
             color: white;
-            font-family: sans-serif;
         }
         #header a {
             color: white;
@@ -42,22 +46,22 @@
         }
         #container {
             display: flex;
-            height: 100vh;
+            height: 80vh;
             background-color: #111;
         }
-        #editor-side {
+        .column {
             flex: 1;
             display: flex;
             flex-direction: column;
         }
         #editor {
-            flex: 1;
+            flex: auto;
+            width: 0%;
         }
         #CompileError {
             height: 150px;
             margin: 0;
             overflow: auto;
-            width: 100%;
             box-sizing: border-box;
             background: #000;
         }
@@ -66,27 +70,37 @@
             margin: 0;
             padding: 0.5em;
             overflow: auto;
-            font-family: monospace;
         }
+		select {
+			color: white;
+			background-color: #222;
+		}
     </style>
     <body>
         <div id="header">
             <div id="title">hi</div>
-            <strong>Playground</strong>
+            <strong>Compiler Explorer</strong>
             <a href="https://github.com/lazergenixdev/kai-compiler" target="_blank" aria-label="GitHub repository">
                 <!-- GitHub SVG Icon -->
                 <img src="github-mark.svg" alt="GitHub repository" >
             </a>
         </div>
         <div id="container">
-            <div id="editor-side">
-                <div id="editor"></div>
-                <pre id="CompileError"></pre>
-            </div>
-            <pre id="SyntaxTree"></pre>
+			<div id="editor"></div>
+			<div class="column">
+				<select name="cars" id="mode">
+					<option value="0">Bytecode</option>
+					<option value="1">Syntax Tree</option>
+				</select>
+				<pre id="SyntaxTree" class="monospaced-font"></pre>
+			</div>
         </div>
+		<pre id="CompileError"></pre>
     </body>
     <script>
+		const COMPILE     = 0;
+		const SYNTAX_TREE = 1;
+
         class HTML_Builder {
             constructor() {
                 this.parts = [];
@@ -137,11 +151,11 @@
             }
 
             finalize() {
+				if (this.bytes.length !== 0) {
+					this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+					this.bytes.length = 0;
+				}
                 if (this.colorActive) {
-                    if (this.bytes.length !== 0) {
-                        this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
-                        this.bytes.length = 0;
-                    }
                     this.parts.push("</span>");
                     this.colorActive = false;
                 }
@@ -198,7 +212,7 @@
             const prev_num_pages = c_memory.grow(size/page_size + 1);
             c_bytes  = new Uint8Array(c_memory.buffer);
             active_list[prev_num_pages * page_size] = size;
-            console.log(active_list, free_list);
+            console.log("__wasm_allocate", c_memory.buffer.byteLength);
             return prev_num_pages * page_size;
         }
 
@@ -224,7 +238,6 @@
             const dataView = new DataView(c_memory.buffer);
             let data = dataView.getUint32(string, true);
             let count = dataView.getUint32(string + 4, true);
-            //builder.append(c_string(data, count));
             builder.append(c_bytes.slice(data, data + count));
         }
 
@@ -254,22 +267,20 @@
             builder.set_color(color);
         }
 
-        let SOURCE = `fibonacci :: (n: int) -> int {
-    if n <= 2 ret 0;
-    ret fibonacci(n-2) + fibonacci(n-1);
+        let SOURCE = `
+// compile time :3
+value :: add(inc(1), 3);
+
+add :: (a: s32, b: s32) -> s32 {
+    if a <= 0 ret 0;
+    if b <= 0 ret 1;
+    ret a + b;
 }
 
-int :: s32;
-
-h :: o + 3;
-
-print :: (x: int) #native;
-
-main :: () {
-    for i: 0..16 {
-        print(fibonacci(i));
-    }
-}`;
+inc :: (n: s32) -> s32 {
+    ret n + 1;
+}
+`;
         {
             const src = localStorage.getItem("kai-compiler.playground.code");
             if (src !== null) {
@@ -299,29 +310,36 @@ main :: () {
         let scratch_buffer = null;
 
         function compile(code) {
+			SOURCE = code;
             const encoder = new TextEncoder();
             const encodedString = encoder.encode(code + '\0');
             console.log(encodedString);
             c_bytes.fill(0, scratch_buffer, scratch_buffer + page_size);
             c_bytes.set(encodedString, scratch_buffer);
             builder = new HTML_Builder();
+			console.group("compile");
             try {
-                const result = c.test(scratch_buffer)
+				let result;
+				if (mode.value == SYNTAX_TREE)
+					result = c.create_syntax_tree(scratch_buffer)
+				else
+					result = c.compile(scratch_buffer)
                 console.log("test returned:", result);
                 if (result === 0) {
-                    SyntaxTree.innerHTML = builder.finalize();
+					SyntaxTree.innerHTML = builder.finalize();
                     CompileError.innerHTML = "";
                 }
                 else {
-                    CompileError.innerHTML = builder.finalize();
+					CompileError.innerHTML = builder.finalize();
                 }
             }
             catch (error) {
-                CompileError.innerText = error;
+				CompileError.innerText = error;
                 throw error;
             }
             finally {
-                __wasm_free_all();
+				__wasm_free_all();
+				console.groupEnd();
             }
         }
 
@@ -346,6 +364,8 @@ main :: () {
             let ptr = dataView.getUint32(scratch_buffer    , true);
             let len = dataView.getUint32(scratch_buffer + 4, true);
             title.innerText = c_string(ptr, len);
+
+			mode.addEventListener("input", e => compile(SOURCE));
 
             compile(SOURCE);
         });

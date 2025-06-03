@@ -289,18 +289,15 @@ Kai_Result kai_bc_set_branch(Kai_BC_Stream* stream, uint32_t branch, uint32_t lo
     return KAI_SUCCESS;
 }
 
-#ifndef __WASM__
-#include <stdio.h>
-
-const char* __math_op_to_string(Kai_u8 op)
+Kai_str __math_op_to_string(Kai_u8 op)
 {
     switch (op)
     {
-        case KAI_BOP_ADD: return "+";
-        case KAI_BOP_MUL: return "*";
-        case KAI_BOP_DIV: return "/";
-        case KAI_BOP_SUB: return "-";
-        default: return "?";
+        case KAI_BOP_ADD: return KAI_STRING("+");
+        case KAI_BOP_MUL: return KAI_STRING("*");
+        case KAI_BOP_DIV: return KAI_STRING("/");
+        case KAI_BOP_SUB: return KAI_STRING("-");
+        default:          return KAI_STRING("?");
     }
 }
 
@@ -310,37 +307,38 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
     //! TODO: find all branch locations
     //! TODO: use procedure name and argument count
 
-    char temp_buffer [1024];
+//    #define bcc__write(...) \
+//    { \
+//        int length = snprintf(temp_buffer, sizeof(temp_buffer), __VA_ARGS__); \
+//        writer->write_string(writer->user, (Kai_str) {.data = (Kai_u8*)temp_buffer, .count = length}); \
+//    } (void)0
 
-    #define bcc__write(...) \
-    { \
-        int length = snprintf(temp_buffer, sizeof(temp_buffer), __VA_ARGS__); \
-        writer->write_string(writer->user, (Kai_str) {.data = (Kai_u8*)temp_buffer, .count = length}); \
-    } (void)0
-
-    #define bcc__indent() bcc__write(";   ")
+    #define bcc__indent() kai__write("    ")
     #define bcc__branch_check() \
     bcs__for (bytecode->branch_count) { \
         if (cursor == bytecode->branch_hints[i]) { \
-            bcc__write("__loc_%i:\n", i); \
+            kai__write("__loc_"); \
+            kai__write_u32(i); \
+            kai__write(":\n"); \
             break; \
         } \
     }    
 
     Kai_u8 const* data = bytecode->data;
-    uint32_t cursor = 0;
+    uint32_t cursor = bytecode->range.offset;
 
-    bcc__write("int32_t func(");
+    kai__write("int32_t func(");
     for (int i = 0;;)
     {
-        bcc__write("int32_t __%i", i);
+        kai__write("int32_t __");
+        kai__write_u32(i);
         if (++i < bytecode->arg_count)
         {
-            bcc__write(", ");
+            kai__write(", ");
         }
         else break;
     }
-    bcc__write(") {\n");
+    kai__write(") {\n");
 
     while (cursor < bytecode->count) {
         bcc__branch_check();
@@ -367,7 +365,11 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             cursor += __type_to_size(type);
 
             bcc__indent();
-            bcc__write("%s __%d = %d;\n", "int32_t", dst, value.s32);
+            kai__write("int32_t __");
+            kai__write_u32(dst);
+            kai__write(" = ");
+            kai__write_u32(value.s32);
+            kai__write(";\n");
         } break;
 
         case KAI_BOP_ADD:
@@ -391,19 +393,28 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             cursor += sizeof(Kai_Reg);
 
             bcc__indent();
+            kai__write("int32_t __");
+            kai__write_u32(dst);
+            kai__write(" = __");
+			kai__write_u32(a);
+			kai__write(" ");
+			kai__write_string(__math_op_to_string(operation));
+			kai__write(" ");
             if (is_value) {
-                Kai_Value value;
+				Kai_Value value;
                 Kai_u8 size = __type_to_size(type);
                 Kai_u8* u8_out = (Kai_u8*)&value;
                 for (int i = 0; i < size; ++i)
-                    u8_out[i] = data[cursor + i];
+				u8_out[i] = data[cursor + i];
                 cursor += size;
-                bcc__write("%s __%d = __%d %s %i;\n", "int32_t", dst, a, __math_op_to_string(operation), value.s32);
+				kai__write_u32(value.s32);
             } else {
                 Kai_Reg b = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
-                bcc__write("%s __%d = __%d %s __%d;\n", "int32_t", dst, a, __math_op_to_string(operation), b);
+				kai__write("__");
+				kai__write_u32(b);
             }
+			kai__write(";\n");
 
         } break;
 
@@ -436,9 +447,11 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
 
             bcc__indent();
             if (use_dst) {
-                bcc__write("%s __%d = %s(", "int32_t", dst, name);
+				kai__unreachable();
+                //bcc__write("int32_t __%d = %s(", dst, name);
             } else {
-                bcc__write("%s(", name);
+				kai__unreachable();
+                //bcc__write("%s(", name);
             }
 
             bcs__for (input_count) {
@@ -446,14 +459,17 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
                 reg = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
 
-                bcc__write("__%d", reg);
+				kai__unreachable();
+                //bcc__write("__%d", reg);
 
                 if (i != input_count - 1) {
-                    bcc__write(", ");
+					kai__unreachable();
+					//bcc__write(", ");
                 }
             }
-
-            bcc__write(");\n");
+			
+			kai__unreachable();
+            //bcc__write(");\n");
         } break;
 
         case KAI_BOP_COMPARE: {
@@ -479,21 +495,28 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             char const* tab[] = { "<", ">=", ">", "<=", "==", "!=" };
 
             bcc__indent();
-            bcc__write("%s __%d = __%d %s ", "int32_t", dst, a, tab[comp]);
-
+            kai__write("int32_t __");
+            kai__write_u32(dst);
+            kai__write(" = __");
+			kai__write_u32(a);
+			kai__write(" ");
+			kai__write_string(kai_str_from_cstring(tab[comp]));
+			kai__write(" ");
             if (is_value) {
-                Kai_Value value;
+				Kai_Value value;
                 Kai_u8 size = __type_to_size(type);
                 Kai_u8* u8_out = (Kai_u8*)&value;
                 for (int i = 0; i < size; ++i)
-                    u8_out[i] = data[cursor + i];
+				u8_out[i] = data[cursor + i];
                 cursor += size;
-                bcc__write("%i;\n", value.s32);
+				kai__write_u32(value.s32);
             } else {
-                Kai_Reg b = *(Kai_Reg*)(data + cursor);
+				Kai_Reg b = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
-                bcc__write("__%d;\n", b);
+				kai__write("__");
+				kai__write_u32(b);
             }
+			kai__write(";\n");
         } break;
 
         case KAI_BOP_BRANCH: {
@@ -506,7 +529,11 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             bcc__indent();
             bcs__for (bytecode->branch_count) {
                 if (location == bytecode->branch_hints[i]) {
-                    bcc__write("if (__%d) goto __loc_%i;\n", src, i);
+                    kai__write("if (__");
+					kai__write_u32(src);
+					kai__write(") goto __loc_");
+					kai__write_u32(i);
+					kai__write(";\n");
                     break;
                 }
             }
@@ -515,8 +542,8 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
         case KAI_BOP_JUMP: {
             cursor += sizeof(uint32_t);
             bcc__indent();
-            bcc__write("goto __endif;\n");
-            bcc__write("__else:\n");
+            kai__write("goto __endif;\n");
+            kai__write("__else:\n");
         } break;
 
         case KAI_BOP_CALL: {
@@ -533,15 +560,18 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             bcs__for (ret_count) {
                 Kai_Reg dst = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
-                bcc__write("%s __%d = ", "int32_t", dst);
+				kai__unreachable();
+                //bcc__write("%s __%d = ", "int32_t", dst);
             }
-            bcc__write("%s(", "func");
+			kai__unreachable();
+            //bcc__write("%s(", "func");
             bcs__for (arg_count) {
-                Kai_Reg src = *(Kai_Reg*)(data + cursor);
+				Kai_Reg src = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
-                bcc__write("__%d%s", src, i == arg_count - 1 ? "" : ", ");
+				kai__unreachable();
+                //bcc__write("__%d%s", src, i == arg_count - 1 ? "" : ", ");
             }
-            bcc__write(");\n");
+            kai__write(");\n");
         } break;
 
         case KAI_BOP_RETURN: {
@@ -554,19 +584,21 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             bcs__for (ret_count) {
                 a = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
-                bcc__write("return __%d;\n", a);
+                kai__write("return __");
+                kai__write_u32(a);
+            	kai__write(";\n");
             }
         } break;
         
         default: {
-            kai__unreachable();
+            kai__write("BYTECODE ERROR\n}");
+			//kai__unreachable();
             //bc__debug_log("invalid bytecode instruction! (pc=%x op=%d)", cursor - 1, operation);
             return KAI_SUCCESS;
         } break;
         }
     }
 
-    bcc__write("}");
+    kai__write("}");
 	return KAI_SUCCESS;
 }
-#endif

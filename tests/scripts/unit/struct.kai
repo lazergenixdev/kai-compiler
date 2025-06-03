@@ -1,0 +1,12 @@
+
+Foo :: struct {
+    a : f32;
+    b : s32;
+    c : u64;
+}
+
+main :: (foo: *Foo) {
+	foo.a = 0.5;
+	foo.b = 0x45;
+	foo.c = 1337;
+}

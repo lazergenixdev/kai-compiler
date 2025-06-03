@@ -3,7 +3,7 @@
 - [x] Fix a bunch of compile warnings
 - [ ] Header only
 - [ ] Fix corruption in error messages
-- [ ] Fix procedure location in bytecode generation
+- [x] Fix procedure location in bytecode generation
 - [ ] Add declaration and assignment to bytecode generation
 - [ ] Scopes in bytecode generation
 - [ ] Simple machine code generation (ARM64)

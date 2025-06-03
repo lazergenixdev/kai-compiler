@@ -6,28 +6,47 @@ extern void __wasm_write_string(Kai_ptr User, Kai_str String);
 extern void __wasm_write_value(Kai_ptr User, Kai_u32 Type, Kai_Value Value, Kai_Write_Format format);
 extern void __wasm_set_color(Kai_ptr User, Kai_Write_Color Color_Index);
 
+static Kai_String_Writer div_writer = {
+	.write_string   = &__wasm_write_string,
+	.write_value    = &__wasm_write_value,
+	.set_color      = &__wasm_set_color,
+};
+
 __attribute__((__visibility__("default")))
-int test(const char* source)
+int compile(const char* source)
 {
     Kai_Allocator allocator = {0};
-    Kai_Error error = {0};
-
     kai_memory_create(&allocator);
+	
+	Kai_Error error = {0};
+	Kai_Program program = {0};
+	Kai_str source_code = kai_str_from_cstring(source);
+	Kai_Result result = kai_create_program_from_source(source_code, &allocator, &error, &program);
 
-    Kai_Syntax_Tree tree = {0};
-    Kai_Syntax_Tree_Create_Info info = {
-        .allocator = allocator,
-        .error = &error,
-        .source_code = kai_str_from_cstring(source),
-    };
-    Kai_Result result = kai_create_syntax_tree(&info, &tree);
-    //visit_ast_node((Kai_Expr)&tree.root, 0);
+    if (result != KAI_SUCCESS)
+        kai_write_error(&div_writer, &error);
 
-    Kai_String_Writer div_writer = {
-        .write_string   = &__wasm_write_string,
-        .write_value    = &__wasm_write_value,
-        .set_color      = &__wasm_set_color,
-    };
+    kai_destroy_error(&error, &allocator);
+    kai_memory_destroy(&allocator);
+
+    return (result != KAI_SUCCESS);
+}
+
+__attribute__((__visibility__("default")))
+int create_syntax_tree(const char* source)
+{
+    Kai_Allocator allocator = {0};
+    kai_memory_create(&allocator);
+	
+    Kai_Error error = {0};
+	Kai_Syntax_Tree tree = {0};
+	Kai_Syntax_Tree_Create_Info info = {
+		.allocator = allocator,
+		.error = &error,
+		.source_code = kai_str_from_cstring(source),
+	};
+	Kai_Result result = kai_create_syntax_tree(&info, &tree);
+
     if (result != KAI_SUCCESS)
         kai_write_error(&div_writer, &error);
     else

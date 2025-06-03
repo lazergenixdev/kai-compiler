@@ -7,7 +7,33 @@
 #define KAI_USE_DEBUG_API
 #include "kai.h"
 
-static void dev_dump_memory(Kai_Debug_String_Writer* writer, void* data, Kai_u32 count)
+#if !defined(KAI__PLATFORM_WASM)
+#include <stdio.h> // --> printf
+#include <stdlib.h>
+#endif
+
+// TODO: create 'dev' API (basically just formatted printing)
+
+#if defined(KAI__PLATFORM_WASM)
+extern void __wasm_console_log(const char* message, int value);
+#endif
+
+
+#if defined(KAI__PLATFORM_WASM)
+#   define panic_with_message(...) kai__fatal_error("Panic", #__VA_ARGS__, __FILE__, __LINE__)
+#else
+#   define print_location() printf("in (%s:%i)\n", __FILE__, __LINE__)
+#   define panic_with_message(...) print_location(), printf(__VA_ARGS__), panic()
+#endif
+
+#if !defined(KAI__PLATFORM_WASM)
+static void panic(void) {
+    puts("\nPanic triggered. Now exiting...");
+    exit(1);
+}
+#endif
+
+inline void dev_dump_memory(Kai_String_Writer* writer, void* data, Kai_u32 count)
 {
     Kai_u8* bytes = data;
     Kai_u32 k = 0;
@@ -18,13 +44,13 @@ static void dev_dump_memory(Kai_Debug_String_Writer* writer, void* data, Kai_u32
 
             char map[] = {'0', '1', '2', '3', '4', '5', '6', '7',
                           '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
-            writer->write_char(writer->user, map[(bytes[k] >> 4) & 0x0F]);
-            writer->write_char(writer->user, map[(bytes[k] >> 0) & 0x0F]);
-            writer->write_char(writer->user, ' ');
+            kai__write_char(map[(bytes[k] >> 4) & 0x0F]);
+            kai__write_char(map[(bytes[k] >> 0) & 0x0F]);
+            kai__write_char(' ');
 
             k += 1;
         }
-        writer->write_char(writer->user, '\n');
+        kai__write_char('\n');
     }
 }
 

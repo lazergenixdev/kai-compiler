@@ -1,4 +1,5 @@
-#include "config.h"
+#include "kai_dev.h"
+#pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
 
 //! @TODO: String Escape \"
 //! @TODO: Add "false" and "true" keywords ?
@@ -342,7 +343,7 @@ Kai__Token generate_token(Kai__Tokenizer* context) {
     return token;
 }
 
-//! @TODO: Handle overflow of integers (how? lol idk, token_error_overflow?)
+//! @TODO: Handle parsing of values during compilation
 
 void parse_number_bin(Kai__Tokenizer* context, Kai_u64* n) {
     for(; cursor < source.count; ++cursor) {
@@ -375,6 +376,7 @@ void parse_number_dec(Kai__Tokenizer* context, Kai_u64* n) {
 }
 
 void parse_number_hex(Kai__Tokenizer* context, Kai_u64* n) {
+    // TODO: just use switch
     enum {
         X = 16, /* BREAK */ S = 17, /* SKIP */
         A = 0xA, B = 0xB, C = 0xC, D = 0xD, E = 0xE, F = 0xF,
@@ -401,71 +403,41 @@ void parse_number_hex(Kai__Tokenizer* context, Kai_u64* n) {
     }
 }
 
+#define CHECK(A,B)                   \
+    if (source.data[cursor] == A) {  \
+        t->type = B;                 \
+        ++cursor;                    \
+        ++t->string.count;           \
+        return;                      \
+    }
+
 void parse_multi_token(Kai__Tokenizer* context, Kai__Token* t, Kai_u8 current) {
     if(cursor >= source.count) return;
 
     switch(current)
     {
-    default:
-	
-	break; case '&': {
-        if (source.data[cursor] == '&') {
-            t->type = '&&';
-            ++cursor;
-            ++t->string.count;
-        }
+	case '&': {
+	    CHECK('&', '&&')
 	}
-	break; case '|': {
-        if (source.data[cursor] == '|') {
-            t->type = '||';
-            ++cursor;
-            ++t->string.count;
-        }
+	case '|': {
+	    CHECK('|', '||')
 	}
-    break; case '=': {
-        if (source.data[cursor] == '=') {
-            t->type = '==';
-            ++cursor;
-            ++t->string.count;
-        }
+    case '=': {
+	    CHECK('=', '==')
 	}
-    break; case '>': {
-        if (source.data[cursor] == '=') {
-            t->type = '>=';
-            ++cursor;
-            ++t->string.count;
-        } else
-		if (source.data[cursor] == '>') {
-            t->type = '>>';
-            ++cursor;
-            ++t->string.count;
-        }
+    case '>': {
+	    CHECK('=', '>=')
+	    CHECK('>', '>>')
 	}
-    break; case '<': {
-        if (source.data[cursor] == '=') {
-            t->type = '<=';
-            ++cursor;
-            ++t->string.count;
-        } else
-		if (source.data[cursor] == '<') {
-            t->type = '<<';
-            ++cursor;
-            ++t->string.count;
-        }
+    case '<': {
+	    CHECK('=', '<=')
+	    CHECK('>', '<<')
 	}
-    break; case '!': {
-        if (source.data[cursor] == '=') {
-            t->type = '!=';
-            ++cursor;
-            ++t->string.count;
-        }
+    case '!': {
+	    CHECK('=', '!=')
 	}
-    break; case '-': {
-        if (source.data[cursor] == '>') {
-            t->type = '->';
-            ++cursor;
-            ++t->string.count;
-        } else
+    case '-': {
+	    CHECK('>', '->')
         if (cursor + 1 < source.count &&
             source.data[cursor] == '-' &&
             source.data[cursor+1] == '-'
@@ -475,7 +447,7 @@ void parse_multi_token(Kai__Tokenizer* context, Kai__Token* t, Kai_u8 current) {
             t->string.count += 2;
         }
     }
-    break;
+    default: (void)0;
     }
 }
 

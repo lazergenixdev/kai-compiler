@@ -1,4 +1,5 @@
-#include "config.h"
+#include "kai_dev.h"
+#pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
 
 // Optimization Idea:
 // 2 pass parser,
@@ -22,7 +23,9 @@
 #define _ID_Expr_Procedure_Type KAI_EXPR_PROCEDURE_TYPE 
 #define _ID_Expr_Procedure_Call KAI_EXPR_PROCEDURE_CALL 
 #define _ID_Expr_Procedure      KAI_EXPR_PROCEDURE      
-#define _ID_Stmt_Return         KAI_STMT_RETURN         
+#define _ID_Expr_Code           KAI_EXPR_CODE
+#define _ID_Expr_Struct         KAI_EXPR_STRUCT
+#define _ID_Stmt_Return         KAI_STMT_RETURN
 #define _ID_Stmt_Declaration    KAI_STMT_DECLARATION    
 #define _ID_Stmt_Assignment     KAI_STMT_ASSIGNMENT     
 #define _ID_Stmt_Compound       KAI_STMT_COMPOUND       
@@ -285,6 +288,14 @@ Kai_Expr parse_expression(Kai__Parser* parser, int prec) {
             left = (Kai_Expr) str;
         }
         else return NULL;
+    } break;
+    ////////////////////////////////////////////////////////////
+    // Handle Struct
+    case KAI__TOKEN_struct: {
+        p_next();
+        left = _parse_stmt(KAI_FALSE);
+        p_expect(left, "todo", "todo");
+        return left;
     } break;
     ////////////////////////////////////////////////////////////
     // Handle Single-Token Expressions
@@ -614,35 +625,43 @@ Kai_Expr parse_statement(Kai__Parser* parser, Kai_bool is_top_level) {
         Kai_Expr type = _parse_type();
         if (type) p_next();
 
+        Kai_Expr expr = NULL;
+
         switch (t->type) {
             case ':': flags |= KAI_DECL_FLAG_CONST; break;
             case '=': break;
-            default: return p_error_unexpected_s("in declaration", "should be '=' or ':'");
+            case ';': goto done_declaration;
+            default: return p_error_unexpected_s("in declaration", "should be '=', ':', or ';'");
         }
-
-        Kai_Expr expr;
-        Kai_bool require_semicolon = KAI_FALSE;
         p_next();
+
+        Kai_bool require_semicolon = KAI_FALSE;
         if (t->type == '(' && is_procedurep_next(parser)) {
             expr = _parse_proc();
             if (!expr) return NULL;
         }
         else {
+            require_semicolon = KAI_TRUE;
+            if (t->type == KAI__TOKEN_struct)
+                require_semicolon = KAI_FALSE;
             expr = _parse_expr(DEFAULT_PREC);
             p_expect(expr, "in declaration", "should be an expression here");
-            require_semicolon = KAI_TRUE;
         }
         if (require_semicolon) {
             p_next();
             p_expect(t->type == ';', "after statement", "there should be a ';' before this");
         }
-        Kai_Stmt_Declaration* decl = p_alloc_node(Stmt_Declaration);
-        decl->expr  = expr;
-        decl->type  = type;
-        decl->name  = name;
-        decl->flags = flags;
-        decl->line_number = line_number;
-        return (Kai_Stmt) decl;
+
+    	done_declaration:
+		{
+			Kai_Stmt_Declaration* decl = p_alloc_node(Stmt_Declaration);
+			decl->expr  = expr;
+			decl->type  = type;
+			decl->name  = name;
+			decl->flags = flags;
+			decl->line_number = line_number;
+			return (Kai_Stmt) decl;
+		}
     }
     }
 }

@@ -1,6 +1,6 @@
 #ifndef BUILTIN_TYPES__H
 #define BUILTIN_TYPES__H
-#include "config.h"
+#include "kai.h"
 
 static Kai_Type_Info         kai__type_info_type = { .type = KAI_TYPE_TYPE };
 static Kai_Type_Info_Integer kai__type_info_s8   = { .type = KAI_TYPE_INTEGER, .bits = 8,  .is_signed = KAI_TRUE };

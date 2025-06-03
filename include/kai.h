@@ -113,12 +113,12 @@
 #	define KAI_UTF8(STRING) STRING
 #endif
 
-// TODO: push/pop stupid warnings
 #if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
-#    pragma GCC diagnostic ignored "-Wmultichar"
-#    pragma GCC diagnostic ignored "-Wunused-function" // TODO: how to avoid?
+#	pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
 #elif defined(KAI__COMPILER_MSVC)
-// Example: #pragma warning(disable: 4127)
+#	pragma warning(push)
+//#	pragma warning(disable: 4127)
 #endif
 
 
@@ -517,13 +517,16 @@ typedef enum {
 	KAI_EXPR_PROCEDURE_TYPE = 5,
 	KAI_EXPR_PROCEDURE_CALL = 6,
 	KAI_EXPR_PROCEDURE      = 7,
-	KAI_STMT_RETURN         = 8,
-	KAI_STMT_DECLARATION    = 9,
-	KAI_STMT_ASSIGNMENT     = 10,
-	KAI_STMT_COMPOUND       = 11,
-	KAI_STMT_IF             = 12,
-	KAI_STMT_FOR            = 13,
-	KAI_STMT_DEFER          = 14,
+	KAI_EXPR_CODE           = 8,
+	KAI_EXPR_STRUCT         = 9,
+	KAI_STMT_RETURN         = 10,
+	KAI_STMT_DECLARATION    = 11,
+	KAI_STMT_ASSIGNMENT     = 12,
+	KAI_STMT_IF             = 13,
+	KAI_STMT_FOR            = 14,
+	KAI_STMT_DEFER          = 15,
+
+	KAI_STMT_COMPOUND       = 16, // TODO: remove?
 } Kai_Node_ID;
 
 enum {
@@ -759,6 +762,7 @@ typedef struct {
 typedef struct {
 	void                    * data;
     Kai_u32                   count;
+	Kai_range                 range;
     Kai_u8                    ret_count;
     Kai_u8                    arg_count;
     Kai_Native_Procedure    * natives;
@@ -1422,7 +1426,7 @@ Kai__Token* kai__peek_token(Kai__Tokenizer* context);
 // --- Error Creation API ----------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-static Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
+static inline Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
 {
 	*out_Error = (Kai_Error) {
 		.message = Message,
@@ -1431,7 +1435,7 @@ static Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_str Message)
 	return KAI_ERROR_INTERNAL;
 }
 
-static void kai__error_unexpected(Kai__Parser* parser, Kai__Token* token, Kai_str where, Kai_str wanted)
+static inline void kai__error_unexpected(Kai__Parser* parser, Kai__Token* token, Kai_str where, Kai_str wanted)
 {
     Kai_Allocator* allocator = &parser->arena.allocator;
 
@@ -2090,17 +2094,18 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
             kai__set_color(KAI_COLOR_SECONDARY);
             kai__write("declaration");
             kai__write_name();
-
             if (node->flags & KAI_DECL_FLAG_CONST) kai__write(" CONST");
-
             kai__write_char('\n');
+
+        	Kai_bool has_expr = (node->expr != NULL);
 
             if (node->type) {
                 Context->prefix = "type";
-                kai__explore(node->type, 0);
+                kai__explore(node->type, !has_expr);
             }
 
-            kai__explore(node->expr, 1);
+        	if (has_expr)
+				kai__explore(node->expr, 1);
         }
         break; case KAI_STMT_ASSIGNMENT: {
             Kai_Stmt_Assignment* node = void_Expr;
@@ -2159,14 +2164,13 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
     if (push) kai__pop_traversal_stack();
 }
 
-
 KAI_API (void) kai_write_syntax_tree(Kai_String_Writer* writer, Kai_Syntax_Tree* tree)
 {
 	Kai__Tree_Traversal_Context context = {
 		.writer = writer,
 	};
 	kai__write("Top Level\n");
-	kai__traverse_tree(&context, (Kai_Stmt)&tree->root, 1, KAI_TRUE);
+	kai__traverse_tree(&context, (Kai_Stmt)&tree->root, KAI_TRUE, KAI_TRUE);
 }
 
 KAI_API (void) kai_write_expression(Kai_String_Writer* writer, Kai_Expr expr)
@@ -2322,6 +2326,12 @@ void kai__fatal_error(
 
 #ifdef __cplusplus
 }
+#endif
+
+#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
+#	pragma GCC diagnostic pop
+#elif defined(KAI__COMPILER_MSVC)
+#	pragma warning(pop)
 #endif
 
 #endif // KAI__H
