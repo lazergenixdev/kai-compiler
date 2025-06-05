@@ -237,24 +237,30 @@ typedef struct {
 	Kai_str*   member_names;
 } Kai_Type_Info_Struct;
 
-// TODO: use extern here! (public api?)
-static Kai_Type_Info         kai__type_info_type = { .type = KAI_TYPE_TYPE };
-static Kai_Type_Info_Integer kai__type_info_s8   = { .type = KAI_TYPE_INTEGER, .bits = 8,  .is_signed = KAI_TRUE };
-static Kai_Type_Info_Integer kai__type_info_s16  = { .type = KAI_TYPE_INTEGER, .bits = 16, .is_signed = KAI_TRUE };
-static Kai_Type_Info_Integer kai__type_info_s32  = { .type = KAI_TYPE_INTEGER, .bits = 32, .is_signed = KAI_TRUE };
-static Kai_Type_Info_Integer kai__type_info_s64  = { .type = KAI_TYPE_INTEGER, .bits = 64, .is_signed = KAI_TRUE };
-static Kai_Type_Info_Integer kai__type_info_u8   = { .type = KAI_TYPE_INTEGER, .bits = 8,  .is_signed = KAI_FALSE };
-static Kai_Type_Info_Integer kai__type_info_u16  = { .type = KAI_TYPE_INTEGER, .bits = 16, .is_signed = KAI_FALSE };
-static Kai_Type_Info_Integer kai__type_info_u32  = { .type = KAI_TYPE_INTEGER, .bits = 32, .is_signed = KAI_FALSE };
-static Kai_Type_Info_Integer kai__type_info_u64  = { .type = KAI_TYPE_INTEGER, .bits = 64, .is_signed = KAI_FALSE };
-static Kai_Type_Info_Float   kai__type_info_f32  = { .type = KAI_TYPE_FLOAT, .bits = 32 };
-static Kai_Type_Info_Float   kai__type_info_f64  = { .type = KAI_TYPE_FLOAT, .bits = 64 };
-
 typedef struct {
 	Kai_str  name;
 	Kai_Type type;
 } Kai_Named_Type;
 
+// If there is a better solution to this, let me know
+#define KAI__X_TYPE_INFO_DEFINITIONS                                                                                  \
+	X(Kai_Type_Info         , kai__type_info_type , { .type = KAI_TYPE_TYPE })                                        \
+	X(Kai_Type_Info_Integer , kai__type_info_s8   , { .type = KAI_TYPE_INTEGER, .bits = 8,  .is_signed = KAI_TRUE })  \
+	X(Kai_Type_Info_Integer , kai__type_info_s16  , { .type = KAI_TYPE_INTEGER, .bits = 16, .is_signed = KAI_TRUE })  \
+	X(Kai_Type_Info_Integer , kai__type_info_s32  , { .type = KAI_TYPE_INTEGER, .bits = 32, .is_signed = KAI_TRUE })  \
+	X(Kai_Type_Info_Integer , kai__type_info_s64  , { .type = KAI_TYPE_INTEGER, .bits = 64, .is_signed = KAI_TRUE })  \
+	X(Kai_Type_Info_Integer , kai__type_info_u8   , { .type = KAI_TYPE_INTEGER, .bits = 8,  .is_signed = KAI_FALSE }) \
+	X(Kai_Type_Info_Integer , kai__type_info_u16  , { .type = KAI_TYPE_INTEGER, .bits = 16, .is_signed = KAI_FALSE }) \
+	X(Kai_Type_Info_Integer , kai__type_info_u32  , { .type = KAI_TYPE_INTEGER, .bits = 32, .is_signed = KAI_FALSE }) \
+	X(Kai_Type_Info_Integer , kai__type_info_u64  , { .type = KAI_TYPE_INTEGER, .bits = 64, .is_signed = KAI_FALSE }) \
+	X(Kai_Type_Info_Float   , kai__type_info_f32  , { .type = KAI_TYPE_FLOAT, .bits = 32 })                           \
+	X(Kai_Type_Info_Float   , kai__type_info_f64  , { .type = KAI_TYPE_FLOAT, .bits = 64 })
+
+#define X(TYPE, NAME, ...) extern TYPE NAME;
+	KAI__X_TYPE_INFO_DEFINITIONS
+#undef X
+
+// TODO: move to implementation
 static Kai_Named_Type kai__builtin_types [] = {
     { KAI_CONSTANT_STRING("Type"), (Kai_Type)&kai__type_info_type },
     { KAI_CONSTANT_STRING("s8"),   (Kai_Type)&kai__type_info_s8   },
@@ -1693,6 +1699,10 @@ namespace Kai {
 #endif
 
 #ifdef KAI_IMPLEMENTATION
+
+#define X(TYPE, NAME, ...) ;TYPE NAME = __VA_ARGS__;
+	KAI__X_TYPE_INFO_DEFINITIONS
+#undef X
 
 KAI_API (Kai_vector3_u32) kai_version(void)
 {

@@ -46,8 +46,6 @@ Kai_Result kai_create_program_from_source(
 	Kai_Error*     out_Error,
 	Kai_Program*   out_Program)
 {
-	printf("location : %p\n", &kai__type_info_f32);
-	
 	Kai_Result            result           = KAI_SUCCESS;
 	Kai_Syntax_Tree       syntax_tree      = {0};
 	Kai__Dependency_Graph dependency_graph = {0};
@@ -1444,6 +1442,7 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 			}
 
 			Kai_u32 location = 0;
+			Context->registers.count = 0;
 			Kai_Result result = kai__bytecode_emit_procedure(Context, procedure, &location);
 
 #ifdef DEBUG_CODE_GENERATION

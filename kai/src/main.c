@@ -37,8 +37,6 @@ void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocato
 
 int main(int argc, char** argv) {
 
-	printf("location : %p\n", &kai__type_info_f32);
-
     int exit_value = 1;
     struct {
         Kai_bool parse_only;
