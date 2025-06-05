@@ -237,21 +237,54 @@ typedef struct {
 	Kai_str*   member_names;
 } Kai_Type_Info_Struct;
 
+// TODO: use extern here! (public api?)
+static Kai_Type_Info         kai__type_info_type = { .type = KAI_TYPE_TYPE };
+static Kai_Type_Info_Integer kai__type_info_s8   = { .type = KAI_TYPE_INTEGER, .bits = 8,  .is_signed = KAI_TRUE };
+static Kai_Type_Info_Integer kai__type_info_s16  = { .type = KAI_TYPE_INTEGER, .bits = 16, .is_signed = KAI_TRUE };
+static Kai_Type_Info_Integer kai__type_info_s32  = { .type = KAI_TYPE_INTEGER, .bits = 32, .is_signed = KAI_TRUE };
+static Kai_Type_Info_Integer kai__type_info_s64  = { .type = KAI_TYPE_INTEGER, .bits = 64, .is_signed = KAI_TRUE };
+static Kai_Type_Info_Integer kai__type_info_u8   = { .type = KAI_TYPE_INTEGER, .bits = 8,  .is_signed = KAI_FALSE };
+static Kai_Type_Info_Integer kai__type_info_u16  = { .type = KAI_TYPE_INTEGER, .bits = 16, .is_signed = KAI_FALSE };
+static Kai_Type_Info_Integer kai__type_info_u32  = { .type = KAI_TYPE_INTEGER, .bits = 32, .is_signed = KAI_FALSE };
+static Kai_Type_Info_Integer kai__type_info_u64  = { .type = KAI_TYPE_INTEGER, .bits = 64, .is_signed = KAI_FALSE };
+static Kai_Type_Info_Float   kai__type_info_f32  = { .type = KAI_TYPE_FLOAT, .bits = 32 };
+static Kai_Type_Info_Float   kai__type_info_f64  = { .type = KAI_TYPE_FLOAT, .bits = 64 };
+
+typedef struct {
+	Kai_str  name;
+	Kai_Type type;
+} Kai_Named_Type;
+
+static Kai_Named_Type kai__builtin_types [] = {
+    { KAI_CONSTANT_STRING("Type"), (Kai_Type)&kai__type_info_type },
+    { KAI_CONSTANT_STRING("s8"),   (Kai_Type)&kai__type_info_s8   },
+    { KAI_CONSTANT_STRING("s16"),  (Kai_Type)&kai__type_info_s16  },
+    { KAI_CONSTANT_STRING("s32"),  (Kai_Type)&kai__type_info_s32  },
+    { KAI_CONSTANT_STRING("s64"),  (Kai_Type)&kai__type_info_s64  },
+    { KAI_CONSTANT_STRING("u8"),   (Kai_Type)&kai__type_info_u8   },
+    { KAI_CONSTANT_STRING("u16"),  (Kai_Type)&kai__type_info_u16  },
+    { KAI_CONSTANT_STRING("u32"),  (Kai_Type)&kai__type_info_u32  },
+    { KAI_CONSTANT_STRING("u64"),  (Kai_Type)&kai__type_info_u64  },
+    { KAI_CONSTANT_STRING("f32"),  (Kai_Type)&kai__type_info_f32  },
+    { KAI_CONSTANT_STRING("f64"),  (Kai_Type)&kai__type_info_f64  },
+};
+
 #endif
 #ifndef KAI__SECTION_CORE_STRUCTS
 
 enum {
-    //        SIZE       ID
-    KAI_U8  = (1 << 4) | 0,
-    KAI_U16 = (2 << 4) | 1,
-    KAI_U32 = (4 << 4) | 2,
-    KAI_U64 = (8 << 4) | 3,
-    KAI_S8  = (1 << 4) | 4,
-    KAI_S16 = (2 << 4) | 5,
-    KAI_S32 = (4 << 4) | 6,
-    KAI_S64 = (8 << 4) | 7,
-    KAI_F32 = (4 << 4) | 8,
-    KAI_F64 = (8 << 4) | 9,
+    //         ID   SIZE
+    KAI_U8   =  0 | (1 << 4),
+    KAI_U16  =  1 | (2 << 4),
+    KAI_U32  =  2 | (4 << 4),
+    KAI_U64  =  3 | (8 << 4),
+    KAI_S8   =  4 | (1 << 4),
+    KAI_S16  =  5 | (2 << 4),
+    KAI_S32  =  6 | (4 << 4),
+    KAI_S64  =  7 | (8 << 4),
+    KAI_F32  =  8 | (4 << 4),
+    KAI_F64  =  9 | (8 << 4),
+    KAI_TYPE = 10 | (sizeof(void*) << 4),
 
 	// Special type for String_Writer to
 	// only use the fill_character + min_count
@@ -702,7 +735,7 @@ typedef struct {
     Kai_u8       input_count;
 } Kai_Native_Procedure;
 
-	// TODO: replace with Kai_Byte_Array
+// TODO: replace with Kai_Byte_Array
 typedef struct {
     Kai_u8*        data;
     Kai_u32        count;
@@ -790,6 +823,96 @@ typedef struct {
 	Kai_Allocator          allocator;
 } Kai_Program;
 
+typedef struct {
+	Kai_u32 flags; // (LOCAL_VARIABLE, TYPE)
+    Kai_u32 value; // stored index value
+} Kai__DG_Node_Index;
+
+#define KAI__DG_NODE_EVALUATED      (1 << 0)
+#define KAI__DG_NODE_TYPE           (1 << 0)
+#define KAI__DG_NODE_LOCAL_VARIABLE (1 << 1)
+#define KAI__SCOPE_GLOBAL_INDEX     0
+#define KAI__SCOPE_NO_PARENT        0xFFFFFFFF
+
+typedef union {
+    Kai_Value value;
+    Kai_Type  type;
+	Kai_u32   procedure_location;
+} Kai__DG_Value;
+
+typedef KAI__ARRAY(Kai__DG_Node_Index)      Kai__DG_Dependency_Array;
+typedef KAI__HASH_TABLE(Kai__DG_Node_Index) Kai__DG_Identifier_Map;
+
+typedef struct {
+	Kai_Type                 type;  // evaluated type
+	Kai__DG_Value            value; // evaluated value
+	Kai__DG_Dependency_Array value_dependencies, type_dependencies;
+    Kai_u32                  value_flags,        type_flags;  // (NODE_EVALUATED)
+	Kai_str                  name;
+	Kai_Expr                 expr;
+	Kai_u32                  line_number;
+	Kai_u32                  scope_index;
+} Kai__DG_Node;
+
+typedef struct {
+    Kai__DG_Identifier_Map identifiers;
+    Kai_u32                parent;
+    Kai_bool               is_proc_scope;
+} Kai__DG_Scope;
+
+typedef struct {
+	Kai_Error*                error;
+    Kai_Allocator             allocator;
+	KAI__ARRAY(Kai__DG_Scope) scopes;
+	KAI__ARRAY(Kai__DG_Node)  nodes;
+	int*                      compilation_order;
+} Kai__Dependency_Graph;
+
+typedef struct {
+	Kai_u32  location;
+	Kai_Type type;
+} Kai__Bytecode_Procedure;
+
+typedef KAI__HASH_TABLE(Kai__Bytecode_Procedure) Kai__Bytecode_Procedure_Table;
+
+typedef struct {
+	Kai_BC_Stream                 stream; // Global bytecode stream
+	Kai_Interpreter               interp; // <3
+	KAI__ARRAY(Kai_u32)           branch_hints;
+	Kai__Bytecode_Procedure_Table procedure_table;
+} Kai__Bytecode;
+
+typedef struct {
+	Kai_Error*        error;
+	Kai_Syntax_Tree*  trees;
+	Kai_u32           tree_count;
+	Kai_Allocator     allocator;
+} Kai__Dependency_Graph_Create_Info;
+
+typedef struct {
+	Kai_Error*              error;
+	Kai__Dependency_Graph*  dependency_graph;
+} Kai__Bytecode_Create_Info;
+
+typedef struct {
+	Kai_str name;
+	Kai_Reg reg;
+} Kai__Bytecode_Register;
+
+typedef struct {
+	Kai_Error*                   error;
+	Kai__Dependency_Graph*       dependency_graph;
+	Kai__Bytecode*               bytecode;
+	Kai__Dynamic_Arena_Allocator arena;
+	KAI__ARRAY(Kai__Bytecode_Register) registers;
+} Kai__Bytecode_Generation_Context;
+
+typedef struct {
+	Kai_Error*     error;
+	Kai_Allocator  allocator;
+    Kai__Bytecode* bytecode;
+} Kai__Program_Create_Info;
+
 #endif
 #ifndef KAI__SECTION_CORE_API
 
@@ -800,9 +923,9 @@ KAI_API (Kai_vector3_u32) kai_version        (void);
 KAI_API (Kai_str)         kai_version_string (void);
 
 /// @param out_Syntax_Tree Must be freed using @ref(kai_destroy_syntax_tree)
-KAI_API (Kai_Result) kai_create_syntax_tree (Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
+KAI_API (Kai_Result) kai_create_syntax_tree  (Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
+KAI_API (void)       kai_destroy_syntax_tree (Kai_Syntax_Tree* Syntax_Tree);
 
-KAI_API (void)       kai_destroy_syntax_tree        (Kai_Syntax_Tree* Syntax_Tree);
 KAI_API (Kai_Result) kai_create_program             (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
 KAI_API (Kai_Result) kai_create_program_from_source (Kai_str Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program);
 KAI_API (void)       kai_destroy_program            (Kai_Program Program);
@@ -860,21 +983,24 @@ KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_String_
 #endif
 #ifndef KAI__SECTION_INTERNAL_API
 
+// TODO: make this?
+extern KAI__ARRAY(Kai_Named_Type) kai__get_builtin_types();
+
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Convienence -----------------------------------------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+#define kai__unused(VAR) (void)VAR
+
+#define kai__count(ARRAY) (sizeof(ARRAY)/sizeof(ARRAY[0]))
+
+#define kai__for_n(N) for (Kai_int i = 0; i < (Kai_int)(N); ++i)
 
 #define kai__allocate(Old, New_Size, Old_Size) \
 	allocator->heap_allocate(allocator->user, Old, New_Size, Old_Size)
 
 #define kai__free(Ptr,Size) \
 	allocator->heap_allocate(allocator->user, Ptr, 0, Size)
-
-#define kai__unused(VAR) (void)VAR
-
-#define kai__for_n(N) for (Kai_int i = 0; i < (Kai_int)(N); ++i)
-
-#define kai__count(ARRAY) (sizeof(ARRAY)/sizeof(ARRAY[0]))
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- String Writer ---------------------------------------------------------
@@ -1567,6 +1693,7 @@ namespace Kai {
 #endif
 
 #ifdef KAI_IMPLEMENTATION
+
 KAI_API (Kai_vector3_u32) kai_version(void)
 {
 	return (Kai_vector3_u32) {
@@ -2267,21 +2394,14 @@ static void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_
 #define kai__page_size() sysconf(_SC_PAGESIZE)
 
 #elif defined(KAI__PLATFORM_WINDOWS)
+typedef unsigned short WORD;
 typedef unsigned long  DWORD;
 typedef int            BOOL;
-typedef DWORD         *PDWORD;
-typedef void          *LPVOID;
 typedef uintptr_t      SIZE_T;
-#define WINAPI __stdcall
-typedef struct {
-	DWORD dwOemId;
-	DWORD dwPageSize;
-	void* padding[8];
-} SYSTEM_INFO;
-LPVOID WINAPI VirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect);
-BOOL WINAPI VirtualProtect(LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, PDWORD lpflOldProtect);
-BOOL WINAPI VirtualFree(LPVOID lpAddress, SIZE_T dwSize, DWORD dwFreeType);
-void GetSystemInfo(SYSTEM_INFO* lpSystemInfo);
+__declspec(dllimport) void* __stdcall VirtualAlloc(void* lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect);
+__declspec(dllimport) BOOL __stdcall VirtualProtect(void* lpAddress, SIZE_T dwSize, DWORD flNewProtect, DWORD* lpflOldProtect);
+__declspec(dllimport) BOOL __stdcall VirtualFree(void* lpAddress, SIZE_T dwSize, DWORD dwFreeType);
+__declspec(dllimport) void __stdcall GetSystemInfo(struct _SYSTEM_INFO* lpSystemInfo);
 
 static void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
 {
@@ -2314,8 +2434,12 @@ static void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_
 
 static Kai_u32 kai__page_size()
 {
-	SYSTEM_INFO info;
-	GetSystemInfo(&info);
+	struct {
+		DWORD dwOemId;
+		DWORD dwPageSize;
+		int _padding[10];
+	} info;
+	GetSystemInfo((struct _SYSTEM_INFO*)&info);
 	return (Kai_u32)info.dwPageSize;
 }
 
@@ -2455,16 +2579,19 @@ static void kai__file_writer_set_color(Kai_ptr user, Kai_Write_Color color)
 
 static void kai__stdout_write_value(void* User, Kai_u32 Type, Kai_Value Value, Kai_Write_Format Format)
 {
+	kai__unused(User);
 	kai__file_writer_write_value(stdout, Type, Value, Format);
 }
 
 static void kai__stdout_write_string(Kai_ptr User, Kai_str string)
 {
+	kai__unused(User);
 	fwrite(string.data, 1, string.count, stdout);
 }
 
 static void kai__stdout_writer_set_color(Kai_ptr User, Kai_Write_Color color)
 {
+	kai__unused(User);
 	printf("%s", kai__term_debug_colors[color]);
 }
 

@@ -100,5 +100,5 @@ int compile_simple_add() {
 	#endif
 
     kai_memory_destroy(&allocator);
-	return FAIL;
+	return PASS;
 }

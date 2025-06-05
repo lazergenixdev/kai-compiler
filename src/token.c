@@ -1,5 +1,7 @@
 #include "kai_dev.h"
-#pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
+#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
+#pragma GCC diagnostic ignored "-Wmultichar" // TODO: remove
+#endif
 
 //! @TODO: String Escape \"
 //! @TODO: Add "false" and "true" keywords ?

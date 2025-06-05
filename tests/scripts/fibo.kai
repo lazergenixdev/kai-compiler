@@ -5,4 +5,4 @@ fibonacci :: (n: int) -> int {
 
 int :: s32;
 
-print :: (x: int) #native;
+//print :: (x: int) #native;

@@ -1,5 +1,4 @@
 #include "kai.h"
-//#include <stdio.h>
 
 #define bci__for(N) for (int i = 0; i < (int)N; ++i)
 #define __type_to_size(T) ((T) >> 4)

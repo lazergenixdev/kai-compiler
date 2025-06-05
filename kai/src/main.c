@@ -36,6 +36,9 @@ typedef Kai_s32 Main_Proc(Kai_slice);
 void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator);
 
 int main(int argc, char** argv) {
+
+	printf("location : %p\n", &kai__type_info_f32);
+
     int exit_value = 1;
     struct {
         Kai_bool parse_only;

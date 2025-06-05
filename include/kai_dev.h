@@ -21,9 +21,21 @@ extern void __wasm_console_log(const char* message, int value);
 
 #if defined(KAI__PLATFORM_WASM)
 #   define panic_with_message(...) kai__fatal_error("Panic", #__VA_ARGS__, __FILE__, __LINE__)
+
+extern void __wasm_console_log(const char* message, int value);
+extern void __wasm_write_string(Kai_ptr User, Kai_str String);
+extern void __wasm_write_value(Kai_ptr User, Kai_u32 Type, Kai_Value Value, Kai_Write_Format format);
+extern void __wasm_set_color(Kai_ptr User, Kai_Write_Color Color_Index);
+
+static Kai_String_Writer debug_writer = {
+	.write_string   = &__wasm_write_string,
+	.write_value    = &__wasm_write_value,
+	.set_color      = &__wasm_set_color,
+};
 #else
 #   define print_location() printf("in (%s:%i)\n", __FILE__, __LINE__)
 #   define panic_with_message(...) print_location(), printf(__VA_ARGS__), panic()
+#	define debug_writer (*kai_debug_stdout_writer())
 #endif
 
 #if !defined(KAI__PLATFORM_WASM)

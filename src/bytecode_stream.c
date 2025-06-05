@@ -427,9 +427,9 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             use_dst = *(Kai_u8*)(data + cursor);
             cursor += sizeof(Kai_u8);
 
-            Kai_Reg dst = 0;
+            //Kai_Reg dst = 0;
             if (use_dst) {
-                dst = *(Kai_Reg*)(data + cursor);
+                //dst = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
             }
 
@@ -437,10 +437,10 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             input_count = *(Kai_u8*)(data + cursor);
             cursor += sizeof(Kai_u8);
 
-            char const* name = "???";
+            //char const* name = "???";
             bcs__for (bytecode->native_count) {
                 if (address == (uintptr_t)bytecode->natives[i].address) {
-                    name = bytecode->natives[i].name;
+                    //name = bytecode->natives[i].name;
                     break;
                 }
             }
@@ -455,9 +455,9 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             }
 
             bcs__for (input_count) {
-                Kai_Reg reg;
-                reg = *(Kai_Reg*)(data + cursor);
-                cursor += sizeof(Kai_Reg);
+                //Kai_Reg reg;
+                //reg = *(Kai_Reg*)(data + cursor);
+                //cursor += sizeof(Kai_Reg);
 
 				kai__unreachable();
                 //bcc__write("__%d", reg);
@@ -558,7 +558,7 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
             
             bcc__indent();
             bcs__for (ret_count) {
-                Kai_Reg dst = *(Kai_Reg*)(data + cursor);
+                //Kai_Reg dst = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
 				kai__unreachable();
                 //bcc__write("%s __%d = ", "int32_t", dst);
@@ -566,7 +566,7 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
 			kai__unreachable();
             //bcc__write("%s(", "func");
             bcs__for (arg_count) {
-				Kai_Reg src = *(Kai_Reg*)(data + cursor);
+				//Kai_Reg src = *(Kai_Reg*)(data + cursor);
                 cursor += sizeof(Kai_Reg);
 				kai__unreachable();
                 //bcc__write("__%d%s", src, i == arg_count - 1 ? "" : ", ");

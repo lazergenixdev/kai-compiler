@@ -1,5 +1,26 @@
 #include "kai_dev.h"
-#pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
+#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
+#pragma GCC diagnostic ignored "-Wmultichar" // TODO: remove
+#endif
+
+typedef struct {
+    Kai_u32 type;
+    Kai_u32 class;
+    Kai_s32 prec;
+} Kai__Operator;
+
+// TODO: refactor
+Kai_Expr kai__parse_expression  (Kai__Parser* Parser, Kai_Expr Expr, Kai_u32 Precedence);
+Kai_Expr kai__parse_type        (Kai__Parser* Parser);
+Kai_Stmt kai__parse_statement   (Kai__Parser* Parser);
+Kai_Stmt kai__parse_procedure   (Kai__Parser* Parser);
+Kai_Stmt kai__parse_declaration (Kai__Parser* Parser);
+Kai_Stmt kai__parse_assignment  (Kai__Parser* Parser);
+Kai_bool kai__is_procedure_next (Kai__Parser* Parser);
+
+Kai__Operator kai__token_type_to_operator(Kai_u32 Type);
+
+#define kai__allocate_node(Type)
 
 // Optimization Idea:
 // 2 pass parser,
@@ -117,6 +138,7 @@ Kai_bool is_procedurep_next(Kai__Parser* parser) {
     return found;
 }
 
+// TODO: handle more types than just function pls (different from parse expression?)
 Kai_Expr parse_type(Kai__Parser* parser) {
     Kai__Token* t = &parser->tokenizer.current_token;
     if (t->type == '[') {
@@ -474,6 +496,7 @@ parse_parameter:
     return (Kai_Expr) proc;
 }
 
+// TODO: seperate parser for top level statements??
 Kai_Expr parse_statement(Kai__Parser* parser, Kai_bool is_top_level) {
     Kai__Token* t = &parser->tokenizer.current_token;
     switch (t->type) {
@@ -666,6 +689,14 @@ Kai_Expr parse_statement(Kai__Parser* parser, Kai_bool is_top_level) {
     }
 }
 
+// TODO: better API for linked lists ??
+#define KAI__LINKED_LIST(TYPE) \
+	struct { TYPE head; TYPE current; }
+#define kai__linked_list_append(List, Ptr)  \
+	if (List.head == NULL) List.head = Ptr; \
+	else List.current->next = Ptr;          \
+	List.current = Ptr
+
 Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_Tree* tree)
 {
     Kai__Parser p = {
@@ -675,29 +706,23 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
             .line_number = 1,
         },
     };
-    Kai__Parser* const parser = &p;
-    
+	KAI__LINKED_LIST(Kai_Stmt) statements = {0};
     kai__dynamic_arena_allocator_create(&p.arena, &info->allocator);
-
-    // setup first token
-    Kai__Token* token = p_next();
-
-    Kai_Stmt current = NULL;
-    Kai_Stmt head = NULL;
-
+	
+    Kai__Token* token = kai__next_token(&p.tokenizer);
     while (token->type != KAI__TOKEN_END) {
-        Kai_Stmt statement = _parse_stmt(KAI_TRUE);
-        if (!statement) break;
-        if (!head) head = statement;
-        else current->next = statement;
-        current = statement;
-        p_next();
+        Kai_Stmt statement = parse_statement(&p, KAI_TRUE);
+        if (statement == NULL)
+			break;
+		kai__linked_list_append(statements, statement);
+        kai__next_token(&p.tokenizer);
     }
 
     tree->allocator = p.arena;
     tree->root.id = KAI_STMT_COMPOUND;
-    tree->root.head = head;
+    tree->root.head = statements.head;
 
+	// TODO: parser holds error pointer
     if (p.error.result != KAI_SUCCESS) {
         if (info->error) {
             *info->error = p.error;

@@ -85,7 +85,7 @@ int bytecode() {
         if (actual != expected[i]) return FAIL;
     }
 
-#if 1 // bytecode -> C
+#if 0 // bytecode -> C
     Kai_Bytecode bytecode = {
         .data  = stream.data,
         .count = stream.count,

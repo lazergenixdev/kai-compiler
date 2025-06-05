@@ -1,25 +1,37 @@
 #define KAI_USE_DEBUG_API
 #define KAI_USE_MEMORY_API
-#include "program.h"
 #include "kai_dev.h"
-#include "builtin_types.h"
-
-extern void __wasm_console_log(const char* message, int value);
-extern void __wasm_write_string(Kai_ptr User, Kai_str String);
-extern void __wasm_write_value(Kai_ptr User, Kai_u32 Type, Kai_Value Value, Kai_Write_Format format);
-extern void __wasm_set_color(Kai_ptr User, Kai_Write_Color Color_Index);
-
-static Kai_String_Writer debug_writer = {
-	.write_string   = &__wasm_write_string,
-	.write_value    = &__wasm_write_value,
-	.set_color      = &__wasm_set_color,
-};
-
-#pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
+#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
+#pragma GCC diagnostic ignored "-Wmultichar" // TODO: remove
+#endif
 
 //#define DEBUG_DEPENDENCY_GRAPH
 //#define DEBUG_COMPILATION_ORDER
-#define DEBUG_CODE_GENERATION
+//#define DEBUG_CODE_GENERATION
+
+Kai_Result kai__create_dependency_graph(
+	Kai__Dependency_Graph_Create_Info* Info,
+	Kai__Dependency_Graph*             out_Graph);
+
+Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Error* out_Error);
+Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode* out_Bytecode);
+Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_Program);
+
+void kai__destroy_dependency_graph(Kai__Dependency_Graph* Graph);
+void kai__destroy_bytecode(Kai__Bytecode* Bytecode);
+
+Kai_Result kai__dg_insert_value_dependencies(
+    Kai__Dependency_Graph*    Graph,
+	Kai__DG_Dependency_Array* out_Dependency_Array,
+    Kai_u32                   Scope_Index,
+    Kai_Expr                  Expr,
+    Kai_bool                  In_Procedure);
+
+Kai_Result kai__dg_insert_type_dependencies(
+    Kai__Dependency_Graph*    Graph,
+	Kai__DG_Dependency_Array* out_Dependency_Array,
+    Kai_u32                   Scope_Index,
+    Kai_Expr                  Expr);
 
 Kai_Result kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program)
 {
@@ -34,6 +46,8 @@ Kai_Result kai_create_program_from_source(
 	Kai_Error*     out_Error,
 	Kai_Program*   out_Program)
 {
+	printf("location : %p\n", &kai__type_info_f32);
+	
 	Kai_Result            result           = KAI_SUCCESS;
 	Kai_Syntax_Tree       syntax_tree      = {0};
 	Kai__Dependency_Graph dependency_graph = {0};
@@ -346,6 +360,8 @@ void kai__print_scope(Kai__DG_Scope* Scope)
 		Kai_str name = Scope->identifiers.keys[i];
 		printf("\"%.*s\"+%i ", name.count, name.data, node_index.value);
 	}
+#else
+		kai__unused(Scope);
 #endif	
 }
 
