@@ -3,7 +3,7 @@
 
 #define KAI_USE_MEMORY_API
 #define KAI_USE_DEBUG_API
-#include "kai.h"
+#include "kai_dev.h"
 #include <stdio.h>
 
 extern void begin_test(const char* name);

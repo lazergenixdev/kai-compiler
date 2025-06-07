@@ -5,7 +5,6 @@
 #ifndef KAI_DEV__H
 #define KAI_DEV__H
 #define KAI_USE_DEBUG_API
-#include "kai.h"
 
 #if !defined(KAI__PLATFORM_WASM)
 #include <stdio.h> // --> printf
@@ -44,6 +43,8 @@ static void panic(void) {
     exit(1);
 }
 #endif
+
+#include "kai.h"
 
 inline void dev_dump_memory(Kai_String_Writer* writer, void* data, Kai_u32 count)
 {
