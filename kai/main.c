@@ -1,55 +1,41 @@
-﻿#define KAI_USE_DEBUG_API
-#define KAI_USE_MEMORY_API
-#define KAI_IMPLEMENTATION
+﻿#define KAI_IMPLEMENTATION
 #include "kai_dev.h"
-#include "timer.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-
 #if defined(KAI__PLATFORM_WINDOWS)
-#   include <windows.h> // --> EXCEPTION_ACCESS_VIOLATION
-#   include <excpt.h>
+#include <windows.h> // --> EXCEPTION_ACCESS_VIOLATION
+#include <excpt.h>
 #endif
 
-void set_underline(int enable) {
-    printf("\x1b[%im", enable ? 4 : 24);
-}
-int load_file(const char* file_path, Kai_str* out) {
-    FILE* file = kai__stdc_file_open(file_path, "rb");
-    if (!file) return 1;
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    void* data = malloc(size);
-    fseek(file, 0, SEEK_SET);
-    fread(data, 1, size, file);
-    fclose(file);
-    out->count = size;
-    out->data = data;
-    return 0;
-}
+typedef uintptr_t Timer;
+typedef Kai_s32 Main_Proc(Kai_slice);
+
+void   Timer_Init(void);
+void   Timer_Start(Timer* timer);
+double Timer_ElapsedSeconds(Timer* timer);
+double Timer_ElapsedMilliseconds(Timer* timer);
+
+void set_underline(int enable);
+int load_file(const char* file_path, Kai_str* out);
+void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator);
 
 #define error(...) printf("\x1b[91mError\x1b[0m: "), printf(__VA_ARGS__), putchar('\n')
 
-typedef Kai_s32 Main_Proc(Kai_slice);
+Kai_String_Writer* writer = NULL;
 
-void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator);
-
-int main(int argc, char** argv) {
-
+int main(int argc, char** argv)
+{
     int exit_value = 1;
     struct {
         Kai_bool parse_only;
     } options = {
         .parse_only = KAI_FALSE,
     };
-
-    Kai_String_Writer* writer = kai_debug_stdout_writer();
+    writer = kai_writer_stdout();
     
 	set_underline(1);
-    writer->write_string(writer->user, kai_version_string());
+    kai__write_string(kai_version_string());
     set_underline(0);
-    writer->write_string(writer->user, KAI_STRING("\n"));
+    kai__write_string(KAI_STRING("\n"));
 
     if (argc < 2) {
 		printf("usage: kai [--parse-only] <SOURCE> [args...]\n");
@@ -97,7 +83,7 @@ int main(int argc, char** argv) {
         Kai_Error* curr = &error;
         int i = 0;
         while (curr && i < 10) {
-		    curr->location.file_name = kai_str_from_cstring(file);
+		    curr->location.file_name = kai_string_from_c(file);
             curr->location.source = source_code.data;
             curr = curr->next;
             i += 1;
@@ -121,11 +107,11 @@ int main(int argc, char** argv) {
             args.data = malloc(sizeof(Kai_str) * args.count);
             Kai_str* command_line = (Kai_str*)args.data;
             for (Kai_u32 i = 0; i < args.count; ++i) {
-                command_line[i] = kai_str_from_cstring(argv[i + 2]);
+                command_line[i] = kai_string_from_c(argv[i + 2]);
             }
         }
 
-#if _MSC_VER
+#if defined(KAI__COMPILER_MSVC)
         __try
 		{
 			exit_value = main_proc(args);
@@ -148,16 +134,14 @@ int main(int argc, char** argv) {
 cleanup:
     kai_destroy_program(program);
     kai_destroy_error(&error, &allocator);
-    {
-        Kai_Result result = kai_memory_destroy(&allocator);
-        if (result) {
-		    error("Some allocations were not freed! (amount=%i B)", (int)kai_memory_usage(&allocator));
-        }
-    }
+	if (kai_memory_destroy(&allocator) != KAI_SUCCESS) {
+		error("Some allocations were not freed! (amount=%i B)", (int)kai_memory_usage(&allocator));
+	}
 	return exit_value;
 }
 
-void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator) {
+void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator)\
+{
     Kai_Syntax_Tree_Create_Info info = {
         .allocator = *allocator,
         .error = error,
@@ -166,14 +150,88 @@ void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocato
 
     Kai_Syntax_Tree tree = {0};
     Kai_Result result = kai_create_syntax_tree(&info, &tree);
-
     if (result != KAI_SUCCESS) {
-		error->location.file_name = kai_str_from_cstring(file);
-        kai_write_error(kai_debug_stdout_writer(), error);
+		error->location.file_name = kai_string_from_c(file);
+        kai_write_error(writer, error);
     }
-    else {
-        kai_write_syntax_tree(kai_debug_stdout_writer(), &tree);
-    }
-
+    else kai_write_syntax_tree(writer, &tree);
     kai_destroy_syntax_tree(&tree);
 }
+
+void set_underline(int enable)
+{
+    printf("\x1b[%im", enable ? 4 : 24);
+}
+
+int load_file(const char* file_path, Kai_str* out)
+{
+    FILE* file = kai__stdc_file_open(file_path, "rb");
+    if (!file) return 1;
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    void* data = malloc(size);
+    fseek(file, 0, SEEK_SET);
+    fread(data, 1, size, file);
+    fclose(file);
+    out->count = size;
+    out->data = data;
+    return 0;
+}
+
+#if defined(_WIN32)
+#include <Windows.h>
+
+static LARGE_INTEGER frequency;
+
+void Timer_Init(void)
+{
+	QueryPerformanceFrequency(&frequency);
+}
+
+void Timer_Start(Timer* timer)
+{
+	QueryPerformanceCounter((LARGE_INTEGER*)timer);
+}
+
+double Timer_ElapsedSeconds(Timer* timer)
+{
+	LARGE_INTEGER end;
+	QueryPerformanceCounter(&end);
+	LONGLONG duration = end.QuadPart - ((LARGE_INTEGER*)timer)->QuadPart;
+	return (double)(duration) / (double)(frequency.QuadPart);
+}
+
+double Timer_ElapsedMilliseconds(Timer* timer)
+{
+	LARGE_INTEGER end;
+	QueryPerformanceCounter(&end);
+	LONGLONG duration = end.QuadPart - ((LARGE_INTEGER*)timer)->QuadPart;
+	return (double)(duration * 1000) / (double)(frequency.QuadPart);
+}
+#elif defined(__linux__) || defined(__APPLE__)
+#include <sys/time.h>
+
+void Timer_Init() {}
+
+struct timespec start;
+struct timespec end;
+
+void Timer_Start(Timer* timer)
+{
+	clock_gettime(CLOCK_MONOTONIC, &start);
+}
+
+double Timer_ElapsedSeconds(Timer* timer)
+{
+	clock_gettime(CLOCK_MONOTONIC, &end);
+	uint64_t duration_ns = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
+	return (double)duration_ns / 1e9;
+}
+
+double Timer_ElapsedMilliseconds(Timer* timer)
+{
+	clock_gettime(CLOCK_MONOTONIC, &end);
+	uint64_t duration_ns = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
+	return (double)duration_ns / 1e6;
+}
+#endif

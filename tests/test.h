@@ -1,8 +1,6 @@
 #ifndef TEST_H
 #define TEST_H
 
-#define KAI_USE_MEMORY_API
-#define KAI_USE_DEBUG_API
 #include "kai_dev.h"
 #include <stdio.h>
 

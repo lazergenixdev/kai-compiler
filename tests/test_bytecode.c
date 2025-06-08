@@ -17,7 +17,7 @@ int run(Kai_Interpreter* interp, Kai_s32 value, Kai_s32* out) {
     return 0;
 }
 
-int bytecode() {
+int bytecode(void) {
     TEST();
 
 	Kai_Allocator allocator = {0};
@@ -67,13 +67,13 @@ int bytecode() {
     // create & setup interpreter
     Kai_Interpreter interp;
     {
-        Kai_Interpreter_Setup interp_info = {
+        Kai_Interpreter_Create_Info info = {
             .max_register_count     = 4096,
             .max_call_stack_count   = 1024,
             .max_return_value_count = 1024,
+			.allocator              = &allocator,
         };
-        interp_info.memory = malloc(kai_interp_required_memory_size(&interp_info));
-        kai_interp_create(&interp, &interp_info);
+        kai_interp_create(&info, &interp);
     }
     kai_interp_load_from_stream(&interp, &stream);
 	
@@ -84,6 +84,8 @@ int bytecode() {
         if (run(&interp, i+1, &actual)) return FAIL;
         if (actual != expected[i]) return FAIL;
     }
+
+	kai_interp_destroy(&interp);
 
 #if 0 // bytecode -> C
     Kai_Bytecode bytecode = {

@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-int hash_table() {
+int hash_table(void)
+{
     TEST();
 
     Kai_Allocator _allocator;

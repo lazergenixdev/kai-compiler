@@ -65,7 +65,7 @@ Kai_str test_programs[] = {
 };
 #endif
 
-int compile_simple_add() {
+int compile_simple_add(void) {
     TEST();
 
     Kai_Allocator allocator = {0};

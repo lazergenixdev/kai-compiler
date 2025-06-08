@@ -1,23 +1,24 @@
 #include <stdio.h>
-#define KAI_USE_MEMORY_API
-#define KAI_USE_DEBUG_API
 #define KAI_IMPLEMENTATION
 #include "kai_dev.h"
 
 #define test ++test_count, pass_count +=
 
-extern int bytecode();
-extern int parser();
-extern int hash_table();
-extern int compile_simple_add();
+extern int bytecode           (void);
+extern int parser             (void);
+extern int hash_table         (void);
+extern int compile_simple_add (void);
 
 Kai_String_Writer error_writer;
 
-int main(int argc, char** argv) {
-    Kai_String_Writer* writer = kai_debug_stdout_writer();
-    writer->write_string(writer->user, kai_version_string());
-    writer->write_string(writer->user, KAI_STRING("\n\n"));
-    kai_debug_open_file_writer(&error_writer, "errors.txt");
+int main(int argc, char** argv)
+{
+	kai__unused(argc);
+	kai__unused(argv);
+    Kai_String_Writer* writer = kai_writer_stdout();
+    kai__write_string(kai_version_string());
+    kai__write_string(KAI_STRING("\n\n"));
+    kai_writer_file_open(&error_writer, "errors.txt");
 
     int test_count = 0;
     int pass_count = 0;
@@ -27,7 +28,7 @@ int main(int argc, char** argv) {
     test hash_table();
     test compile_simple_add();
 
-    kai_debug_close_file_writer(&error_writer);
+    kai_writer_file_close(&error_writer);
 
     {
         char buffer[128];

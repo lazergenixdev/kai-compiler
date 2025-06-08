@@ -1,6 +1,7 @@
 #include "test.h"
 
-int parser() {
+int parser(void)
+{
     TEST();
 
     Kai_Allocator allocator = {0};

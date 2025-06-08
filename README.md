@@ -1,11 +1,11 @@
 
 # WIP Experimental Scripting language made for real-time applications.
 
+- Header only library written in C with **no external dependencies**
 - Strict static type checking
-- Written in C with **no external dependencies**
 - More of an [Ahead-of-time](https://en.wikipedia.org/wiki/Ahead-of-time_compilation) model (no JIT/Interpreter)
 	- *there is a bytecode interpreter for compile-time execution
-- Runtime Safety will be achieved with runtime checks (able to be toggled off for faster performance)
+- Runtime Safety achieved with runtime checks (able to be toggled off for faster performance)
 - Kai is a place-holder name, I an have no idea what to call this language
 - My first compiler, so don't expect anything crazy
 

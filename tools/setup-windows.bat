@@ -1,5 +1,5 @@
-@echo off
-cd ..
+@ECHO ON
+CD ..
 cmake -S . -B build
-if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+:: IF %ERRORLEVEL% neq 0 EXIT /b %ERRORLEVEL%
 cmake --open build

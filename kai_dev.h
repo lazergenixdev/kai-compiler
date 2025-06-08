@@ -4,7 +4,7 @@
  */
 #ifndef KAI_DEV__H
 #define KAI_DEV__H
-#define KAI_USE_DEBUG_API
+#define KAI_USE_FATAL_ERROR
 
 #if !defined(KAI__PLATFORM_WASM)
 #include <stdio.h> // --> printf
@@ -34,11 +34,11 @@ static Kai_String_Writer debug_writer = {
 #else
 #   define print_location() printf("in (%s:%i)\n", __FILE__, __LINE__)
 #   define panic_with_message(...) print_location(), printf(__VA_ARGS__), panic()
-#	define debug_writer (*kai_debug_stdout_writer())
+#	define debug_writer (*kai_writer_stdout())
 #endif
 
 #if !defined(KAI__PLATFORM_WASM)
-static void panic(void) {
+static inline void panic(void) {
     puts("\nPanic triggered. Now exiting...");
     exit(1);
 }
@@ -66,5 +66,39 @@ inline void dev_dump_memory(Kai_String_Writer* writer, void* data, Kai_u32 count
         kai__write_char('\n');
     }
 }
+
+#if !defined(KAI__PLATFORM_WASM)
+extern inline char const *kai__file(char const *cs)
+{
+    Kai_str s = kai_string_from_c(cs);
+    Kai_u32 i = s.count - 1;
+    while (i > 0) {
+        if (cs[i] == '/' || cs[i] == '\\')
+            return cs + i + 1;
+        i -= 1;
+    }
+    return cs;
+}
+extern inline void kai__fatal_error(char const *Desc, char const *Message, char const *File, int Line)
+{
+    printf("\x1b[91m%s\x1b[0m: %s\nin \x1b[92m%s:%i\x1b[0m", Desc, Message,
+            kai__file(File), Line);
+    exit(1);
+}
+#endif
+
+////////////////////////////////////////////////////////
+// TODO?
+typedef struct {
+    Kai_s64 last_modified;
+    Kai_str path;
+    Kai_str source_code;
+} Kai_Script_Status;
+
+typedef struct {
+    Kai_Allocator                 allocator;
+    KAI__ARRAY(Kai_Script_Status) scripts;
+} Kai_Script_Manager;
+////////////////////////////////////////////////////////
 
 #endif //KAI_DEV__H
