@@ -51,7 +51,7 @@ typedef struct {
 	Kai_s32 expected_output;
 } Test;
 
-Kai_str test_programs[] = {
+Kai_string test_programs[] = {
 	KAI_STRING(
 		"func :: (a: s32, b: s32) {\n"
 		"\tret a + b;\n"
@@ -73,7 +73,7 @@ int compile_simple_add(void) {
 
     Kai_Program program = {0};
     Kai_Error error = {0};
-    Kai_str source_code = KAI_STRING(
+    Kai_string source_code = KAI_STRING(
         "add :: (a: s32, b: s32) {\n"
         "\tret a + b;\n"
         "}\n"

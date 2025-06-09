@@ -15,8 +15,8 @@ double Timer_ElapsedSeconds(Timer* timer);
 double Timer_ElapsedMilliseconds(Timer* timer);
 
 void set_underline(int enable);
-int load_file(const char* file_path, Kai_str* out);
-void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator);
+int load_file(const char* file_path, Kai_string* out);
+void parse(char const* file, Kai_string source_code, Kai_Error* error, Kai_Allocator* allocator);
 
 #define error(...) printf("\x1b[91mError\x1b[0m: "), printf(__VA_ARGS__), putchar('\n')
 
@@ -53,7 +53,7 @@ int main(int argc, char** argv)
         file = argv[2];
     }
 
-    Kai_str source_code = {0};
+    Kai_string source_code = {0};
     if (load_file(file, &source_code)) {
 		error("unable to load file \"%s\"", argv[1]);
 		return 1;
@@ -104,8 +104,8 @@ int main(int argc, char** argv)
         Kai_slice args = {0};
         if (argc > 2) {
             args.count = argc - 2;
-            args.data = malloc(sizeof(Kai_str) * args.count);
-            Kai_str* command_line = (Kai_str*)args.data;
+            args.data = malloc(sizeof(Kai_string) * args.count);
+            Kai_string* command_line = (Kai_string*)args.data;
             for (Kai_u32 i = 0; i < args.count; ++i) {
                 command_line[i] = kai_string_from_c(argv[i + 2]);
             }
@@ -140,7 +140,7 @@ cleanup:
 	return exit_value;
 }
 
-void parse(char const* file, Kai_str source_code, Kai_Error* error, Kai_Allocator* allocator)\
+void parse(char const* file, Kai_string source_code, Kai_Error* error, Kai_Allocator* allocator)\
 {
     Kai_Syntax_Tree_Create_Info info = {
         .allocator = *allocator,
@@ -163,7 +163,7 @@ void set_underline(int enable)
     printf("\x1b[%im", enable ? 4 : 24);
 }
 
-int load_file(const char* file_path, Kai_str* out)
+int load_file(const char* file_path, Kai_string* out)
 {
     FILE* file = kai__stdc_file_open(file_path, "rb");
     if (!file) return 1;

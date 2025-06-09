@@ -5,8 +5,11 @@
 - [x] Header only
 - [x] Rename `KAI_USE_DEBUG_API`
 - [x] use `kai__interp_create` / `kai__interp_destroy`
-- [ ] better seperation between public and private API
-- [ ] add structs to language
+- [x] better seperation between public and private API
+- [x] "rewrite" parser to be more modular
+- [x] add structs to parser
+- [ ] let parser hold pointer to error
+- [ ] proper type parsing (arrays, slices, ...)
 - [ ] replace `panic_with_message`
 - [ ] Delete kai_dev.h, just have a `KAI__VERBOSE` macro that includes stdio
 - [ ] Add vector and matrix types to bytecode

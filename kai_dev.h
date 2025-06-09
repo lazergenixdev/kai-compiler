@@ -22,7 +22,7 @@ extern void __wasm_console_log(const char* message, int value);
 #   define panic_with_message(...) kai__fatal_error("Panic", #__VA_ARGS__, __FILE__, __LINE__)
 
 extern void __wasm_console_log(const char* message, int value);
-extern void __wasm_write_string(Kai_ptr User, Kai_str String);
+extern void __wasm_write_string(Kai_ptr User, Kai_string String);
 extern void __wasm_write_value(Kai_ptr User, Kai_u32 Type, Kai_Value Value, Kai_Write_Format format);
 extern void __wasm_set_color(Kai_ptr User, Kai_Write_Color Color_Index);
 
@@ -46,6 +46,7 @@ static inline void panic(void) {
 
 #include "kai.h"
 
+#if 0
 inline void dev_dump_memory(Kai_String_Writer* writer, void* data, Kai_u32 count)
 {
     Kai_u8* bytes = data;
@@ -66,11 +67,12 @@ inline void dev_dump_memory(Kai_String_Writer* writer, void* data, Kai_u32 count
         kai__write_char('\n');
     }
 }
+#endif
 
 #if !defined(KAI__PLATFORM_WASM)
 extern inline char const *kai__file(char const *cs)
 {
-    Kai_str s = kai_string_from_c(cs);
+    Kai_string s = kai_string_from_c(cs);
     Kai_u32 i = s.count - 1;
     while (i > 0) {
         if (cs[i] == '/' || cs[i] == '\\')
@@ -91,8 +93,8 @@ extern inline void kai__fatal_error(char const *Desc, char const *Message, char 
 // TODO?
 typedef struct {
     Kai_s64 last_modified;
-    Kai_str path;
-    Kai_str source_code;
+    Kai_string path;
+    Kai_string source_code;
 } Kai_Script_Status;
 
 typedef struct {

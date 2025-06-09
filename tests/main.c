@@ -33,7 +33,7 @@ int main(int argc, char** argv)
     {
         char buffer[128];
         int size = snprintf(buffer, sizeof(buffer), "\n%d/%d test passed\n", pass_count, test_count);
-        writer->write_string(writer->user, (Kai_str){.count = size, .data = (Kai_u8*)buffer});
+        writer->write_string(writer->user, (Kai_string){.count = size, .data = (Kai_u8*)buffer});
     }
 
     return 0;

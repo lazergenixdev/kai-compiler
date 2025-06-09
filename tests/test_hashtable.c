@@ -13,7 +13,7 @@ int hash_table(void)
     KAI__HASH_TABLE(Kai_u64) table = {0};
     //kai__hash_table_create(&table);
 
-    Kai_str keys [7] = {
+    Kai_string keys [7] = {
         KAI_STRING("apple"),
         KAI_STRING("grape"),
         KAI_STRING("orange"),
