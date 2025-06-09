@@ -57,8 +57,8 @@
 #include <stdio.h>  // --> stdout, fopen, fclose
 #include <locale.h> // --> setlocale(UTF8)
 #endif
-#ifdef __cplusplus
 #ifndef KAI_DONT_USE_CPP_API
+#ifdef __cplusplus
 #include <string>
 #include <fstream>
 #endif
@@ -69,8 +69,7 @@
 #define KAI_VERSION_PATCH 0
 #define KAI__MAKE_VERSION_STRING(X,Y,Z) #X "." #Y "." #Z
 #define KAI__MAKE_VERSION_STRING2(X,Y,Z) KAI__MAKE_VERSION_STRING(X,Y,Z) // macros suck
-#define KAI_VERSION_STRING \
-    KAI__MAKE_VERSION_STRING2(KAI_VERSION_MAJOR,KAI_VERSION_MINOR,KAI_VERSION_PATCH)
+#define KAI_VERSION_STRING KAI__MAKE_VERSION_STRING2(KAI_VERSION_MAJOR,KAI_VERSION_MINOR,KAI_VERSION_PATCH)
 
 // Detect Compiler
 
@@ -139,7 +138,7 @@
 #endif
 
 
-#define KAI_BOOL(EXPR)      ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
+#define KAI_BOOL(EXPR) ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
 
 #if defined(KAI__COMPILER_MSVC)
 #   define KAI_CONSTANT_STRING(S) {(Kai_u8*)(S), sizeof(S)-1}
@@ -147,7 +146,7 @@
 #   define KAI_CONSTANT_STRING(S) KAI_STRING(S)
 #endif
 #define KAI_STRING(LITERAL) KAI_STRUCT(Kai_string){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
-#define KAI_EMPTY_STRING    KAI_STRUCT(Kai_string){0}
+#define KAI_EMPTY_STRING KAI_STRUCT(Kai_string){0}
 
 #ifdef __cplusplus
 extern "C" {
@@ -782,7 +781,7 @@ typedef struct {
 	Kai_Allocator   allocator;
 	Kai_Error     * error;
 } Kai_Program_Create_Info;
-KAI_API (Kai_Result) kai_create_program_from_ast    (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
+KAI_API (Kai_Result) kai_create_program_from_tree   (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
 KAI_API (Kai_Result) kai_create_program_from_source (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
 #endif
 KAI_API (Kai_Result) kai_create_program             (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
@@ -2695,9 +2694,9 @@ Kai__Token* kai__tokenizer_peek(Kai__Tokenizer* context)
 #ifndef KAI__SECTION_IMPLEMENTATION_PARSER
 
 typedef struct {
-    Kai__Tokenizer               tokenizer;
-    Kai__Dynamic_Arena_Allocator arena;
-    Kai_Error                    error;
+    Kai__Tokenizer                 tokenizer;
+    Kai__Dynamic_Arena_Allocator   arena;
+    Kai_Error                    * error;
 } Kai__Parser;
 
 static inline Kai_string kai__merge_string(Kai_string A, Kai_string B)
@@ -2906,7 +2905,8 @@ static inline void* kai__error_unexpected(Kai__Parser* parser, Kai__Token* token
 {
     Kai_Allocator* allocator = &parser->arena.allocator;
 
-    if (parser->error.result != KAI_SUCCESS)
+    // Report only the first Syntax Error
+    if (parser->error->result != KAI_SUCCESS)
         return NULL;
 
     Kai__Dynamic_Buffer buffer = {0};
@@ -2920,7 +2920,7 @@ static inline void* kai__error_unexpected(Kai__Parser* parser, Kai__Token* token
     Kai_range message_range = kai__dynamic_buffer_next(&buffer);
     Kai_Memory memory = kai__dynamic_buffer_release(&buffer);
 
-    parser->error = (Kai_Error) {
+    *parser->error = (Kai_Error) {
         .result = KAI_ERROR_SYNTAX,
         .location = {
             .string = token->string,
@@ -2933,29 +2933,16 @@ static inline void* kai__error_unexpected(Kai__Parser* parser, Kai__Token* token
     
     if (token->type == KAI__TOKEN_STRING)
     {
-        parser->error.location.string.data  -= 1; // strings must begin with "
-        parser->error.location.string.count += 2;
+        parser->error->location.string.data  -= 1; // strings must begin with "
+        parser->error->location.string.count += 2;
     }
     else if (token->type == KAI__TOKEN_DIRECTIVE)
     {
-        parser->error.location.string.data  -= 1;
-        parser->error.location.string.count += 1;
+        parser->error->location.string.data  -= 1;
+        parser->error->location.string.count += 1;
     }
     return NULL;
 }
-
-// Optimization Idea:
-// 2 pass parser,
-//   first pass to check for errors and calcuate memory required.
-//   then allocate memory required.
-//   second pass to store syntax tree.
-// (also enables smaller syntax tree size, everything in
-//    one memory allocation, so could use 32 bit pointers)
-// Would make parser slower, but could
-//   save space/be more cache friendly for later stages.
-// .. But this would require a lot of duplicate code,
-//     so not going to implement.
-// NOTE: how would that even fit in with tree rewriting??
 
 #define kai__unexpected(Where, Context) kai__error_unexpected(parser, &parser->tokenizer.current_token, KAI_STRING(Where), KAI_STRING(Context))
 #define kai__expect(EXPR, Where, Context) if (!(EXPR)) return kai__unexpected(Where, Context)
@@ -2968,7 +2955,7 @@ static inline void* kai__error_unexpected(Kai__Parser* parser, Kai__Token* token
 #define kai__parse_proc()     kai__parse_procedure(parser)
 
 Kai_Expr kai__parse_type_expression(Kai__Parser* parser);
-Kai_Expr kai__parse_expression(Kai__Parser* parser, int precedence);
+Kai_Expr kai__parse_expression(Kai__Parser* parser, Kai_s32 precedence);
 Kai_Stmt kai__parse_statement(Kai__Parser* parser);
 Kai_Expr kai__parse_procedure(Kai__Parser* parser);
 Kai_Expr kai__parse_declaration(Kai__Parser* parser);
@@ -3075,7 +3062,7 @@ Kai_Expr kai__parse_type_expression(Kai__Parser* parser)
 
     return kai__parser_create_procedure_type(parser, in_out.head, in_count, out_count);
 }
-Kai_Expr kai__parse_expression(Kai__Parser* parser, int prec)
+Kai_Expr kai__parse_expression(Kai__Parser* parser, Kai_s32 prec)
 {
     Kai_Expr left = NULL;
     Kai__Token* t = &parser->tokenizer.current_token;
@@ -3499,18 +3486,19 @@ done_declaration:
     return kai__parser_create_declaration(parser, name, type, expr, flags, line_number);
 }
 
-Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_Tree* tree)
+KAI_API (Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* tree)
 {
     Kai__Parser p = {
         .tokenizer = {
-            .source = info->source_code,
+            .source = Info->source_code,
             .cursor = 0,
             .line_number = 1,
         },
+        .error = Info->error,
     };
-    KAI__LINKED_LIST(Kai_Stmt) statements = {0};
-    kai__dynamic_arena_allocator_create(&p.arena, &info->allocator);
+    kai__dynamic_arena_allocator_create(&p.arena, &Info->allocator);
 
+    KAI__LINKED_LIST(Kai_Stmt) statements = {0};
     Kai__Token* token = kai__tokenizer_next(&p.tokenizer);
     while (token->type != KAI__TOKEN_END)
     {
@@ -3525,19 +3513,13 @@ Kai_Result kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_
     tree->root.id = KAI_STMT_COMPOUND;
     tree->root.head = statements.head;
 
-    // TODO: parser holds error pointer
-    if (p.error.result != KAI_SUCCESS) {
-        if (info->error) {
-            *info->error = p.error;
-            info->error->location.file_name = tree->source_filename;
-            info->error->location.source = info->source_code.data;
-        }
-        return p.error.result;
-    }
-    return KAI_SUCCESS;
+    // TODO: find actual solution for this
+    Info->error->location.file_name = tree->source_filename;
+    Info->error->location.source = Info->source_code.data;
+    return p.error->result;
 }
-
-void kai_destroy_syntax_tree(Kai_Syntax_Tree* tree) {
+KAI_API (void) kai_destroy_syntax_tree(Kai_Syntax_Tree* tree)
+{
     kai__dynamic_arena_allocator_destroy(&tree->allocator);
     *tree = (Kai_Syntax_Tree) {0};
 }

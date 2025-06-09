@@ -5,8 +5,6 @@ Foo :: struct {
     c : u64;
 }
 
-vector :: [] u8;
-
 main :: (foo: *Foo) {
 	foo.a = 0.5;
 	foo.b = 0x45;
@@ -16,5 +14,5 @@ main :: (foo: *Foo) {
 		value: s32;
 	}
 
-	bar = null;
+	bar.value = 2;
 }
