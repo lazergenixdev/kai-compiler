@@ -14,6 +14,11 @@
     define  KAI_DONT_USE_WRITER_API  to disable stdout and file writer
     define  KAI_DONT_USE_CPP_API     to disable C++ API (experimental)
 
+    define  KAI_HAVE_FATAL_ERROR     to use a costum error function on fatal errors
+
+        Function Signature:
+        void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line);
+
     NOTE: When not using these APIs, no C standard libraries are used!
           (except stdint and stddef, but these can trivially be replaced)
 
@@ -67,9 +72,9 @@
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
-#define KAI__MAKE_VERSION_STRING(X,Y,Z) #X "." #Y "." #Z
-#define KAI__MAKE_VERSION_STRING2(X,Y,Z) KAI__MAKE_VERSION_STRING(X,Y,Z) // macros suck
-#define KAI_VERSION_STRING KAI__MAKE_VERSION_STRING2(KAI_VERSION_MAJOR,KAI_VERSION_MINOR,KAI_VERSION_PATCH)
+#define KAI__MAKE_VERSION_STRING_HELPER(X,Y,Z) #X "." #Y "." #Z
+#define KAI__MAKE_VERSION_STRING(X,Y,Z) KAI__MAKE_VERSION_STRING_HELPER(X,Y,Z) // macros suck
+#define KAI_VERSION_STRING KAI__MAKE_VERSION_STRING(KAI_VERSION_MAJOR,KAI_VERSION_MINOR,KAI_VERSION_PATCH)
 
 // Detect Compiler
 
@@ -249,21 +254,17 @@ typedef struct {
 
 typedef struct {
     Kai_u8     type;
-    Kai_u32    count;
+    Kai_u32    rows;
+    Kai_u32    cols;
     Kai_Type   sub_type;
 } Kai_Type_Info_Array;
 
 typedef struct {
-    Kai_u8     type;
-    Kai_u32    member_count;
-    Kai_Type*  member_types;
-    Kai_string*   member_names;
+    Kai_u8       type;
+    Kai_u32      member_count;
+    Kai_Type   * member_types;
+    Kai_string * member_names;
 } Kai_Type_Info_Struct;
-
-typedef struct {
-    Kai_string  name;
-    Kai_Type type;
-} Kai_Named_Type;
 
 // If there is a better solution to this, let me know
 #define KAI__X_TYPE_INFO_DEFINITIONS                                                                                  \
@@ -417,6 +418,12 @@ typedef struct {
 #endif
 #ifndef KAI__SECTION_INTERNAL_STRUCTS
 
+#define KAI__SLICE(T) \
+struct {              \
+    Kai_u32 count;    \
+    T*      elements; \
+}
+
 #define KAI__ARRAY(T) \
 struct {              \
     Kai_u32 count;    \
@@ -480,13 +487,14 @@ typedef enum {
     KAI_EXPR_PROCEDURE      = 7,
     KAI_EXPR_CODE           = 8,
     KAI_EXPR_STRUCT         = 9,
-    KAI_STMT_RETURN         = 10,
-    KAI_STMT_DECLARATION    = 11,
-    KAI_STMT_ASSIGNMENT     = 12,
-    KAI_STMT_IF             = 13,
-    KAI_STMT_FOR            = 14,
-    KAI_STMT_DEFER          = 15,
-    KAI_STMT_COMPOUND       = 16, // TODO: remove?
+    KAI_EXPR_ARRAY          = 10,
+    KAI_STMT_RETURN         = 11,
+    KAI_STMT_DECLARATION    = 12,
+    KAI_STMT_ASSIGNMENT     = 13,
+    KAI_STMT_IF             = 14,
+    KAI_STMT_FOR            = 15,
+    KAI_STMT_DEFER          = 16,
+    KAI_STMT_COMPOUND       = 17,
 } Kai_Node_ID;
 
 enum {
@@ -556,6 +564,13 @@ typedef struct {
 
     Kai_u32 _scope;
 } Kai_Expr_Procedure;
+
+typedef struct {
+    KAI_BASE_MEMBERS;
+    Kai_u32  rows;
+    Kai_u32  cols;
+    Kai_Expr expr;
+} Kai_Expr_Array;
 
 typedef struct {
     KAI_BASE_MEMBERS;
@@ -743,12 +758,29 @@ typedef struct {
 #ifndef KAI__SECTION_PROGRAM
 
 typedef struct {
-    Kai_Syntax_Tree*      trees;
-    Kai_u32               tree_count;
-    Kai_Allocator         allocator;
-    Kai_Error*            error;
-    Kai_Native_Procedure* native_procedures;
-    Kai_u32               native_procedure_count;
+    Kai_u32 Interpreter_Max_Step_Count;
+    Kai_u32 Interpreter_Max_Call_Depth;
+} Kai_Compile_Options;
+
+#define KAI_DEFAULT_COMPILE_OPTIONS            \
+    (Kai_Compile_Options) {                    \
+        .Interpreter_Max_Call_Depth = 1024,    \
+        .Interpreter_Max_Step_Count = 1000000, \
+    }
+
+typedef struct {
+    union {
+        // kai_create_program_from_code
+        Kai_string code;
+        
+        // kai_create_program_from_tree
+        KAI__SLICE(Kai_Syntax_Tree) trees;
+    } source;
+    Kai_Allocator          allocator;
+    Kai_Error            * error;
+    Kai_Native_Procedure * native_procedures;
+    Kai_u32                native_procedure_count;
+	Kai_Compile_Options    options;
 } Kai_Program_Create_Info;
 
 typedef struct {
@@ -771,21 +803,9 @@ KAI_API (Kai_string) kai_string_from_c (char const* String);
 KAI_API (Kai_Result) kai_create_syntax_tree  (Kai_Syntax_Tree_Create_Info* Info, Kai_Syntax_Tree* out_Syntax_Tree);
 KAI_API (void)       kai_destroy_syntax_tree (Kai_Syntax_Tree* Syntax_Tree);
 
-// TODO: refactor :-
-#if 0
-typedef struct {
-	union {
-		Kai_string source_code;
-		Kai_Syntax_Tree tree;
-	} DUMMYUNIONNAME;
-	Kai_Allocator   allocator;
-	Kai_Error     * error;
-} Kai_Program_Create_Info;
-KAI_API (Kai_Result) kai_create_program_from_tree   (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
-KAI_API (Kai_Result) kai_create_program_from_source (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
-#endif
-KAI_API (Kai_Result) kai_create_program             (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
-KAI_API (Kai_Result) kai_create_program_from_source (Kai_string Source, Kai_Allocator* Allocator, Kai_Error* out_Error, Kai_Program* out_Program);
+// TODO: use tagged union instead of specialized functions
+KAI_API (Kai_Result) kai_create_program_from_tree (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
+KAI_API (Kai_Result) kai_create_program_from_code (Kai_Program_Create_Info* Info, Kai_Program* out_Program);
 KAI_API (void)       kai_destroy_program            (Kai_Program Program);
 
 //! @note With WASM backend you cannot get any function pointers
@@ -1022,7 +1042,10 @@ typedef struct {
     KAI__X_TYPE_INFO_DEFINITIONS
 #undef X
 
-static Kai_Named_Type kai__builtin_types [] = {
+static struct {
+    Kai_string name;
+    Kai_Type   type;
+} kai__builtin_types [] = {
     { KAI_CONSTANT_STRING("type"), (Kai_Type)&kai__type_info_type },
     { KAI_CONSTANT_STRING("s8"),   (Kai_Type)&kai__type_info_s8   },
     { KAI_CONSTANT_STRING("s16"),  (Kai_Type)&kai__type_info_s16  },
@@ -1082,18 +1105,32 @@ static Kai_Named_Type kai__builtin_types [] = {
 // --- (Fatal) Error Handling + Debug Assertions -----------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-#if defined(KAI_USE_FATAL_ERROR)
-KAI_API (void) kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line);
-#   define KAI__FATAL_ERROR(Desc, Message) kai__fatal_error(Desc, Message, __FILE__, __LINE__);
-#   define kai__assert(EXPR) if (!(EXPR)) KAI__FATAL_ERROR("Assertion Failed", #EXPR)
-#   define kai__unreachable() KAI__FATAL_ERROR("Assertion Failed", "Unreachable was reached! D:")
-#   define kai__check_allocation(PTR) if ((PTR) == NULL) KAI__FATAL_ERROR("Allocation Error", #PTR " was null")
+#ifdef KAI_HAVE_FATAL_ERROR
+extern void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line);
 #else
-#   define KAI__FATAL_ERROR(Desc, Message) (void)0
-#   define kai__assert(EXPR) (void)(EXPR)
-#   define kai__unreachable() (void)0
-#   define kai__check_allocation(PTR) (void)0
+extern inline char const *kai__file(char const *cs)
+{
+    Kai_string s = kai_string_from_c(cs);
+    Kai_u32 i = s.count - 1;
+    while (i > 0) {
+        if (cs[i] == '/' || cs[i] == '\\')
+            return cs + i + 1;
+        i -= 1;
+    }
+    return cs;
+}
+void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line)
+{
+    printf("\x1b[91m%s\x1b[0m: %s\nin \x1b[92m%s:%i\x1b[0m", Desc, Message, kai__file(File), Line);
+    exit(1);
+}
 #endif
+
+
+#define KAI__FATAL_ERROR(Desc, Message) kai__fatal_error(Desc, Message, __FILE__, __LINE__);
+#define kai__assert(EXPR) if (!(EXPR)) KAI__FATAL_ERROR("Assertion Failed", #EXPR)
+#define kai__unreachable() KAI__FATAL_ERROR("Assertion Failed", "Unreachable was reached! D:")
+#define kai__check_allocation(PTR) if ((PTR) == NULL) KAI__FATAL_ERROR("Allocation Error", #PTR " was null")
         
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Basic Memory Operations -----------------------------------------------
@@ -1512,8 +1549,9 @@ static inline Kai_Memory kai__dynamic_buffer_release(Kai__Dynamic_Buffer* Buffer
 }
 
 #endif
+#ifndef KAI__SECTION_IMPLEMENTATION_SIMPLE
 
-KAI_API (Kai_vector3_u32) kai_version(void)
+KAI_API(Kai_vector3_u32) kai_version(void)
 {
     return (Kai_vector3_u32) {
         .x = KAI_VERSION_MAJOR,
@@ -1521,12 +1559,12 @@ KAI_API (Kai_vector3_u32) kai_version(void)
         .z = KAI_VERSION_PATCH,
     };
 }
-KAI_API (Kai_string) kai_version_string(void)
+KAI_API(Kai_string) kai_version_string(void)
 {
     return KAI_STRING("Kai Compiler v" KAI_VERSION_STRING);
 }
 
-KAI_API (Kai_bool) kai_string_equals(Kai_string A, Kai_string B)
+KAI_API(Kai_bool) kai_string_equals(Kai_string A, Kai_string B)
 {
     if (A.count != B.count)
         return KAI_FALSE;
@@ -1537,14 +1575,14 @@ KAI_API (Kai_bool) kai_string_equals(Kai_string A, Kai_string B)
     }
     return KAI_TRUE;
 }
-KAI_API (Kai_string) kai_string_from_c(char const* String)
+KAI_API(Kai_string) kai_string_from_c(char const* String)
 {
     Kai_u32 len = 0;
     while (String[len] != '\0') ++len;
-    return (Kai_string) {.data = (Kai_u8*)String, .count = len};
+    return (Kai_string) { .data = (Kai_u8*)String, .count = len };
 }
 
-KAI_API (void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
+KAI_API(void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
 {
     while (Error)
     {
@@ -1555,6 +1593,7 @@ KAI_API (void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
     }
 }
 
+#endif
 #ifndef KAI__SECTION_IMPLEMENTATION_WRITER
 
 static inline Kai_Result kai__error_internal(Kai_Error* out_Error, Kai_string Message)
@@ -2081,6 +2120,19 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
                 kai__explore(current, current->next == NULL);
                 current = current->next;
             }
+        }
+        break; case KAI_EXPR_ARRAY: {
+            Kai_Expr_Array* node = void_Expr;
+            kai__set_color(KAI_COLOR_SECONDARY);
+            kai__write("array type");
+            kai__write_name();
+            kai__write(" [");
+            kai__write_u32(node->rows);
+            kai__write("x");
+            kai__write_u32(node->cols);
+            kai__write("]\n");
+
+            kai__explore(node->expr, 1);
         }
         break; case KAI_STMT_RETURN: {
             Kai_Stmt_Return* node = void_Expr;
@@ -2755,6 +2807,17 @@ static inline Kai_Expr kai__parser_create_unary(Kai__Parser* Parser, Kai__Token 
     node->expr = expr;
     return (Kai_Expr)node;
 }
+static inline Kai_Expr kai__parser_create_array(Kai__Parser* Parser, Kai__Token op_token, Kai_Expr expr, Kai_u32 rows, Kai_u32 cols)
+{
+    Kai_Expr_Array* node = kai__arena_allocate(&Parser->arena, sizeof(Kai_Expr_Array));
+    node->id = KAI_EXPR_ARRAY;
+    node->source_code = kai__merge_string(op_token.string, expr->source_code);
+    node->line_number = kai__min_u32(op_token.line_number, expr->line_number);
+    node->rows = rows;
+    node->cols = cols;
+    node->expr = expr;
+    return (Kai_Expr)node;
+}
 static inline Kai_Expr kai__parser_create_struct(Kai__Parser* Parser, Kai__Token token, Kai_Stmt body)
 {
     Kai_Expr_Struct* node = kai__arena_allocate(&Parser->arena, sizeof(Kai_Expr_Struct));
@@ -2786,12 +2849,12 @@ static inline Kai_Expr kai__parser_create_procedure_call(Kai__Parser* Parser, Ka
     node->arg_count = arg_count;
     return (Kai_Expr)node;
 }
-static inline Kai_Expr kai__parser_create_procedure(Kai__Parser* Parser, Kai_Expr in_out, Kai_Stmt body, Kai_u8 in_count, Kai_u8 out_count)
+static inline Kai_Expr kai__parser_create_procedure(Kai__Parser* Parser, Kai__Token token, Kai_Expr in_out, Kai_Stmt body, Kai_u8 in_count, Kai_u8 out_count)
 {
     Kai_Expr_Procedure* node = kai__arena_allocate(&Parser->arena, sizeof(Kai_Expr_Procedure));
     node->id = KAI_EXPR_PROCEDURE;
-    node->source_code = in_out->source_code;
-    node->line_number = in_out->line_number;
+    node->source_code = token.string;
+    node->line_number = token.line_number;
     node->in_out_expr = in_out;
     node->in_count = in_count;
     node->out_count = out_count;
@@ -2810,12 +2873,12 @@ static inline Kai_Stmt kai__parser_create_declaration(Kai__Parser* Parser, Kai_s
     node->flags = flags;
     return (Kai_Stmt)node;
 }
-static inline Kai_Stmt kai__parser_create_compound(Kai__Parser* Parser, Kai_Stmt body)
+static inline Kai_Stmt kai__parser_create_compound(Kai__Parser* Parser, Kai__Token token, Kai_Stmt body)
 {
     Kai_Stmt_Compound* node = kai__arena_allocate(&Parser->arena, sizeof(Kai_Stmt_Compound));
     node->id = KAI_STMT_COMPOUND;
-    node->source_code = body->source_code;
-    node->line_number = body->line_number;
+    node->source_code = token.string;
+    node->line_number = token.line_number;
     node->head = body;
     return (Kai_Stmt)node;
 }
@@ -3087,15 +3150,30 @@ Kai_Expr kai__parse_expression(Kai__Parser* parser, Kai_s32 prec)
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Array/Slice Types
     case '[': {
-        // TODO: add fixed size arrays to parser/AST
         Kai__Token op_token = *t;
 		kai__next_token(); // skip '['
-		kai__expect(t->type == ']', "[todo]", "array");
+
+		Kai_u32 rows = 1, cols = 1;
+
+		if (t->type != ']') {
+			kai__expect(t->type == KAI__TOKEN_NUMBER, "in array type", "should be a number here");
+			rows = (Kai_u32)t->number.Whole_Part;
+		
+			kai__next_token(); // skip number
+			if (t->type == ',') {
+				kai__next_token(); // skip ','
+			    kai__expect(t->type == KAI__TOKEN_NUMBER, "in array type", "should be a number here");
+				cols = (Kai_u32)t->number.Whole_Part;
+				kai__next_token(); // skip number
+			}
+		}
+
+		kai__expect(t->type == ']', "in array type", "array");
 		kai__next_token(); // skip ']'
         Kai_Expr type = kai__parse_type();
-		kai__expect(type, "[todo]", "type");
-        // Types do not have binary operators, so return early
-        return kai__parser_create_unary(parser, op_token, type);
+		kai__expect(type, "in array type", "expected type here");
+        // Types do not have binary operators (I hope it stays this way), so return early
+        return kai__parser_create_array(parser, op_token, type, rows, cols);
     } break;
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Unary Operators
@@ -3219,6 +3297,7 @@ Kai_Expr kai__parse_expression(Kai__Parser* parser, Kai_s32 prec)
 Kai_Expr kai__parse_procedure(Kai__Parser* parser)
 {
     Kai__Token* t = &parser->tokenizer.current_token;
+    Kai__Token token = *t;
 
     // sanity check
     kai__expect(t->type == '(', "", "this is likely a compiler bug, sorry :c");
@@ -3289,7 +3368,7 @@ Kai_Expr kai__parse_procedure(Kai__Parser* parser)
         if (!body) return NULL;
     }
 
-    return kai__parser_create_procedure(parser, in_out.head, body, in_count, out_count);
+    return kai__parser_create_procedure(parser, token, in_out.head, body, in_count, out_count);
 }
 Kai_Stmt kai__parse_statement(Kai__Parser* parser)
 {
@@ -3299,6 +3378,7 @@ Kai_Stmt kai__parse_statement(Kai__Parser* parser)
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Compound Statements
     case '{': {
+        Kai__Token token = *t;
         kai__next_token();
 
         Kai_Stmt head = NULL;
@@ -3327,7 +3407,7 @@ Kai_Stmt kai__parse_statement(Kai__Parser* parser)
         //    statement_array.offset);
         //}
 
-        return kai__parser_create_compound(parser, head);
+        return kai__parser_create_compound(parser, token, head);
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Return Statements
@@ -4721,6 +4801,9 @@ typedef struct {
 typedef struct {
     Kai_Error                        * error;
     Kai_Allocator                      allocator;
+
+    // Syntax Tree
+    KAI__ARRAY(Kai_Syntax_Tree)        trees;
                                      
     // Dependency Graph              
     KAI__ARRAY(Kai__DG_Scope)          scopes;
@@ -4767,30 +4850,45 @@ Kai_Result kai__dg_insert_type_dependencies(
     Kai_u32                   Scope_Index,
     Kai_Expr                  Expr);
 
-Kai_Result kai_create_program(Kai_Program_Create_Info* info, Kai_Program* program)
+KAI_API (Kai_Result) kai_create_program_from_tree(Kai_Program_Create_Info* Info, Kai_Program* out_Program)
 {
-    (void)(program);
-    return kai__error_internal(info->error, KAI_STRING("kai_create_program not implemented"));
+    kai__unused(out_Program);
+    return kai__error_internal(Info->error, KAI_STRING("not implemented"));
 }
 
+// TODO: restructure to this
+static void kai__generate_dependency_graph(Kai__Compiler_Context* Context);
+static void kai__generate_compilation_order(Kai__Compiler_Context* Context);
+static void kai__generate_bytecode_(Kai__Compiler_Context* Context);
+static void kai__generate_machine_code(Kai__Compiler_Context* Context);
+static void kai__destroy_compiler_context(Kai__Compiler_Context* Context);   
+
 #define kai__check(RESULT) if (RESULT != KAI_SUCCESS) goto cleanup;
-Kai_Result kai_create_program_from_source(
-    Kai_string        Source,
-    Kai_Allocator* Allocator,
-    Kai_Error*     out_Error,
-    Kai_Program*   out_Program)
+KAI_API(Kai_Result) kai_create_program_from_code(Kai_Program_Create_Info* Info, Kai_Program* out_Program)
 {
+#if BETTER_ABSTRACTION
+
+    Kai__Compiler_Context context = { 0 };
+    { /* ... create syntax tree here ... */ }
+    kai__generate_dependency_graph(&context);
+    kai__generate_compilation_order(&context);
+    kai__generate_bytecode_(&context);
+    kai__generate_machine_code(&context);
+    kai__destroy_compiler_context(&context);
+
+    return context.error->result;
+#else
     Kai_Result            result           = KAI_SUCCESS;
     Kai_Syntax_Tree       syntax_tree      = {0};
     Kai__Dependency_Graph dependency_graph = {0};
     Kai__Bytecode         bytecode         = {0};
-    dependency_graph.allocator = *Allocator;
+    dependency_graph.allocator = Info->allocator;
 
     {
         Kai_Syntax_Tree_Create_Info info = {
-            .source_code = Source,
-            .error = out_Error,
-            .allocator = *Allocator,
+            .source_code = Info->source.code,
+            .error = Info->error,
+            .allocator = Info->allocator,
         };
         result = kai_create_syntax_tree(&info, &syntax_tree);
     }
@@ -4800,21 +4898,21 @@ Kai_Result kai_create_program_from_source(
         Kai__Dependency_Graph_Create_Info info = {
             .trees = &syntax_tree,
             .tree_count = 1,
-            .allocator = *Allocator,
-            .error = out_Error,
+            .allocator = Info->allocator,
+            .error = Info->error,
         };
         result = kai__create_dependency_graph(&info, &dependency_graph);
     }
     kai__check(result);
 
     {
-        result = kai__determine_compilation_order(&dependency_graph, out_Error);
+        result = kai__determine_compilation_order(&dependency_graph, Info->error);
     }
     kai__check(result);
 
     {
         Kai__Bytecode_Create_Info info = {
-            .error = out_Error,
+            .error = Info->error,
             .dependency_graph = &dependency_graph,
         };
         result = kai__generate_bytecode(&info, &bytecode);
@@ -4824,8 +4922,8 @@ Kai_Result kai_create_program_from_source(
     {
         Kai__Program_Create_Info info = {
             .bytecode = &bytecode,
-            .error = out_Error,
-            .allocator = *Allocator,
+            .error = Info->error,
+            .allocator = Info->allocator,
         };
         result = kai__create_program(&info, out_Program);
     }
@@ -4836,13 +4934,14 @@ cleanup:
     kai__destroy_dependency_graph(&dependency_graph);
     kai_destroy_syntax_tree(&syntax_tree);
     return result;
+#endif
 }
 #undef kai__check
 
 Kai__DG_Node_Index* kai__recursive_scope_find(
     Kai__Dependency_Graph* Graph,
     Kai_u32                Scope_Index,
-    Kai_string                Identifier)
+    Kai_string             Identifier)
 {
     do {
         Kai__DG_Scope* scope = Graph->scopes.elements + Scope_Index;
@@ -4858,9 +4957,9 @@ Kai__DG_Node_Index* kai__recursive_scope_find(
 Kai_Result kai__error_redefinition(
     Kai_Error*     out_Error,
     Kai_Allocator* allocator,
-    Kai_string        string,
+    Kai_string     string,
     Kai_u32        line_number,
-    Kai_string        original_name,
+    Kai_string     original_name,
     Kai_u32        original_line_number)
 {
     *out_Error = (Kai_Error) {
@@ -4913,7 +5012,7 @@ Kai_Result kai__error_redefinition(
 Kai_Result kai__error_not_declared(
     Kai_Error*      out_Error,
     Kai_Allocator*  allocator,
-    Kai_string         string,
+    Kai_string      string,
     Kai_u32         line_number)
 {
     *out_Error = (Kai_Error) {
@@ -5100,7 +5199,7 @@ void kai__print_scope(Kai__DG_Scope* Scope)
 
 Kai__DG_Node_Index* kai__dg_resolve_dependency_node(
     Kai__Dependency_Graph* Graph,
-    Kai_string                Name,
+    Kai_string             Name,
     Kai_u32                Scope_Index,
     Kai_bool               In_Procedure)
 {
@@ -5967,9 +6066,7 @@ Kai_Reg kai__bytecode_allocate_register(Kai__Bytecode_Generation_Context* Contex
 {
     Kai_Allocator* allocator = &Context->dependency_graph->allocator;
     Kai_Reg reg = Context->registers.count;
-    kai__array_append(&Context->registers, (Kai__Bytecode_Register){
-        .reg = reg,
-    });
+    kai__array_append(&Context->registers, (Kai__Bytecode_Register) { .reg = reg, });
     return reg;
 }
 
@@ -6124,27 +6221,6 @@ Kai_Result kai__bytecode_emit_procedure(
 
     return KAI_SUCCESS;
 }
-
-#if 0
-// TODO: Now we can give our compiler options like:
-typedef struct {
-    Kai_u32 Interpreter_Max_Step_Count;
-    Kai_u32 Interpreter_Max_Call_Depth;
-} Kai_Compile_Options;
-
-#define KAI_DEFAULT_COMPILE_OPTIONS            \
-    (Kai_Compile_Options) {                    \
-        .Interpreter_Max_Call_Depth = 1024,    \
-        .Interpreter_Max_Step_Count = 1000000, \
-    }
-
-void __example() {
-    Kai_Compile_Options options = KAI_DEFAULT_COMPILE_OPTIONS;
-    Kai_Program_Create_Info info = {0};
-    Kai_Program program;
-    kai_create_program(&info, &program);
-}
-#endif
 
 Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Context, Kai_Expr Expr, Kai_Type* type)
 {
@@ -6542,8 +6618,8 @@ void* kai_find_procedure(Kai_Program Program, Kai_string Name, Kai_Type Type)
 
 #endif
 
+// TODO: handle circular dependencies
 #if 0
-
 #define c_error_circular_dependency(REF) \
     error_circular_dependency(context, REF)
 
@@ -6590,72 +6666,6 @@ void* error_dependency_info(Compiler_Context* context, void* start, Node_Ref ref
 
     return (u8*)err.message.data + err.message.count;
 #undef err
-}
-
-#define scopes       context->dependency_graph.scopes
-#define dependencies context->dependency_graph.dependencies
-#define nodes        context->dependency_graph.nodes
-
-Kai_Type type_of_expression(Compiler_Context* context, Kai_Expr expr, u32 scope_index) {
-    switch (expr->id)
-    {
-    default: {
-        panic_with_message("undefined expr [type_of_expression] (id = %d)\n", expr->id);
-    }
-    
-    break; case KAI_EXPR_IDENTIFIER: {
-        // locate this value in the scope
-        u32 node_index = recursive_scope_find(context, scope_index, expr->source_code);
-
-        // confirm we found something
-        if (node_index == NONE) {
-            _write("ERROR: did not find identifier [type_of_expression]");
-            return NULL;
-        }
-
-        Node* node = nodes.data + node_index;
-
-        // confirm that this value is evaluated
-        if (!(node->type_flags & NODE_EVALUATED)) {
-            _write("ERROR: node is not evaluated [type_of_expression]");
-            return NULL;
-        }
-
-        _write("got a type!!\n");
-
-        kai_write_type(writer, node->type);
-
-        // set the value of this node??
-        return node->type;
-    }
-
-    }
-
-    return NULL;
-}
-
-Kai_bool compile_type (Compiler_Context* context, u32 index) {
-    Node* node = nodes.data + index;
-    Kai_Expr expr = node->expr;
-
-    _write_format("Compiling : %i, expr = %i\n", index, expr->id);
-
-    switch (expr->id)
-    {
-    default: {
-        panic_with_message("undefined expr [compile_type] (id = %d)\n", expr->id);
-    }
-    
-    break; case KAI_EXPR_IDENTIFIER: {
-        Kai_Type type = type_of_expression(context, expr, node->scope);
-
-        if (type == NULL) return KAI_FALSE;
-
-        node->type = type;
-    }
-
-    }
-    return KAI_TRUE;
 }
 #endif
 

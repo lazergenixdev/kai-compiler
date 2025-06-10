@@ -11,13 +11,6 @@
 #include <stdlib.h>
 #endif
 
-// TODO: create 'dev' API (basically just formatted printing)
-
-#if defined(KAI__PLATFORM_WASM)
-extern void __wasm_console_log(const char* message, int value);
-#endif
-
-
 #if defined(KAI__PLATFORM_WASM)
 #   define panic_with_message(...) kai__fatal_error("Panic", #__VA_ARGS__, __FILE__, __LINE__)
 
@@ -66,26 +59,6 @@ inline void dev_dump_memory(Kai_String_Writer* writer, void* data, Kai_u32 count
         }
         kai__write_char('\n');
     }
-}
-#endif
-
-#if !defined(KAI__PLATFORM_WASM)
-extern inline char const *kai__file(char const *cs)
-{
-    Kai_string s = kai_string_from_c(cs);
-    Kai_u32 i = s.count - 1;
-    while (i > 0) {
-        if (cs[i] == '/' || cs[i] == '\\')
-            return cs + i + 1;
-        i -= 1;
-    }
-    return cs;
-}
-extern inline void kai__fatal_error(char const *Desc, char const *Message, char const *File, int Line)
-{
-    printf("\x1b[91m%s\x1b[0m: %s\nin \x1b[92m%s:%i\x1b[0m", Desc, Message,
-            kai__file(File), Line);
-    exit(1);
 }
 #endif
 

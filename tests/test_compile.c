@@ -65,7 +65,8 @@ Kai_string test_programs[] = {
 };
 #endif
 
-int compile_simple_add(void) {
+int compile_simple_add(void)
+{
     TEST();
 
     Kai_Allocator allocator = {0};
@@ -79,7 +80,12 @@ int compile_simple_add(void) {
         "}\n"
     );
 
-    Kai_Result result = kai_create_program_from_source(source_code, &allocator, &error, &program);
+	Kai_Program_Create_Info info = {
+		.allocator = allocator,
+		.error = &error,
+		.source = { source_code },
+	};
+    Kai_Result result = kai_create_program_from_code(&info, &program);
 
     if (result != KAI_SUCCESS) {
         error.location.file_name = KAI_STRING(__FUNCTION__);

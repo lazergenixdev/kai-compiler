@@ -73,8 +73,14 @@ int main(int argc, char** argv)
     Timer timer = {0};
     Timer_Init();
 
+    Kai_Program_Create_Info info = {
+        .allocator = allocator,
+        .error = &error,
+        .source = { source_code },
+    };
+
     Timer_Start(&timer);
-    Kai_Result result = kai_create_program_from_source(source_code, &allocator, &error, &program);
+    Kai_Result result = kai_create_program_from_code(&info, &program);
     double elapsed_ms = Timer_ElapsedMilliseconds(&timer);
 
     printf("Compilation Took: %.4f ms\n", elapsed_ms);

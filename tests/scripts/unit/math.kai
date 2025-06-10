@@ -1,0 +1,13 @@
+
+Vector4 :: [4] f32;
+Matrix4 :: [4,4] f32;
+
+Array :: [42069] s32;
+
+main :: () {
+	a : Vector4;
+	b : Vector4;
+
+	print(a + b);
+}
+
