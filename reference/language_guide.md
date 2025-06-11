@@ -1,5 +1,5 @@
 # Types
-What are types? Types define how to interpret bytes stored in memory.
+Types define how to interpret bytes stored in memory.
 
 ## Primitive Types
 | Name                               | Meaning                    |
@@ -39,14 +39,14 @@ my_var : u32 : 0x45; // 'u32' can be replaced with any type!
 Types are *not* special, types are also values.
 That means that your variable can be assigned to a type!
 ```C
-My_Type :: f32;          // Assign a variable to a type
-my_var : My_Type : 1.23; // Use the type when declaring another variable
+Real :: f32;          // Assign a variable to a type
+my_var : Real : 1.23; // Use the type when declaring another variable
 ```
 
 The value of a variable can be omitted, in which case
 the variable is given the initial value of 'zero'
 ```C
-my_var : f32; // same as my_var : f32 = 0;
+my_var : f32; // same as "my_var : f32 = 0"
 ```
 
 ## Variable Assignment
@@ -64,7 +64,7 @@ b :: 100_000; // can use '_' for readability (does not affect the value)
 c :: 0xFE;    // Hexidecimal base
 d :: 3.1415;  // Basic floating point
 e :: 1.23e-5; // can use exp notation
-f :: "helo!"; // Strings!
+f :: "helo!"; // Strings! (type is "[] u8")
 
 // Floating point values have special "directives"
 inf :: #infinity;

@@ -1,7 +1,7 @@
 #ifndef TEST_H
 #define TEST_H
 
-#include "kai_dev.h"
+#include "kai.h"
 #include <stdio.h>
 
 extern void begin_test(const char* name);

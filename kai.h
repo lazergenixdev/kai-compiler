@@ -17,7 +17,7 @@
     define  KAI_HAVE_FATAL_ERROR     to use a costum error function on fatal errors
 
         Function Signature:
-        void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line);
+        void kai__fatal_error(char const* Desc, char const* Message, int Line);
 
     NOTE: When not using these APIs, no C standard libraries are used!
           (except stdint and stddef, but these can trivially be replaced)
@@ -758,10 +758,11 @@ typedef struct {
 #ifndef KAI__SECTION_PROGRAM
 
 typedef struct {
-    Kai_u32 Interpreter_Max_Step_Count;
-    Kai_u32 Interpreter_Max_Call_Depth;
+    Kai_u32 Interpreter_Max_Step_Count; // default = 1000000
+    Kai_u32 Interpreter_Max_Call_Depth; // default = 1024
 } Kai_Compile_Options;
 
+// TODO: keep this?
 #define KAI_DEFAULT_COMPILE_OPTIONS            \
     (Kai_Compile_Options) {                    \
         .Interpreter_Max_Call_Depth = 1024,    \
@@ -1029,6 +1030,10 @@ namespace Kai {
 #endif
 
 #ifdef KAI_IMPLEMENTATION
+#define KAI__DEBUG_DEPENDENCY_GRAPH  0
+#define KAI__DEBUG_COMPILATION_ORDER 0
+#define KAI__DEBUG_CODE_GENERATION   0
+
 #ifndef KAI__SECTION_IMPLEMENTATION_STRUCTS
 
 typedef struct {
@@ -1105,28 +1110,35 @@ static struct {
 // --- (Fatal) Error Handling + Debug Assertions -----------------------------
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
+#define KAI__RED(S)    "\x1b[91m" S "\x1b[0m"
+#define KAI__GREEN(S)  "\x1b[92m" S "\x1b[0m"
+#define KAI__YELLOW(S) "\x1b[93m" S "\x1b[0m"
+#define KAI__BLUE(S)   "\x1b[94m" S "\x1b[0m"
+
+#ifndef kai__debug
+#define kai__debug(...) printf(__VA_ARGS__)
+#endif
+#ifndef kai__debug_writer
+#define kai__debug_writer kai_writer_stdout()
+#endif
+
+#define kai__todo(...)                                       \
+do { char __message__[1024] = {0};                           \
+    snprintf(__message__, sizeof(__message__), __VA_ARGS__); \
+    KAI__FATAL_ERROR("TODO", __message__);                   \
+} while (0)
+
 #ifdef KAI_HAVE_FATAL_ERROR
-extern void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line);
+extern void kai__fatal_error(char const* Desc, char const* Message, int Line);
 #else
-static char const *kai__file(char const *cs)
+static void kai__fatal_error(char const* Desc, char const* Message, int Line)
 {
-    Kai_string s = kai_string_from_c(cs);
-    Kai_u32 i = s.count - 1;
-    while (i > 0) {
-        if (cs[i] == '/' || cs[i] == '\\')
-            return cs + i + 1;
-        i -= 1;
-    }
-    return cs;
-}
-static void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line)
-{
-    printf("\x1b[91m%s\x1b[0m: %s\nin \x1b[92m%s:%i\x1b[0m", Desc, Message, kai__file(File), Line);
+    printf("[\x1b[92mkai.h:%i\x1b[0m] \x1b[91m%s\x1b[0m: %s\n", Line, Desc, Message);
     exit(1);
 }
 #endif
 
-#define KAI__FATAL_ERROR(Desc, Message) kai__fatal_error(Desc, Message, __FILE__, __LINE__);
+#define KAI__FATAL_ERROR(Desc, Message) kai__fatal_error(Desc, Message, __LINE__);
 #define kai__assert(EXPR) if (!(EXPR)) KAI__FATAL_ERROR("Assertion Failed", #EXPR)
 #define kai__unreachable() KAI__FATAL_ERROR("Assertion Failed", "Unreachable was reached! D:")
 #define kai__check_allocation(PTR) if ((PTR) == NULL) KAI__FATAL_ERROR("Allocation Error", #PTR " was null")
@@ -1859,7 +1871,7 @@ KAI_API (void) kai_write_type(Kai_String_Writer* writer, Kai_Type Type)
     } break;
     
     case KAI_TYPE_STRUCT: {
-        kai__write("Struct [todo]");
+        kai__todo("structs");
     } break;
     }
 }
@@ -3271,7 +3283,7 @@ Kai_Expr kai__parse_expression(Kai__Parser* parser, Kai_s32 prec)
             if (t->type != ')') for (;;)
             {
                 Kai_Expr expr = kai__parse_expr(KAI__PREC_DEFAULT);
-                kai__expect(expr, "[todo]", "an expression");
+                kai__expect(expr, "in procedure call", "an expression");
                 kai__linked_list_append(args, expr);
 
                 kai__expect(arg_count != 255, "in procedure call", "too many inputs to procedure");
@@ -3906,12 +3918,6 @@ Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
     //! TODO: find all branch locations
     //! TODO: use procedure name and argument count
 
-//    #define bcc__write(...) \
-//    { \
-//        int length = snprintf(temp_buffer, sizeof(temp_buffer), __VA_ARGS__); \
-//        writer->write_string(writer->user, (Kai_string) {.data = (Kai_u8*)temp_buffer, .count = length}); \
-//    } (void)0
-
     #define bcc__indent() kai__write("    ")
     #define bcc__branch_check() \
     bcs__for (bytecode->branch_count) { \
@@ -4297,7 +4303,7 @@ uintptr_t bci__call_native_procedure(uintptr_t address, uintptr_t* args, int arg
     if (arg_count-- < 0) goto call; asm ( "mov x7, %0" :: "r" (args[7]) : "x7" );
 
     // TODO: push onto stack with >8 arguments
-    if (arg_count > 0) printf("ERROR: Too many arguments!");
+    if (arg_count > 0) kai__todo("Too many arguments!");
 
 call:
     asm ( "blr %0"      :: "r" (address) : "x30" );
@@ -4821,11 +4827,6 @@ typedef struct {
     // TODO: probably need to hash types for reuse...
 } Kai__Compiler_Context;
 
-// TODO: 😭
-#define DEBUG_DEPENDENCY_GRAPH
-#define DEBUG_COMPILATION_ORDER
-#define DEBUG_CODE_GENERATION
-
 Kai_Result kai__create_dependency_graph(
     Kai__Dependency_Graph_Create_Info* Info,
     Kai__Dependency_Graph*             out_Graph);
@@ -5077,8 +5078,7 @@ Kai_Result kai__dg_create_nodes_from_statement(
             return kai__dg_create_nodes_from_statement(Graph, node->body, new_scope_index, KAI_TRUE, KAI_TRUE);
         }
         else {
-            KAI__FATAL_ERROR("Compile Error", "Native Functions not implemented!");
-        //	printf("\x1b[93mWarning\x1b[0m: Native functions not implemented yet!\n");
+            kai__todo("Native Functions not implemented!");
         }
     } break;
 
@@ -5183,22 +5183,6 @@ Kai_Result kai__dg_create_nodes_from_statement(
     return result;
 }
 
-void kai__print_scope(Kai__DG_Scope* Scope)
-{
-#if 0
-    kai__hash_table_iterate(Scope->identifiers, i)
-    {
-        Kai__DG_Node_Index node_index = Scope->identifiers.values[i];
-        if (node_index.flags & KAI__DG_NODE_LOCAL_VARIABLE)
-        putchar('L');
-        Kai_string name = Scope->identifiers.keys[i];
-        printf("\"%.*s\"+%i ", name.count, name.data, node_index.value);
-    }
-#else
-        kai__unused(Scope);
-#endif	
-}
-
 Kai__DG_Node_Index* kai__dg_resolve_dependency_node(
     Kai__Dependency_Graph* Graph,
     Kai_string             Name,
@@ -5254,12 +5238,12 @@ Kai_Result kai__dg_insert_value_dependencies(
     Kai_Result result = KAI_SUCCESS;
     Kai_Allocator* allocator = &Graph->allocator;
     void* base = Expr;
-    if (Expr == NULL) { panic_with_message("null expression\n"); return 0; }
+    if (Expr == NULL) { kai__todo("null expression\n"); return 0; }
 
     switch (Expr->id)
     {
     default: {
-        panic_with_message("undefined expr (id = %d)\n", Expr->id);
+        kai__todo("undefined expr (id = %d)\n", Expr->id);
     } break;
 
     case KAI_EXPR_IDENTIFIER: {
@@ -5358,7 +5342,7 @@ Kai_Result kai__dg_insert_value_dependencies(
 
     case KAI_EXPR_PROCEDURE_TYPE: {
         //Kai_Expr_Procedure_Type* proc = base;
-        //panic_with_message("procedure type\n");
+        //kai__todo("procedure type\n");
     } break;
 
     case KAI_EXPR_PROCEDURE: {
@@ -5439,7 +5423,7 @@ Kai_Result kai__dg_insert_value_dependencies(
                 KAI_TRUE
             );
         }
-        else panic_with_message("invalid declaration\n");
+        else kai__todo("invalid declaration\n");
     }
 
     break; case KAI_STMT_ASSIGNMENT: {
@@ -5453,7 +5437,7 @@ Kai_Result kai__dg_insert_value_dependencies(
                 KAI_TRUE
             );
         }
-        else panic_with_message("invalid assignment\n");
+        else kai__todo("invalid assignment\n");
     }
 
     case KAI_STMT_RETURN: {
@@ -5467,7 +5451,7 @@ Kai_Result kai__dg_insert_value_dependencies(
                 KAI_TRUE
             );
         }
-        else panic_with_message("invalid return\n");
+        else kai__todo("invalid return\n");
     } break;
 
     break; case KAI_STMT_IF: {
@@ -5511,7 +5495,7 @@ Kai_Result kai__dg_insert_value_dependencies(
             Kai__DG_Scope* scope = Graph->scopes.elements + node->_scope;
             kai__remove_local_variables(scope);
         }
-        else panic_with_message("invalid compound statement\n");
+        else kai__todo("invalid compound statement\n");
     }
 
     break; case KAI_STMT_FOR: {
@@ -5539,7 +5523,7 @@ Kai_Result kai__dg_insert_type_dependencies(
 {
     Kai_Result result = KAI_SUCCESS;
     void* base = Expr;
-    if (Expr == NULL) { panic_with_message("null expression\n"); return KAI_FALSE; }
+    if (Expr == NULL) { kai__todo("null expression\n"); return KAI_FALSE; }
 
     switch (Expr->id)
     {
@@ -5622,7 +5606,7 @@ Kai_Result kai__dg_insert_type_dependencies(
     }
 
     break; case KAI_EXPR_PROCEDURE_TYPE: {
-        //panic_with_message("procedure type\n");
+        //kai__todo("procedure type\n");
     }
 
     break; case KAI_EXPR_PROCEDURE: {
@@ -5644,7 +5628,7 @@ Kai_Result kai__dg_insert_type_dependencies(
 
     break; case KAI_STMT_DECLARATION: {
         // What do we do here exactly?
-        panic_with_message("declaration\n");
+        kai__todo("declaration\n");
     }
 
     break; case KAI_STMT_RETURN: {
@@ -5658,7 +5642,7 @@ Kai_Result kai__dg_insert_type_dependencies(
     }
 
     break; case KAI_STMT_COMPOUND: {
-        panic_with_message("compound\n");
+        kai__todo("compound\n");
     }
 
     break;
@@ -5746,54 +5730,54 @@ Kai_Result kai__create_dependency_graph(
         }
     }
 
-#if defined(DEBUG_DEPENDENCY_GRAPH)
+#if KAI__DEBUG_DEPENDENCY_GRAPH
     for (Kai_u32 i = 0; i < out_Graph->nodes.count; ++i) {
         Kai__DG_Node* node = out_Graph->nodes.elements+i;
 
-        printf("Node \"\x1b[94m%.*s\x1b[0m\"", node->name.count, node->name.data);
+        kai__debug("Node \"" KAI__BLUE("%.*s") "\"", node->name.count, node->name.data);
         if (node->type_flags & KAI__DG_NODE_EVALUATED) {
-            printf(" type: ");
-            kai_write_type(&debug_writer, node->type);
+            kai__debug(" type: ");
+            kai_write_type(kai__debug_writer, node->type);
         }
         if (node->value_flags & KAI__DG_NODE_EVALUATED) {
-            printf(" value: ");
+            kai__debug(" value: ");
             if (node->type->type == KAI_TYPE_TYPE) {
-                kai_write_type(&debug_writer, node->value.type);
+                kai_write_type(kai__debug_writer, node->value.type);
             }
         }
-        putchar('\n');
+        kai__debug("\n");
 
         if (node->value_dependencies.count) {
-            printf("    V deps: ");
+            kai__debug("    V deps: ");
             for (Kai_u32 d = 0; d < node->value_dependencies.count; ++d) {
                 Kai__DG_Node_Index node_index = node->value_dependencies.elements[d];
                 Kai_string name = out_Graph->nodes.elements[node_index.value].name;
                 if (node_index.flags & KAI__DG_NODE_TYPE) {
-                    printf("T(\x1b[94m%.*s\x1b[0m) ", name.count, name.data);
+                    kai__debug("T(" KAI__BLUE("%.*s") ") ", name.count, name.data);
                 }
                 else {
-                    printf("V(\x1b[94m%.*s\x1b[0m) ", name.count, name.data);
+                    kai__debug("V(" KAI__BLUE("%.*s") ") ", name.count, name.data);
                 }
             }
-            putchar('\n');
+            kai__debug("\n");
         }
 
         if (node->type_dependencies.count) {
-            printf("    T deps: ");
+            kai__debug("    T deps: ");
             for (Kai_u32 d = 0; d < node->type_dependencies.count; ++d) {
                 Kai__DG_Node_Index node_index = node->type_dependencies.elements[d];
                 Kai_string name = out_Graph->nodes.elements[node_index.value].name;
                 if (node_index.flags & KAI__DG_NODE_TYPE) {
-                    printf("T(\x1b[94m%.*s\x1b[0m) ", name.count, name.data);
+                    kai__debug("T(" KAI__BLUE("%.*s") ") ", name.count, name.data);
                 }
                 else {
-                    printf("V(\x1b[94m%.*s\x1b[0m) ", name.count, name.data);
+                    kai__debug("V(" KAI__BLUE("%.*s") ") ", name.count, name.data);
                 }
             }
-            putchar('\n');
+            kai__debug("\n");
         }
     }
-#endif // DEBUG_DEPENDENCY_GRAPH
+#endif
 
     return result;
 }
@@ -5886,8 +5870,8 @@ Kai_Result kai__determine_compilation_order(Kai__Dependency_Graph* Graph, Kai_Er
             }
         }
 
-#if defined(DEBUG_COMPILATION_ORDER)
-        Kai_String_Writer* writer = &debug_writer;
+#if KAI__DEBUG_COMPILATION_ORDER
+        Kai_String_Writer* writer = kai__debug_writer;
         kai__write("Compilation Order:\n");
         kai__for_n (Graph->nodes.count * 2) {
             Kai_u32 v = Graph->compilation_order[i];
@@ -6005,7 +5989,7 @@ Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Ka
                 if (type != NULL && type->type == KAI_TYPE_TYPE)
                     type_info->sub_types[i++] = value.type;
                 else
-                    panic_with_message("Type was not a type!");
+                    kai__todo("Type was not a type!");
                 current = current->next;
             }
             return (Kai_Type)type_info;
@@ -6014,28 +5998,28 @@ Kai_Type kai__type_from_expression(Kai__Bytecode_Generation_Context* Context, Ka
             Kai_Expr_Procedure_Call* node = void_Expr;
             // Find type of the procedure we are calling
             if (node->proc->id != KAI_EXPR_IDENTIFIER)
-                panic_with_message("procedure calls only implemented for identifiers");
+                kai__todo("procedure calls only implemented for identifiers");
 
             Kai_Expr_Identifier* proc = (Kai_Expr_Identifier*)node->proc;
             Kai__DG_Node* dg_node = kai__dg_find_node(Context->dependency_graph, proc->source_code);
 
             if (dg_node == NULL)
-                panic_with_message("could not resolve node");
+                kai__todo("could not resolve node");
 
             Kai_Type type = dg_node->type;
             if (type->type != KAI_TYPE_PROCEDURE)
-                panic_with_message("calling something that does not have procedure type!");
+                kai__todo("calling something that does not have procedure type!");
 
             Kai_Type_Info_Procedure* proc_type = (Kai_Type_Info_Procedure*)type;
 
             if (proc_type->out_count == 0)
-                panic_with_message("procedure does not have a return");
+                kai__todo("procedure does not have a return");
 
             return proc_type->sub_types[proc_type->in_count];
         } break;
 
         default: {
-            panic_with_message("not handled %i", Expr->id);
+            kai__todo("not handled %i", Expr->id);
         }
     }
 
@@ -6104,7 +6088,7 @@ Kai_Result kai__bytecode_emit_expression(
         Kai_u8 cmp = 0;
         switch (node->op)
         {
-            default: panic_with_message("not implemented");
+            default: kai__todo("not implemented");
             case '+': op = KAI_BOP_ADD; goto insert_math;
             case '-': op = KAI_BOP_SUB; goto insert_math;
             case '*': op = KAI_BOP_MUL; goto insert_math;
@@ -6145,7 +6129,7 @@ Kai_Result kai__bytecode_emit_expression(
     } break;
 
     default: {
-        Kai_String_Writer* writer = &debug_writer;
+        Kai_String_Writer* writer = kai__debug_writer;
         kai__set_color(KAI_COLOR_IMPORTANT);
         kai__write("[emit_expression] skipping Expr(");
         kai__write_u32(Expr->id);
@@ -6195,7 +6179,7 @@ Kai_Result kai__bytecode_emit_statement(
         } break;
 
         default: {
-            Kai_String_Writer* writer = &debug_writer;
+            Kai_String_Writer* writer = kai__debug_writer;
             kai__set_color(KAI_COLOR_IMPORTANT);
             kai__write("[emit_statement] skipping Stmt(");
             kai__write_u32(Expr->id);
@@ -6241,7 +6225,7 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 
             if (procedure->body == NULL)
             {
-                Kai_String_Writer* writer = &debug_writer;
+                Kai_String_Writer* writer = kai__debug_writer;
                 kai__write("Skip native procedure...\n");
                 return (Kai__DG_Value) {0};
             }
@@ -6261,7 +6245,7 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
             Kai_u32 location = 0;
             Kai_Result result = kai__bytecode_emit_procedure(Context, procedure, &location);
 
-#ifdef DEBUG_CODE_GENERATION
+#if KAI__DEBUG_CODE_GENERATION
             Kai_Bytecode bytecode = {
                 .data = Context->bytecode->stream.data,
                 .count = Context->bytecode->stream.count,
@@ -6273,13 +6257,13 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
                 .branch_hints = Context->bytecode->branch_hints.elements,
                 .branch_count = Context->bytecode->branch_hints.count,
             };
-            Kai_String_Writer* writer = &debug_writer;
-            kai_bytecode_to_c(&bytecode, &debug_writer);
+            Kai_String_Writer* writer = kai__debug_writer;
+            kai_bytecode_to_c(&bytecode, kai__debug_writer);
             kai__write_char('\n');
 #endif
 
             if (result != KAI_SUCCESS)
-                panic_with_message("something else went wrong...");
+                kai__todo("something else went wrong...");
 
             return (Kai__DG_Value) {
                 .procedure_location = location,
@@ -6292,7 +6276,7 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
 
             if (other_node == NULL)
             {
-                panic_with_message("something went wrong");
+                kai__todo("something went wrong");
                 //return kai__error_internal(Context->error, KAI_STRING("I did not think this through..."));
             }
 
@@ -6306,7 +6290,7 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
             Kai_Expr_Procedure_Call* call = void_Expr;
 
             if (call->proc->id != KAI_EXPR_IDENTIFIER)
-                panic_with_message("procedure must be identifier");
+                kai__todo("procedure must be identifier");
 
             Kai_Expr_Identifier* proc = (Kai_Expr_Identifier*)call->proc;
             Kai__DG_Node* proc_node = kai__dg_find_node(Context->dependency_graph, proc->source_code);
@@ -6340,14 +6324,14 @@ Kai__DG_Value kai__value_from_expression(Kai__Bytecode_Generation_Context* Conte
             kai_interp_run(interp, max_step_count);
 
             if (interp->flags != KAI_INTERP_FLAGS_DONE) {
-                panic_with_message("failed to interpret bytecode...");
+                kai__todo("failed to interpret bytecode...");
             }
 
             return (Kai__DG_Value) { .value = interp->registers[0] };
         } break;
 
         default: {
-            panic_with_message("kai__value_from_expression ? %i", Expr->id);
+            kai__todo("kai__value_from_expression ? %i", Expr->id);
         }
     }
 
@@ -6415,8 +6399,8 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
         }
         #endif
 
-#ifdef DEBUG_CODE_GENERATION
-        Kai_String_Writer* writer = &debug_writer;
+#if KAI__DEBUG_CODE_GENERATION
+        Kai_String_Writer* writer = kai__debug_writer;
         kai__set_color(KAI_COLOR_IMPORTANT_2);
         kai__write("Generating ");
         kai__write_char((node_index.flags & KAI__DG_NODE_TYPE? 'T':'V'));
@@ -6431,23 +6415,23 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
         {
             result = kai__bytecode_generate_type(&context, node);
 
-#ifdef DEBUG_CODE_GENERATION
-            (&debug_writer)->write_string(0, KAI_STRING("--> Value "));
-            kai_write_type((&debug_writer), node->type);
-            (&debug_writer)->write_string(0, KAI_STRING("\n"));
+#if KAI__DEBUG_CODE_GENERATION
+            kai__debug_writer->write_string(0, KAI_STRING("--> Value "));
+            kai_write_type(kai__debug_writer, node->type);
+            kai__debug_writer->write_string(0, KAI_STRING("\n"));
 #endif
         }
         else {
             result = kai__bytecode_generate_value(&context, node);
 
-#ifdef DEBUG_CODE_GENERATION
+#if KAI__DEBUG_CODE_GENERATION
             // TODO: write a function that does EXACTLY THIS!
             switch (node->type->type)
             {
                 case KAI_TYPE_TYPE: {
-                    (&debug_writer)->write_string(0, KAI_STRING("--> Value "));
-                    kai_write_type((&debug_writer), node->value.type);
-                    (&debug_writer)->write_string(0, KAI_STRING("\n"));
+                    kai__debug_writer->write_string(0, KAI_STRING("--> Value "));
+                    kai_write_type(kai__debug_writer, node->value.type);
+                    kai__debug_writer->write_string(0, KAI_STRING("\n"));
                 } break;
                 case KAI_TYPE_INTEGER: {
                     kai__write("--> Value ");
@@ -6465,7 +6449,7 @@ Kai_Result kai__generate_bytecode(Kai__Bytecode_Create_Info* Info, Kai__Bytecode
                     kai__write_char('\n');
                 } break;
                 default: {
-                    panic_with_message("Excuse me, what type IS THIS?! %i", node->type->type);
+                    kai__todo("Excuse me, what type IS THIS?! %i", node->type->type);
                 }
             }
 #endif
@@ -6493,28 +6477,6 @@ extern inline uint32_t kai__arm64_ret() { return 0xd65f03c0; }
 Kai_Result kai__create_program(Kai__Program_Create_Info* Info, Kai_Program* out_Program)
 {
     Kai_Allocator* allocator = &Info->allocator;
-
-    //uint32_t code [] = {
-    //	kai__arm64_sub(0, 1, 2, 1),
-    //	kai__arm64_add(2, 1, 0, 1),
-    //	kai__arm64_subs(69, 5, 0),
-    //	kai__arm64_movz(4, 42069, 1),
-    //	kai__arm64_bl(-16),
-    //	kai__arm64_ret(),
-    //};
-//
-    //for (int i = 0; i < sizeof(code)/sizeof(uint32_t); ++i)
-    //{
-    //	union {
-    //		uint8_t byte[4];
-    //		uint32_t u32;
-    //	} temp = { .u32 = code[i] }, out;
-    //	out.byte[0] = temp.byte[3];
-    //	out.byte[1] = temp.byte[2];
-    //	out.byte[2] = temp.byte[1];
-    //	out.byte[3] = temp.byte[0];
-    //	printf("%x\n", out.u32);
-    //}
 
 #define kai__bytecode_decode_add(Position, Dst_Var, Src1_Var, Src2_Var) \
     uint32_t Dst_Var = *(uint32_t*)(stream->data + Position);           \

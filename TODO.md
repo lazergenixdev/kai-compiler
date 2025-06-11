@@ -12,10 +12,10 @@
 - [x] proper type parsing (arrays, slices, matrix)
 - [x] place default `fatal_error` in main header (`KAI_HAVE_FATAL_ERROR`)
 - [x] remove `push` from `traverse_tree`
-- [ ] remove `file` from fatal error function (theres only one file lol)
-- [ ] replace `panic_with_message` with `kai__todo`
-- [ ] replace `debug_writer`
-- [ ] Delete kai_dev.h
+- [x] remove `file` from fatal error function (theres only one file lol)
+- [x] replace `panic_with_message` with `kai__todo`
+- [x] replace `debug_writer` with `kai__debug` (welllll...)
+- [x] Delete kai_dev.h
 - [ ] refactor to use `Compiler_Context`
 - [ ] Add Copy instruction to bytecode
 - [ ] Add vector and matrix types to bytecode
@@ -29,6 +29,7 @@
 - [x] Fix WASM cmake toolchain, somehow...
 - [x] Get program creation working in WASM
 - [x] Fix random use of stdio
+- [ ] Move WASM memory allocator out of header
 - [ ] Fix corruption in error messages (WASM, Semantic Errors)
 - [ ] Fix WASM page allocator (debug memory issues)
 

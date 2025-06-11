@@ -1,6 +1,6 @@
 #include <stdio.h>
 #define KAI_IMPLEMENTATION
-#include "kai_dev.h"
+#include "kai.h"
 
 #define test ++test_count, pass_count +=
 

@@ -1,5 +1,5 @@
 ﻿#define KAI_IMPLEMENTATION
-#include "kai_dev.h"
+#include "kai.h"
 #include <string.h>
 #if defined(KAI__PLATFORM_WINDOWS)
 #include <windows.h> // --> EXCEPTION_ACCESS_VIOLATION
