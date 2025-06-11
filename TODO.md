@@ -16,7 +16,8 @@
 - [x] replace `panic_with_message` with `kai__todo`
 - [x] replace `debug_writer` with `kai__debug` (welllll...)
 - [x] Delete kai_dev.h
-- [ ] refactor to use `Compiler_Context`
+- [x] refactor to use `Compiler_Context`
+- [ ] Machine code generation for add test (mov + add + calling conv)
 - [ ] Add Copy instruction to bytecode
 - [ ] Add vector and matrix types to bytecode
 - [ ] Add declaration and assignment to bytecode generation

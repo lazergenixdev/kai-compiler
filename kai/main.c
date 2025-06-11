@@ -1,4 +1,4 @@
-﻿#define KAI_IMPLEMENTATION
+#define KAI_IMPLEMENTATION
 #include "kai.h"
 #include <string.h>
 #if defined(KAI__PLATFORM_WINDOWS)
@@ -176,7 +176,7 @@ int load_file(const char* file_path, Kai_string* out)
     fseek(file, 0, SEEK_SET);
     fread(data, 1, size, file);
     fclose(file);
-    out->count = size;
+    out->count = (Kai_u32)size;
     out->data = data;
     return 0;
 }
