@@ -4288,6 +4288,8 @@ int bci__write_register(Kai_Interpreter* interp, Kai_Reg reg, Kai_Value value) {
 uintptr_t bci__call_native_procedure(uintptr_t address, uintptr_t* args, int arg_count) {
     uintptr_t result = 0;
 #if defined(__arm64__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wlanguage-extension-token"
     if (arg_count-- < 0) goto call; asm ( "mov x0, %0" :: "r" (args[0]) : "x0" );
     if (arg_count-- < 0) goto call; asm ( "mov x1, %0" :: "r" (args[1]) : "x1" );
     if (arg_count-- < 0) goto call; asm ( "mov x2, %0" :: "r" (args[2]) : "x2" );
@@ -4303,6 +4305,7 @@ uintptr_t bci__call_native_procedure(uintptr_t address, uintptr_t* args, int arg
 call:
     asm ( "blr %0"      :: "r" (address) : "x30" );
     asm ( "mov %0, x0"  : "=r" (result) );
+#pragma GCC diagnostic pop
 #else
     kai__unused(address);
     kai__unused(args);
@@ -6745,6 +6748,7 @@ static void kai__memory_free(Kai_ptr user, Kai_ptr ptr, Kai_u32 size)
 
 static void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 access)
 {
+    kai__unused(user);
     int flags = 0;
     flags |= (access & KAI_MEMORY_ACCESS_READ)?    PROT_READ  : 0;
     flags |= (access & KAI_MEMORY_ACCESS_WRITE)?   PROT_WRITE : 0;

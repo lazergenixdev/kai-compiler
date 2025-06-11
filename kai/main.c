@@ -6,13 +6,12 @@
 #include <excpt.h>
 #endif
 
-typedef uintptr_t Timer;
 typedef Kai_s32 Main_Proc(Kai_slice);
 
 void   Timer_Init(void);
-void   Timer_Start(Timer* timer);
-double Timer_ElapsedSeconds(Timer* timer);
-double Timer_ElapsedMilliseconds(Timer* timer);
+void   Timer_Start(void);
+double Timer_ElapsedSeconds(void);
+double Timer_ElapsedMilliseconds(void);
 
 void set_underline(int enable);
 int load_file(const char* file_path, Kai_string* out);
@@ -31,6 +30,7 @@ int main(int argc, char** argv)
         .parse_only = KAI_FALSE,
     };
     writer = kai_writer_stdout();
+    Timer_Init();
     
 	set_underline(1);
     kai__write_string(kai_version_string());
@@ -70,18 +70,15 @@ int main(int argc, char** argv)
         goto cleanup;
     }
 
-    Timer timer = {0};
-    Timer_Init();
-
     Kai_Program_Create_Info info = {
         .allocator = allocator,
         .error = &error,
         .source = { source_code },
     };
 
-    Timer_Start(&timer);
+    Timer_Start();
     Kai_Result result = kai_create_program_from_code(&info, &program);
-    double elapsed_ms = Timer_ElapsedMilliseconds(&timer);
+    double elapsed_ms = Timer_ElapsedMilliseconds();
 
     printf("Compilation Took: %.4f ms\n", elapsed_ms);
 
@@ -188,54 +185,56 @@ int load_file(const char* file_path, Kai_string* out)
 #include <Windows.h>
 
 static LARGE_INTEGER frequency;
+static LARGE_INTEGER start;
 
 void Timer_Init(void)
 {
 	QueryPerformanceFrequency(&frequency);
 }
 
-void Timer_Start(Timer* timer)
+void Timer_Start(void)
 {
-	QueryPerformanceCounter((LARGE_INTEGER*)timer);
+	QueryPerformanceCounter(&start);
 }
 
-double Timer_ElapsedSeconds(Timer* timer)
+double Timer_ElapsedSeconds(void)
 {
 	LARGE_INTEGER end;
 	QueryPerformanceCounter(&end);
-	LONGLONG duration = end.QuadPart - ((LARGE_INTEGER*)timer)->QuadPart;
+	LONGLONG duration = end.QuadPart - start.QuadPart;
 	return (double)(duration) / (double)(frequency.QuadPart);
 }
 
-double Timer_ElapsedMilliseconds(Timer* timer)
+double Timer_ElapsedMilliseconds(void)
 {
 	LARGE_INTEGER end;
 	QueryPerformanceCounter(&end);
-	LONGLONG duration = end.QuadPart - ((LARGE_INTEGER*)timer)->QuadPart;
+	LONGLONG duration = end.QuadPart - start.QuadPart;
 	return (double)(duration * 1000) / (double)(frequency.QuadPart);
 }
 #elif defined(__linux__) || defined(__APPLE__)
 #include <sys/time.h>
 
-void Timer_Init() {}
+void Timer_Init(void) {}
 
 struct timespec start;
-struct timespec end;
 
-void Timer_Start(Timer* timer)
+void Timer_Start(void)
 {
 	clock_gettime(CLOCK_MONOTONIC, &start);
 }
 
-double Timer_ElapsedSeconds(Timer* timer)
+double Timer_ElapsedSeconds(void)
 {
+    struct timespec end;
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	uint64_t duration_ns = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
 	return (double)duration_ns / 1e9;
 }
 
-double Timer_ElapsedMilliseconds(Timer* timer)
+double Timer_ElapsedMilliseconds(void)
 {
+    struct timespec end;
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	uint64_t duration_ns = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
 	return (double)duration_ns / 1e6;
