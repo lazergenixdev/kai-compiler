@@ -11,8 +11,8 @@
 - [x] let parser hold pointer to error
 - [x] proper type parsing (arrays, slices, matrix)
 - [x] place default `fatal_error` in main header (`KAI_HAVE_FATAL_ERROR`)
-- [ ] remove `push` from `traverse_tree`
-- [ ] remove `file` from fatal error function
+- [x] remove `push` from `traverse_tree`
+- [ ] remove `file` from fatal error function (theres only one file lol)
 - [ ] replace `panic_with_message` with `kai__todo`
 - [ ] replace `debug_writer`
 - [ ] Delete kai_dev.h

@@ -1108,7 +1108,7 @@ static struct {
 #ifdef KAI_HAVE_FATAL_ERROR
 extern void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line);
 #else
-extern inline char const *kai__file(char const *cs)
+static char const *kai__file(char const *cs)
 {
     Kai_string s = kai_string_from_c(cs);
     Kai_u32 i = s.count - 1;
@@ -1119,13 +1119,12 @@ extern inline char const *kai__file(char const *cs)
     }
     return cs;
 }
-void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line)
+static void kai__fatal_error(char const* Desc, char const* Message, char const* File, int Line)
 {
     printf("\x1b[91m%s\x1b[0m: %s\nin \x1b[92m%s:%i\x1b[0m", Desc, Message, kai__file(File), Line);
     exit(1);
 }
 #endif
-
 
 #define KAI__FATAL_ERROR(Desc, Message) kai__fatal_error(Desc, Message, __FILE__, __LINE__);
 #define kai__assert(EXPR) if (!(EXPR)) KAI__FATAL_ERROR("Assertion Failed", #EXPR)
@@ -1907,7 +1906,7 @@ typedef struct {
     Kai_String_Writer * writer;
     Kai_u64             stack[256]; // 64 * 256 max depth
     Kai_u32             stack_count;
-    char const*         prefix;
+    Kai_string          prefix;
 } Kai__Tree_Traversal_Context;
 
 #define kai__push_traversal_stack(B)                  \
@@ -1923,14 +1922,14 @@ typedef struct {
          Context->stack_count -= 1;               \
     } while (0)
 
-#define kai__explore(Expr, Is_Last) \
-    kai__traverse_tree(Context, Expr, Is_Last, KAI_TRUE)
+#define kai__explore(Expr, Is_Last)       \
+    { kai__push_traversal_stack(Is_Last); \
+      kai__traverse_tree(Context, Expr);  \
+      kai__pop_traversal_stack(); } (void)0
 
-static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Expr, Kai_u8 is_last, Kai_bool push)
+static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Expr)
 {
     Kai_String_Writer* writer = Context->writer;
-
-    if (push) kai__push_traversal_stack(is_last);
 
     kai__set_color(KAI_COLOR_DECORATION);
     Kai_int last = Context->stack_count - 1;
@@ -1940,17 +1939,16 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
         kai__write_string(kai__tree_branches[k]);
     }
 
-    if (Context->prefix) {
+    if (Context->prefix.count > 0) {
         kai__set_color(KAI_COLOR_IMPORTANT_2);
-        kai__write(Context->prefix);
+        kai__write_string(Context->prefix);
         kai__write_char(' ');
-        Context->prefix = NULL;
+        Context->prefix = KAI_EMPTY_STRING;
     }
     if (Expr == NULL) {
         kai__set_color(KAI_COLOR_IMPORTANT_2);
         kai__write("null\n");
         kai__set_color(KAI_COLOR_PRIMARY);
-        kai__pop_traversal_stack();
         return;
     }
 
@@ -2054,13 +2052,13 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
             Kai_Expr current = node->in_out_expr;
 
             kai__for_n (node->in_count) {
-                Context->prefix = "in ";
+                Context->prefix = KAI_STRING("in ");
                 kai__explore(current, i == end);
                 current = current->next;
             }
 
             kai__for_n (node->out_count) {
-                Context->prefix = "out";
+                Context->prefix = KAI_STRING("out");
                 Kai_int idx = i + node->in_count;
                 kai__explore(current, idx == end);
                 current = current->next;
@@ -2073,7 +2071,7 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
             kai__write_name();
             kai__write_char('\n');
 
-            Context->prefix = "proc";
+            Context->prefix = KAI_STRING("proc");
             kai__explore(node->proc, node->arg_count == 0);
 
             Kai_int n = node->arg_count;
@@ -2097,13 +2095,13 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
             Kai_Expr current = node->in_out_expr;
 
             kai__for_n (node->in_count) {
-                Context->prefix = "in ";
+                Context->prefix = KAI_STRING("in ");
                 kai__explore(current, 0);
                 current = current->next;
             }
 
             kai__for_n (node->out_count) {
-                Context->prefix = "out";
+                Context->prefix = KAI_STRING("out");
                 kai__explore(current, 0);
                 current = current->next;
             }
@@ -2151,7 +2149,7 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
             Kai_bool has_expr = (node->expr != NULL);
 
             if (node->type) {
-                Context->prefix = "type";
+                Context->prefix = KAI_STRING("type");
                 kai__explore(node->type, !has_expr);
             }
 
@@ -2163,9 +2161,9 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
             kai__set_color(KAI_COLOR_SECONDARY);
             kai__write("assignment\n");
 
-            Context->prefix = "left ";
+            Context->prefix = KAI_STRING("left ");
             kai__explore(node->left, 0);
-            Context->prefix = "right";
+            Context->prefix = KAI_STRING("right");
             kai__explore(node->expr, 1);
         }
         break; case KAI_STMT_COMPOUND: {
@@ -2184,7 +2182,7 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
             kai__set_color(KAI_COLOR_SECONDARY);
             kai__write("if statement\n");
 
-            Context->prefix = "expr";
+            Context->prefix = KAI_STRING("expr");
             kai__explore(node->expr, 0);
             kai__explore(node->then_body, node->else_body == NULL);
             if (node->else_body != NULL) {
@@ -2202,29 +2200,28 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
             kai__set_color(KAI_COLOR_PRIMARY);
             kai__write(")\n");
 
-            Context->prefix = "from";
+            Context->prefix = KAI_STRING("from");
             kai__explore(node->from, 0);
 
-            Context->prefix = "to";
+            Context->prefix = KAI_STRING("to");
             kai__explore(node->to, 0);
 
             kai__explore(node->body, 1);
         }
     }
-
-    if (push) kai__pop_traversal_stack();
 }
 
 KAI_API (void) kai_write_syntax_tree(Kai_String_Writer* writer, Kai_Syntax_Tree* tree)
 {
     Kai__Tree_Traversal_Context context = { .writer = writer };
     kai__write("Top Level\n");
-    kai__traverse_tree(&context, (Kai_Stmt)&tree->root, KAI_TRUE, KAI_TRUE);
+    Kai__Tree_Traversal_Context* Context = &context;
+    kai__explore((Kai_Stmt)&tree->root, KAI_TRUE);
 }
 KAI_API (void) kai_write_expression(Kai_String_Writer* writer, Kai_Expr expr)
 {
     Kai__Tree_Traversal_Context context = { .writer = writer };
-    kai__traverse_tree(&context, expr, KAI_TRUE, KAI_FALSE);
+    kai__traverse_tree(&context, expr);
 }
 
 #endif
@@ -4860,11 +4857,13 @@ KAI_API (Kai_Result) kai_create_program_from_tree(Kai_Program_Create_Info* Info,
 }
 
 // TODO: restructure to this
+#if 0
 static void kai__generate_dependency_graph(Kai__Compiler_Context* Context);
 static void kai__generate_compilation_order(Kai__Compiler_Context* Context);
 static void kai__generate_bytecode_(Kai__Compiler_Context* Context);
 static void kai__generate_machine_code(Kai__Compiler_Context* Context);
-static void kai__destroy_compiler_context(Kai__Compiler_Context* Context);   
+static void kai__destroy_compiler_context(Kai__Compiler_Context* Context);
+#endif
 
 #define kai__check(RESULT) if (RESULT != KAI_SUCCESS) goto cleanup;
 KAI_API(Kai_Result) kai_create_program_from_code(Kai_Program_Create_Info* Info, Kai_Program* out_Program)
