@@ -4,31 +4,22 @@
 // so the caller will need to make sure that at least this amount of
 // space is available before each function call
 
-Kai_u32 kai__x86_64_mov(Kai_u8* dst)
-{
-    return 0;
-}
-
-Kai_u32 kai__x86_64_add(Kai_u8* dst)
-{
-    return 0;
-}
-
-Kai_u32 kai__x86_64_sub(Kai_u8* dst)
-{
-    return 0;
-}
-
-Kai_u32 kai__x86_64_call(Kai_u8* dst, void* address)
-{
-    return 0;
-}
-
-Kai_u32 kai__x86_64_ret(Kai_u8* dst)
-{
-    dst[0] = 0xC3; // TODO: look into using CB (far return)
-    return 1;
-}
+// ------------------------------------ Windows -- x86_64 Calling Convention ------------------------------------
+// Ref: https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-170
+// 
+// First 4 arguments are always put in registers
+//    -> RCX, RDX, R8, R9        (integers)
+//    -> XMM0, XMM1, XMM2, XMM3  (floats)
+// Rest of the arguments (5+) are pushed onto the stack
+// 
+// If return value is more than 64-bit, then caller allocates
+//     space for it and passes pointer as the first argument
+//
+// Caller saved:
+//   RAX, RCX, RDX, R8, R9, R10, R11, XMM0-XMM5
+// Callee saved:
+//   RBX, RBP, RDI, RSI, RSP, R12, R13, R14, R15, XMM6-XMM15
+// --------------------------------------------------------------------------------------------------------------
 #endif
 
 #ifndef ARM64

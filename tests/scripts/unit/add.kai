@@ -1,7 +1,9 @@
 add :: (x: s32, y: s32) -> s32 {
-    if x > 2 ret 2 + y;
-    ret x + y * 2;
+    ret x + y;
 }
+// mov rax, rcx
+// add rax, rdx
+// ret
 
 value :: add(1, 2);
 

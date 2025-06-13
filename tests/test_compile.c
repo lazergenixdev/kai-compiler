@@ -65,46 +65,54 @@ Kai_string test_programs[] = {
 };
 #endif
 
+static int test(Kai_Allocator* allocator)
+{
+	Kai_Program program = { 0 };
+	Kai_Error error = { 0 };
+	Kai_string source_code = KAI_STRING(
+		"add :: (a: s32, b: s32) {\n"
+		"\tret a + b;\n"
+		"}\n"
+	);
+
+	Kai_Program_Create_Info info = {
+		.allocator = *allocator,
+		.error = &error,
+		.source = { source_code },
+	};
+	Kai_Result result = kai_create_program_from_code(&info, &program);
+
+	if (result != KAI_SUCCESS) {
+		error.location.file_name = KAI_STRING(__FUNCTION__);
+		kai_write_error(&error_writer, &error);
+		return FAIL;
+	}
+
+	typedef Kai_s32 Proc(Kai_s32, Kai_s32);
+	Proc* add = (Proc*)kai_find_procedure(program, KAI_STRING("add"), NULL);
+
+	if (add == NULL)
+		return FAIL;
+
+	if (0 != add(0, 0))
+		return FAIL;
+	
+	if (5 != add(2, 3))
+		return FAIL;
+
+	if (0x45 != add(0x22, 0x23))
+		return FAIL;
+
+	return PASS;
+}
+
 int compile_simple_add(void)
 {
     TEST();
 
     Kai_Allocator allocator = {0};
     kai_memory_create(&allocator);
-
-    Kai_Program program = {0};
-    Kai_Error error = {0};
-    Kai_string source_code = KAI_STRING(
-        "add :: (a: s32, b: s32) {\n"
-        "\tret a + b;\n"
-        "}\n"
-    );
-
-	Kai_Program_Create_Info info = {
-		.allocator = allocator,
-		.error = &error,
-		.source = { source_code },
-	};
-    Kai_Result result = kai_create_program_from_code(&info, &program);
-
-    if (result != KAI_SUCCESS) {
-        error.location.file_name = KAI_STRING(__FUNCTION__);
-        kai_write_error(&error_writer, &error);
-        return FAIL;
-    }
-
-	#if 0
-    typedef Kai_s32 Proc(Kai_s32, Kai_s32);
-    Proc* proc = kai_find_procedure(program, KAI_STRING("add"), NULL);
-
-    Kai_bool failed = KAI_FALSE;
-    if (5 != proc(2, 3)) failed = KAI_TRUE;
-    if (0 != proc(0, 0)) failed = KAI_TRUE;
-    if (0x45 != proc(0x22, 0x23)) failed = KAI_TRUE;
-
-    return (result != KAI_SUCCESS) ? FAIL : PASS;
-	#endif
-
+	int result = test(&allocator);
     kai_memory_destroy(&allocator);
-	return PASS;
+	return result;
 }

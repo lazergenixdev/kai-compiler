@@ -1,4 +1,4 @@
-# TODO
+﻿# TODO
 - [x] Make todo list
 - [x] Fix a bunch of compile warnings
 - [x] Fix procedure location in bytecode generation
@@ -17,13 +17,15 @@
 - [x] replace `debug_writer` with `kai__debug` (welllll...)
 - [x] Delete kai_dev.h
 - [x] refactor to use `Compiler_Context`
+- [ ] create an API to emit raw x86 instructions
+- [ ] create an x86 assembler context to keep track of register use (linear)
 - [ ] Machine code generation for add test (mov + add + calling conv)
-- [ ] Add Copy instruction to bytecode
-- [ ] Add vector and matrix types to bytecode
 - [ ] Add declaration and assignment to bytecode generation
+- [ ] Add Copy instruction to bytecode
+- [ ] test copy instruction on assignments
+- [ ] Add vector and matrix types to bytecode
 - [ ] Scopes in bytecode generation
 - [ ] Simple machine code generation (ARM64)
-- [ ] Linear register allocation with spilling
 - [ ] Evaluate Feasibility of using C++ reflection API with compiling scripts
 
 ## Website test compiler playground thing
@@ -35,10 +37,10 @@
 - [ ] Fix WASM page allocator (debug memory issues)
 
 # NEED FOR VERSION 1
-- Structs
-- Vector + Matrix Types
-- Type Checker
-- Runtime safety
-- Memory + Stack + Pointers
-- Machine code generation (only arm64 or x64 is good enough)
-- C interop
+- [ ] Struct Types
+- [ ] Vector & Matrix Types
+- [ ] Type Checker
+- [ ] Memory & Stack & Pointers
+- [ ] Machine code generation (only arm64 or x64 is good enough)
+- [ ] C interop
+- [ ] Runtime safety

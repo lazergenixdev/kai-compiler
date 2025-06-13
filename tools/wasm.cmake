@@ -1,4 +1,4 @@
-# wasm-toolchain.cmake
+# WASM toolchain
 
 set(WASM TRUE)
 
