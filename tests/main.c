@@ -1,6 +1,6 @@
 #include <stdio.h>
 #define KAI_IMPLEMENTATION
-#include "kai.h"
+#include "test.h"
 
 #define test ++test_count, pass_count +=
 
@@ -9,8 +9,6 @@ extern int parser             (void);
 extern int hash_table         (void);
 extern int compile_simple_add (void);
 
-Kai_String_Writer error_writer;
-
 int main(int argc, char** argv)
 {
 	kai__unused(argc);
@@ -18,7 +16,7 @@ int main(int argc, char** argv)
     Kai_String_Writer* writer = kai_writer_stdout();
     kai__write_string(kai_version_string());
     kai__write_string(KAI_STRING("\n\n"));
-    kai_writer_file_open(&error_writer, "errors.txt");
+    kai_writer_file_open(error_writer(), "errors.txt");
 
     int test_count = 0;
     int pass_count = 0;
@@ -28,7 +26,7 @@ int main(int argc, char** argv)
     test hash_table();
     test compile_simple_add();
 
-    kai_writer_file_close(&error_writer);
+    kai_writer_file_close(error_writer());
 
     {
         char buffer[128];
@@ -42,4 +40,13 @@ int main(int argc, char** argv)
 void begin_test(const char* name) {
     printf("%40s...", name);
     fflush(stdout);
+    char buffer[64];
+    int size = snprintf(buffer, sizeof(buffer), "******** %40s ********\n", name);
+    Kai_String_Writer* writer = error_writer();
+    kai__write_string((Kai_string) { .count = size, .data = (Kai_u8*)buffer });
+}
+
+extern void* error_writer() {
+    static Kai_String_Writer writer;
+    return &writer;
 }

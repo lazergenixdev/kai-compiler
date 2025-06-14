@@ -84,7 +84,7 @@ static int test(Kai_Allocator* allocator)
 
 	if (result != KAI_SUCCESS) {
 		error.location.file_name = KAI_STRING(__FUNCTION__);
-		kai_write_error(&error_writer, &error);
+		kai_write_error(error_writer(), &error);
 		return FAIL;
 	}
 
@@ -97,10 +97,10 @@ static int test(Kai_Allocator* allocator)
 	if (0 != add(0, 0))
 		return FAIL;
 	
-	if (5 != add(2, 3))
+	if ((-2 + 3) != add(-2, 3))
 		return FAIL;
 
-	if (0x45 != add(0x22, 0x23))
+	if ((0x22 + 0x23) != add(0x22, 0x23))
 		return FAIL;
 
 	return PASS;

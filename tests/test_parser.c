@@ -35,8 +35,8 @@ int parser(void)
     Kai_Result result = kai_create_syntax_tree(&info, &tree);
 
     if (result != KAI_SUCCESS) {
-        error.location.file_name = KAI_STRING(__FILE__);
-        kai_write_error(&error_writer, &error);
+        error.location.file_name = KAI_STRING(__FUNCTION__);
+        kai_write_error(error_writer(), &error);
     }
 
     kai_destroy_syntax_tree(&tree);

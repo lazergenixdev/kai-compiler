@@ -17,7 +17,7 @@
 - [x] replace `debug_writer` with `kai__debug` (welllll...)
 - [x] Delete kai_dev.h
 - [x] refactor to use `Compiler_Context`
-- [ ] create an API to emit raw x86 instructions
+- [x] create an API to emit raw x86 instructions
 - [ ] create an x86 assembler context to keep track of register use (linear)
 - [ ] Machine code generation for add test (mov + add + calling conv)
 - [ ] Add declaration and assignment to bytecode generation
