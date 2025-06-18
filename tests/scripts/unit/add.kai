@@ -7,4 +7,6 @@ add :: (x: s32, y: s32) -> s32 {
 
 value :: add(1, 2);
 
-//wow :: add(1000, 100);
+main :: (x: s32, y: s32) {
+    ret x + value;
+}

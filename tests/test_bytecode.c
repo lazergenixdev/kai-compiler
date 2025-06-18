@@ -17,14 +17,15 @@ int run(Kai_Interpreter* interp, Kai_s32 value, Kai_s32* out) {
     return 0;
 }
 
-int bytecode(void) {
+int bytecode(void)
+{
     TEST();
 
 	Kai_Allocator allocator = {0};
 	kai_memory_create(&allocator);
 
     // setup bytecode stream
-    Kai_BC_Stream stream = {
+    Kai_Bytecode_Encoder encoder = {
 		.allocator = &allocator,
 	};
 	
@@ -46,22 +47,22 @@ int bytecode(void) {
         %7 = add.s32 %4, %6
         ret %7
 */
-	    Kai_u32 location_call = stream.count;
-	    kai_bc_insert_compare_value(&stream, KAI_S32, KAI_CMP_GT, 1, 0, (Kai_Value) {.s32 = 2});
-	    kai_bc_insert_branch(&stream, &branch_endif, 1);
-	    kai_bc_insert_load_constant(&stream, KAI_S32, 2, (Kai_Value) {.s32 = 1});
-	    kai_bc_insert_return(&stream, 1, (uint32_t[]) {2});
-	    location_endif = stream.count;
-	    kai_bc_insert_math_value(&stream, KAI_S32, KAI_BOP_SUB, 3, 0, (Kai_Value) {.s32 = 1});
-	    kai_bc_insert_call(&stream, &branch_call0, 1, (uint32_t[]) {4}, 1, (uint32_t[]) {3});
-	    kai_bc_insert_math_value(&stream, KAI_S32, KAI_BOP_SUB, 5, 0, (Kai_Value) {.s32 = 2});
-	    kai_bc_insert_call(&stream, &branch_call1, 1, (uint32_t[]) {6}, 1, (uint32_t[]) {5});
-	    kai_bc_insert_math(&stream, KAI_S32, KAI_BOP_ADD, 7, 4, 6);
-	    kai_bc_insert_return(&stream, 1, (uint32_t[]){7});
+	    Kai_u32 location_call = encoder.code.count;
+	    kai_encode_compare_constant(&encoder, KAI_S32, KAI_CMP_GT, 1, 0, (Kai_Value) {.s32 = 2});
+	    kai_encode_branch(&encoder, &branch_endif, 1);
+	    kai_encode_load_constant(&encoder, KAI_S32, 2, (Kai_Value) {.s32 = 1});
+	    kai_encode_return(&encoder, 1, (uint32_t[]) {2});
+	    location_endif = encoder.code.count;
+	    kai_encode_math_constant(&encoder, KAI_S32, KAI_MATH_SUB, 3, 0, (Kai_Value) {.s32 = 1});
+	    kai_encode_call(&encoder, &branch_call0, 1, (uint32_t[]) {4}, 1, (uint32_t[]) {3});
+	    kai_encode_math_constant(&encoder, KAI_S32, KAI_MATH_SUB, 5, 0, (Kai_Value) {.s32 = 2});
+	    kai_encode_call(&encoder, &branch_call1, 1, (uint32_t[]) {6}, 1, (uint32_t[]) {5});
+	    kai_encode_math(&encoder, KAI_S32, KAI_MATH_ADD, 7, 4, 6);
+	    kai_encode_return(&encoder, 1, (uint32_t[]){7});
 
-	    kai_bc_set_branch(&stream, branch_endif, location_endif);
-	    kai_bc_set_branch(&stream, branch_call0, location_call);
-	    kai_bc_set_branch(&stream, branch_call1, location_call);
+	    kai_encoder_set_branch(&encoder, branch_endif, location_endif);
+	    kai_encoder_set_branch(&encoder, branch_call0, location_call);
+	    kai_encoder_set_branch(&encoder, branch_call1, location_call);
     }
 
     // create & setup interpreter
@@ -75,7 +76,7 @@ int bytecode(void) {
         };
         kai_interp_create(&info, &interp);
     }
-    kai_interp_load_from_stream(&interp, &stream);
+    kai_interp_load_from_encoder(&interp, &encoder);
 	
     Kai_s32 expected[] = { 1, 1, 2, 3, 5, 8, 13, 21 };
 
@@ -87,15 +88,15 @@ int bytecode(void) {
 
 	kai_interp_destroy(&interp);
 
-#if 0 // bytecode -> C
+#if 1 // bytecode -> C
     Kai_Bytecode bytecode = {
-        .data  = stream.data,
-        .count = stream.count,
+        .data  = encoder.code.elements,
+        .count = encoder.code.count,
         .branch_hints = &location_endif,
         .branch_count = 1,
     };
-    kai_bytecode_to_c(&bytecode, &error_writer);
-    error_writer.write_string(error_writer.user, KAI_STRING("\n"));
+    kai_bytecode_to_c(&bytecode, error_writer());
+    //error_writer.write_string(error_writer.user, KAI_STRING("\n"));
 #endif
 	kai_memory_destroy(&allocator);
 
