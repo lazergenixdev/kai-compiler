@@ -1,7 +1,7 @@
 #ifndef TEST_H
 #define TEST_H
 
-extern void* error_writer();
+extern void* error_writer(void);
 
 #define kai__debug_writer ((Kai_String_Writer*)error_writer())
 #include "kai.h"

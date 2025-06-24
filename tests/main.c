@@ -46,7 +46,7 @@ void begin_test(const char* name) {
     kai__write_string((Kai_string) { .count = size, .data = (Kai_u8*)buffer });
 }
 
-extern void* error_writer() {
+extern void* error_writer(void) {
     static Kai_String_Writer writer;
     return &writer;
 }

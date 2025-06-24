@@ -1,12 +1,3 @@
 add :: (x: s32, y: s32) -> s32 {
     ret x + y;
 }
-// mov rax, rcx
-// add rax, rdx
-// ret
-
-value :: add(1, 2);
-
-main :: (x: s32, y: s32) {
-    ret x + value;
-}
