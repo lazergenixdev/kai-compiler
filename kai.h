@@ -354,21 +354,23 @@ typedef struct {
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 enum {
-    KAI_MEMORY_ACCESS_READ    = 1 << 0,
-    KAI_MEMORY_ACCESS_WRITE   = 1 << 1,
-    KAI_MEMORY_ACCESS_EXECUTE = 1 << 2,
-    KAI_MEMORY_ACCESS_READ_WRITE = KAI_MEMORY_ACCESS_READ | KAI_MEMORY_ACCESS_WRITE,
+    KAI_MEMORY_READ       = 1 << 0,
+    KAI_MEMORY_WRITE      = 1 << 1,
+    KAI_MEMORY_EXECUTE    = 1 << 2,
+    KAI_MEMORY_READ_WRITE = KAI_MEMORY_READ | KAI_MEMORY_WRITE,
 };
 
-typedef void* Kai_P_Memory_Allocate      (void* User, Kai_u32 Num_Bytes, Kai_u32 access);
-typedef void  Kai_P_Memory_Free          (void* User, void* Ptr, Kai_u32 Num_Bytes);
+enum {
+	KAI_MEMORY_ALLOCATE_WRITE_ONLY, // input: Size
+	KAI_MEMORY_SET_EXECUTABLE,      // input: Ptr, Size
+	KAI_MEMORY_FREE,                // input: Ptr, Size
+};
+
 typedef void* Kai_P_Memory_Heap_Allocate (void* User, void* Ptr, Kai_u32 New_Size, Kai_u32 Old_Size);
-typedef void  Kai_P_Memory_Set_Access    (void* User, void* Ptr, Kai_u32 Num_Bytes, Kai_u32 access);
+typedef void* Kai_P_Memory_JIT           (void* User, void* Ptr, Kai_u32 Size, Kai_u32 Operation);
 
 typedef struct {
-    Kai_P_Memory_Allocate      * allocate;
-    Kai_P_Memory_Free          * free;
-    Kai_P_Memory_Set_Access    * set_access;
+    Kai_P_Memory_JIT           * jit;
     Kai_P_Memory_Heap_Allocate * heap_allocate;
     void                       * user;
     Kai_u32                      page_size;
@@ -699,7 +701,6 @@ KAI_API (Kai_Result) kai_create_program_from_code (Kai_Program_Create_Info* Info
 KAI_API (void)       kai_destroy_program          (Kai_Program Program);
 
 //! @note With WASM backend you cannot get any function pointers
-//!       (because WASM is complete garbage and doesn't support it)
 KAI_API (void*) kai_find_procedure (Kai_Program Program, Kai_string Name, Kai_Type opt_Type);
 
 KAI_API (void) kai_write_syntax_tree (Kai_String_Writer* Writer, Kai_Syntax_Tree* Tree);
@@ -1244,7 +1245,7 @@ static inline void kai__arena_allocator_create(Kai__Arena_Allocator* Arena, Kai_
     Arena->bucket_size = kai__ceil_div(KAI__MINIMUM_ARENA_BUCKET_SIZE, Allocator->page_size)
                        * Allocator->page_size;
     Arena->current_allocated = sizeof(Kai__Arena_Bucket*);
-    Arena->current_bucket = Allocator->allocate(Allocator->user, Arena->bucket_size, KAI_MEMORY_ACCESS_READ_WRITE);
+    Arena->current_bucket = Allocator->heap_allocate(Allocator->user, NULL, Arena->bucket_size, 0);
 }
 static inline void kai__arena_allocator_free_all(Kai__Arena_Allocator* Arena)
 {
@@ -1254,7 +1255,7 @@ static inline void kai__arena_allocator_free_all(Kai__Arena_Allocator* Arena)
     while (bucket)
     {
         Kai__Arena_Bucket* prev = bucket->prev;
-        Arena->allocator.free(Arena->allocator.user, bucket, Arena->bucket_size);
+        Arena->allocator.heap_allocate(Arena->allocator.user, bucket, 0, Arena->bucket_size);
         bucket = prev;
     }
     Arena->current_bucket = NULL;
@@ -1275,10 +1276,9 @@ static inline void* kai__arena_allocate(Kai__Arena_Allocator* Arena, Kai_u32 Siz
     
     if (Arena->current_allocated + Size > Arena->bucket_size)
     {
-        Kai__Arena_Bucket* new_bucket = Arena->allocator.allocate(
-            Arena->allocator.user,
-            Arena->bucket_size,
-            KAI_MEMORY_ACCESS_READ_WRITE
+        Kai__Arena_Bucket* new_bucket = Arena->allocator.heap_allocate(
+            Arena->allocator.user, NULL,
+            Arena->bucket_size, 0
         );
 
         // Bubble failure to caller
@@ -6680,9 +6680,9 @@ Kai_bool kai__generate_machine_code(Kai__Compiler_Context* Context)
 
     program.allocator = *allocator;
     program.code_size = kai__ceil_div(Context->generator.code.count, allocator->page_size) * allocator->page_size;
-    program.platform_machine_code = allocator->allocate(allocator->user, program.code_size, KAI_MEMORY_ACCESS_WRITE);
+    program.platform_machine_code = allocator->jit(allocator->user, NULL, program.code_size, KAI_MEMORY_ALLOCATE_WRITE_ONLY);
     kai__memory_copy(program.platform_machine_code, Context->generator.code.elements, Context->generator.code.count);
-    allocator->set_access(allocator->user, program.platform_machine_code, program.code_size, KAI_MEMORY_ACCESS_EXECUTE);
+    allocator->jit(allocator->user, program.platform_machine_code, program.code_size, KAI_MEMORY_SET_EXECUTABLE);
 
     kai__hash_table_iterate (program.procedure_table, i)
     {
@@ -6725,10 +6725,11 @@ KAI_API (void) kai_destroy_program(Kai_Program Program)
     Kai_Allocator* allocator = &Program.allocator;
     kai__hash_table_destroy(Program.procedure_table);
     if (Program.code_size != 0)
-        Program.allocator.free(
+        Program.allocator.jit(
             Program.allocator.user,
             Program.platform_machine_code,
-            Program.code_size
+            Program.code_size,
+			KAI_MEMORY_FREE
         );
 }
 
@@ -6795,60 +6796,19 @@ void* error_dependency_info(Compiler_Context* context, void* start, Node_Ref ref
 #endif
 
 #ifndef KAI_DONT_USE_MEMORY_API
+#define KAI__REALLOC realloc
+#define KAI__FREE    free
 
 typedef struct {
     Kai_s64 total_allocated;
     //Kai_Memory_Tracker tracker;
 } Kai__Memory_Internal;
 
-#if defined(KAI__PLATFORM_WASM)
-extern void* __wasm_allocate(Kai_u32 size);
-extern void* __wasm_free(void* ptr);
-
-// TODO: what the F is this?
-void* memset(void* dst, int val, size_t size)
-{
-    for (size_t i = 0; i < size; i++)
-    {
-        ((char*)dst)[i] = (char)val;
-    }
-    return dst;
-}
-void* memcpy(void* dst, void* src, size_t size)
-{
-    for (size_t i = 0; i < size; i++)
-    {
-        ((char*)dst)[i] = ((char*)src)[i];
-    }
-    return dst;
-}
-
-static void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
-{
-    //__wasm_console_log("kai__memory_allocate", size);
-    return __wasm_allocate(size);
-}
-
-static void kai__memory_free(Kai_ptr user, Kai_ptr ptr, Kai_u32 size)
-{
-    //__wasm_console_log("kai__memory_free", size);
-    __wasm_free(ptr);
-}
-
-static void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 access)
-{
-    //__wasm_console_log("kai__memory_set_access", size);
-}
-
-static Kai_u32 kai__page_size()
-{
-    return 64 * 1024; // 64 KiB
-}
-
-#elif defined(KAI__PLATFORM_LINUX) || defined(KAI__PLATFORM_APPLE)
+#if defined(KAI__PLATFORM_LINUX) || defined(KAI__PLATFORM_APPLE)
 #include <sys/mman.h> // -> mmap
 #include <unistd.h>   // -> getpagesize
 
+// TODO: replace with `kai__jit_allocate`
 static void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
 {
     int flags = 0;
@@ -6860,14 +6820,12 @@ static void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
     internal->total_allocated += size;
     return (ptr == MAP_FAILED) ? NULL : ptr;
 }
-
 static void kai__memory_free(Kai_ptr user, Kai_ptr ptr, Kai_u32 size)
 {
     munmap(ptr, size);
     Kai__Memory_Internal* internal = user;
     internal->total_allocated -= size;
 }
-
 static void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 access)
 {
     kai__unused(user);
@@ -6891,33 +6849,27 @@ __declspec(dllimport) BOOL __stdcall VirtualProtect(void* lpAddress, SIZE_T dwSi
 __declspec(dllimport) BOOL __stdcall VirtualFree(void* lpAddress, SIZE_T dwSize, DWORD dwFreeType);
 __declspec(dllimport) void __stdcall GetSystemInfo(SYSTEM_INFO* lpSystemInfo);
 
-static void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
+static void* kai__memory_jit(Kai_ptr user, void* ptr, Kai_u32 size, Kai_u32 op)
 {
-    int flags = 0;
-    flags |= (access & KAI_MEMORY_ACCESS_READ_WRITE)? 0x04 : 0;
-    flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)?    0x10 : 0;
-    void* ptr = VirtualAlloc(NULL, size, 0x1000|0x2000, flags);
-	kai__assert(ptr != NULL);
-    Kai__Memory_Internal* internal = user;
-    internal->total_allocated += size;
-    return ptr;
-}
-
-static void kai__memory_free(Kai_ptr user, Kai_ptr ptr, Kai_u32 size)
-{
-    kai__assert(VirtualFree(ptr, 0, 0x8000) != 0);
-    Kai__Memory_Internal* internal = user;
-    internal->total_allocated -= size;
-}
-
-static void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 access)
-{
-    kai__unused(user);
-    int flags = 0;
-    flags |= (access & KAI_MEMORY_ACCESS_READ_WRITE) ? 0x04 : 0;
-    flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)    ? 0x10 : 0;
-    DWORD old;
-    kai__assert(VirtualProtect(ptr, size, flags, &old) != 0);
+	Kai__Memory_Internal* internal = user;
+	switch (op) {
+	case KAI_MEMORY_ALLOCATE_WRITE_ONLY: {
+		void* ptr = VirtualAlloc(NULL, size, 0x1000|0x2000, 0x04);
+		kai__assert(ptr != NULL);
+		internal->total_allocated += size;
+		return ptr;
+	}
+	case KAI_MEMORY_SET_EXECUTABLE: {
+		DWORD old;
+		kai__assert(VirtualProtect(ptr, size, 0x10, &old) != 0);
+		return NULL;
+	}
+	case KAI_MEMORY_FREE: {
+		kai__assert(VirtualFree(ptr, 0, 0x8000) != 0);
+		internal->total_allocated -= size;
+	}
+	}
+    return NULL;
 }
 
 static Kai_u32 kai__page_size(void)
@@ -6931,31 +6883,18 @@ static Kai_u32 kai__page_size(void)
     return (Kai_u32)info.dwPageSize;
 }
 
+#else
+#	error "[KAI] No memory allocator implemented for the current platform :("
 #endif
 
-#if defined(KAI__PLATFORM_WASM)
-static Kai_u8* scratch = 0;
-static Kai_u32 offset = 0;
-// TODO: write my own heap allocator 💀
-static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size)
-{
-    Kai_u32 ptr = offset;
-    offset += new_size;
-    for (int i = 0; i < old_size; ++i) {
-        scratch[ptr + i] = ((Kai_u8*)old_ptr)[i];
-    }
-    //__wasm_console_log("heap allocated", new_size);
-    return scratch + ptr;
-}
-#else
 static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size)
 {
     void* ptr = NULL;
     if (new_size == 0) {
-        free(old_ptr);
+        KAI__FREE(old_ptr);
     } else {
         kai__assert(old_ptr != NULL || old_size == 0);
-        ptr = realloc(old_ptr, new_size);
+        ptr = KAI__REALLOC(old_ptr, new_size);
 		kai__assert(ptr != NULL);
         if (ptr != NULL && old_ptr == NULL) {
             kai__memory_zero(ptr, new_size);
@@ -6966,25 +6905,17 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
     internal->total_allocated -= old_size;
     return ptr;
 }
-#endif
 
 KAI_API (Kai_Result) kai_memory_create(Kai_Allocator* Memory)
 {
     kai__assert(Memory != NULL);
     
-    Memory->allocate      = kai__memory_allocate;
-    Memory->free          = kai__memory_free;
+    Memory->jit           = kai__memory_jit;
     Memory->heap_allocate = kai__memory_heap_allocate;
-    Memory->set_access    = kai__memory_set_access;
     Memory->page_size     = kai__page_size();
-#if defined(KAI__PLATFORM_WASM)
-    scratch = __wasm_allocate(kai__page_size() * 2);
-    offset = 0;
-    Memory->user          = 0;
-#else
-    Memory->user          = malloc(sizeof(Kai__Memory_Internal));
-#endif
-    if (!Memory->user) {
+    Memory->user          = KAI__REALLOC(NULL, sizeof(Kai__Memory_Internal));
+
+	if (!Memory->user) {
         return KAI_MEMORY_ERROR_OUT_OF_MEMORY;
     }
 
@@ -7004,9 +6935,7 @@ KAI_API (Kai_Result) kai_memory_destroy(Kai_Allocator* Memory)
     if (internal->total_allocated != 0)
         return KAI_MEMORY_ERROR_MEMORY_LEAK;
         
-#if !defined(KAI__PLATFORM_WASM)
-    free(Memory->user);
-#endif
+    KAI__FREE(Memory->user);
     *Memory = (Kai_Allocator) {0};
     return KAI_SUCCESS;
 }
