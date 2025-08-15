@@ -899,7 +899,8 @@ KAI_API (void) kai_writer_file_close (Kai_String_Writer* Writer);
 #endif
 #ifndef KAI__SECTION_INTERNAL_API
 
-#define kai__size_of_type(T) ((T) >> 4)
+// type ID -> sizeof(type)
+#define kai__typeid_to_size(T) ((T) >> 4)
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Linked List API -------------------------------------------------------
@@ -946,8 +947,8 @@ KAI_API (void) kai_writer_file_close (Kai_String_Writer* Writer);
   *(Kai_uint*)((Array).elements + (Array).count) = (Kai_uint)value, (Array).count += sizeof(Kai_uint)
 
 #define kai__push_value(Array, Type, Value) \
-    kai__memory_copy((Array).elements + (Array).count, &value, kai__size_of_type(type)), \
-    (Array).count += kai__size_of_type(type);
+    kai__memory_copy((Array).elements + (Array).count, &value, kai__typeid_to_size(type)), \
+    (Array).count += kai__typeid_to_size(type);
 //////////////////////////////////////////////////////////////////////////////
 
 KAI_API (void) kai__array_reserve_stride(void* Array, Kai_u32 Size, Kai_Allocator* allocator, Kai_u32 Stride);
@@ -962,6 +963,15 @@ KAI_API (void) kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* allocat
 #define kai__bit_array_size(Bit_Count)                                         \
   (((((Bit_Count)-1) / 64) + 1) * sizeof(Kai_u64))
 
+#define kai__bit_array_get(Array, Index)                                       \
+    ((Array)[Index>>6] & ((Kai_u64)1 << (Index&63))
+
+#define kai__bit_array_set(Array, Index)                                       \
+    ((Array)[Index>>6] |= ((Kai_u64)1 << (Index&63)))
+
+#define kai__bit_array_remove(Array, Index)                                    \
+    ((Array)[Index>>6] &=~ ((Kai_u64)1 << (Index&63)))
+
 #define kai__hash_table_destroy(Table)                                         \
   kai__hash_table_destroy_stride(&(Table), allocator, sizeof((Table).values[0]))
 
@@ -969,7 +979,7 @@ KAI_API (void) kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* allocat
   kai__hash_table_find_stride(&(Table), Key, sizeof((Table).values[0]))
 
 #define kai__hash_table_remove_index(Table, Index)                             \
-  (Table).occupied[(Index) / 64] &= ~((Kai_u64)1 << (Index % 64))
+  kai__hash_table_remove_index_stride(&(Table), Index, sizeof((Table).values[0]))
 
 #define kai__hash_table_get(Table, Key, out_Value)                             \
   kai__hash_table_get_stride(&(Table), Key, out_Value, sizeof(*out_Value),     \
@@ -996,6 +1006,7 @@ KAI_API (Kai_u32)  kai__hash_table_emplace_key_stride(void* Table, Kai_string Ke
 KAI_API (void*)    kai__hash_table_find_stride(void* Table, Kai_string Key, Kai_u32 Elem_Size);
 KAI_API (Kai_bool) kai__hash_table_get_stride(void* Table, Kai_string Key, void* out_Value, Kai_u32 Value_Size, Kai_u32 Elem_Size);
 KAI_API (void)     kai__hash_table_destroy_stride(void* Table, Kai_Allocator* allocator, Kai_u32 Elem_Size);
+KAI_API (Kai_bool) kai__hash_table_remove_index_stride(void* Table, Kai_u32 Index, Kai_u32 Elem_Size);
 
 #endif
 #ifndef KAI_DONT_USE_CPP_API
@@ -1353,6 +1364,10 @@ KAI_API (Kai_u64) kai__string_hash(Kai_string In)
 }
 KAI_API (void) kai__hash_table_grow(void* Table, Kai_Allocator* allocator, Kai_u32 Elem_Size)
 {
+    kai__assert(Table != NULL);
+    kai__assert(allocator != NULL);
+    kai__assert(Elem_Size != 0);
+
     KAI__HASH_TABLE(void)* table = Table;
     
     // Calculate total space required
@@ -1419,7 +1434,7 @@ KAI_API (void) kai__hash_table_grow(void* Table, Kai_Allocator* allocator, Kai_u
 }
 KAI_API (Kai_u32) kai__hash_table_emplace_key_stride(void* Table, Kai_string Key, Kai_Allocator* Allocator, Kai_u32 Elem_Size)
 {
-    kai__assert(Table     != NULL);
+    kai__assert(Table != NULL);
     kai__assert(Allocator != NULL);
     kai__assert(Elem_Size != 0);
     
@@ -1465,7 +1480,7 @@ KAI_API (Kai_u32) kai__hash_table_emplace_key_stride(void* Table, Kai_string Key
 }
 KAI_API (void*) kai__hash_table_find_stride(void* Table, Kai_string Key, Kai_u32 Elem_Size)
 {
-    kai__assert(Table     != NULL);
+    kai__assert(Table != NULL);
     kai__assert(Elem_Size != 0);
     
     KAI__HASH_TABLE(void)* table = Table;
@@ -1496,6 +1511,9 @@ KAI_API (void*) kai__hash_table_find_stride(void* Table, Kai_string Key, Kai_u32
 }
 KAI_API (Kai_bool) kai__hash_table_get_stride(void* Table, Kai_string Key, void* out_Value, Kai_u32 Value_Size, Kai_u32 Elem_Size)
 {
+    kai__assert(Table != NULL);
+    kai__assert(Elem_Size != 0);
+
     void* elem_ptr = kai__hash_table_find_stride(Table, Key, Elem_Size);
 
     if (elem_ptr == NULL)
@@ -1506,7 +1524,12 @@ KAI_API (Kai_bool) kai__hash_table_get_stride(void* Table, Kai_string Key, void*
 }
 KAI_API (void) kai__hash_table_destroy_stride(void* Table, Kai_Allocator* allocator, Kai_u32 Elem_Size)
 {
-    KAI__HASH_TABLE(void)* table = Table;
+    kai__assert(Table != NULL);
+    kai__assert(allocator != NULL);
+    kai__assert(Elem_Size != 0);
+
+    typedef KAI__HASH_TABLE(void) Hash_Table;
+    Hash_Table* table = Table;
 
     if (table->capacity != 0)
     {
@@ -1515,12 +1538,58 @@ KAI_API (void) kai__hash_table_destroy_stride(void* Table, Kai_Allocator* alloca
             + table->capacity * (sizeof(Kai_u64) + sizeof(Kai_string) + Elem_Size)
         );
     }
-    table->count    = 0;
-    table->capacity = 0;
-    table->occupied = NULL;
-    table->hashes   = NULL;
-    table->keys     = NULL;
-    table->values   = NULL;
+    *table = (Hash_Table) {0};
+}
+KAI_API (Kai_bool) kai__hash_table_remove_index_stride(void* Table, Kai_u32 Index, Kai_u32 Elem_Size)
+{
+    kai__assert(Table != NULL);
+    kai__assert(Elem_Size != 0);
+
+    KAI__HASH_TABLE(void)* table = Table;
+    kai__assert(Index < table->capacity);
+
+    if (table->occupied[Index/64] & ((Kai_u64)1 << (Index%64)))
+    {
+        table->occupied[Index/64] &= ~((Kai_u64)1 << (Index%64));
+        table->count -= 1;
+
+        Kai_u32 mask = table->capacity - 1;
+        Kai_u32 empty = Index;
+        Kai_u32 current = (Index + 1) & mask;
+        
+        for (Kai_u32 i = 0; i < table->capacity; ++i)
+        {
+            Kai_u64 block = table->occupied[current / 64];
+            Kai_u64 bit = (Kai_u64)1 << (current % 64);
+
+            if ((block & bit) == 0)
+                break;
+
+            {
+                Kai_u32 current_desired_index = table->hashes[current] & mask; // Index where current slot wants to be
+                Kai_u32 current_comparable = current_desired_index > current ? current + table->capacity : current; // Handle wrap-around behavior
+                Kai_u32 empty_comparable = current_desired_index > empty ? empty + table->capacity : empty; // Handle wrap-around behavior
+                if (current_comparable < current_desired_index)
+                    break;
+            }
+
+            // Move current -> empty
+            kai__bit_array_set(table->occupied, empty);
+            kai__bit_array_remove(table->occupied, current);
+            table->hashes[empty] = table->hashes[current];
+            table->keys[empty] = table->keys[current];
+            kai__memory_copy(
+                (Kai_uint)table->values + empty * Elem_Size,
+                (Kai_uint)table->values + current * Elem_Size,
+                Elem_Size
+            );
+
+            current = (current + 1) & mask;
+        }
+
+        return KAI_TRUE;
+    }
+    return KAI_FALSE;
 }
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -1888,13 +1957,13 @@ KAI_API (void) kai_write_type(Kai_String_Writer* writer, Kai_Type Type)
         kai__write("(");
         kai__for_n (info->in_count) {
             kai_write_type(writer, info->sub_types[i]);
-            if (i < info->in_count - 1)
+            if ((Kai_u8)i < info->in_count - 1)
                 kai__write(", ");
         }
         kai__write(") -> (");
         kai__for_n (info->out_count) {
             kai_write_type(writer, info->sub_types[info->in_count+i]);
-            if (i < info->out_count - 1)
+            if ((Kai_u8)i < info->out_count - 1)
                 kai__write(", ");
         }
         kai__write(")");
@@ -3699,7 +3768,7 @@ KAI_API (void) kai_destroy_syntax_tree(Kai_Syntax_Tree* tree)
 
 KAI_API (void) kai_encode_load_constant(Kai_Bytecode_Encoder* Encoder, Kai_u8 type, Kai_Reg reg_dst, Kai_Value value)
 {
-    kai__make_space(2 + sizeof(Kai_Reg) + kai__size_of_type(type));
+    kai__make_space(2 + sizeof(Kai_Reg) + kai__typeid_to_size(type));
     kai__push_u8(Encoder->code, KAI_BOP_LOAD_CONSTANT);
     kai__push_u8(Encoder->code, type);
     kai__push_u32(Encoder->code, reg_dst);
@@ -3717,7 +3786,7 @@ KAI_API (void) kai_encode_math(Kai_Bytecode_Encoder* Encoder, Kai_u8 type, Kai_u
 }
 KAI_API (void) kai_encode_math_constant(Kai_Bytecode_Encoder* Encoder, Kai_u8 type, Kai_u8 operation, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value)
 {
-    kai__make_space(3 + sizeof(Kai_Reg) * 2 + kai__size_of_type(type));
+    kai__make_space(3 + sizeof(Kai_Reg) * 2 + kai__typeid_to_size(type));
     kai__push_u8(Encoder->code, KAI_BOP_MATH_CONSTANT);
     kai__push_u8(Encoder->code, type);
     kai__push_u8(Encoder->code, operation);
@@ -3737,7 +3806,7 @@ KAI_API (void) kai_encode_compare(Kai_Bytecode_Encoder* Encoder, Kai_u8 type, Ka
 }
 KAI_API (void) kai_encode_compare_constant(Kai_Bytecode_Encoder* Encoder, Kai_u8 type, Kai_u8 comparison, Kai_Reg reg_dst, Kai_Reg reg_src1, Kai_Value value)
 {
-    kai__make_space(3 + sizeof(Kai_Reg) * 2 + kai__size_of_type(type));
+    kai__make_space(3 + sizeof(Kai_Reg) * 2 + kai__typeid_to_size(type));
     kai__push_u8(Encoder->code, KAI_BOP_COMPARE_CONSTANT);
     kai__push_u8(Encoder->code, type);
     kai__push_u8(Encoder->code, comparison);
@@ -3885,7 +3954,7 @@ char const* bc__op_to_name[] = {
 #define kai__decode_load_constant(Decoder, Type_Var, Dst_Var, Value_Var)                                          \
 	Kai_u8    Type_Var  = *(Kai_u8*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_u8);   \
 	Kai_Reg   Dst_Var   = *(Kai_Reg*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_Reg); \
-    Kai_Value Value_Var = *(Kai_Value*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += kai__size_of_type(Type_Var)
+    Kai_Value Value_Var = *(Kai_Value*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += kai__typeid_to_size(Type_Var)
 
 #define kai__decode_math(Decoder, Type_Var, Op_Var, Dst_Var, Left_Var, Right_Var)                          \
 	Kai_u8  Type_Var  = *(Kai_u8*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_u8);   \
@@ -3899,7 +3968,7 @@ char const* bc__op_to_name[] = {
 	Kai_u8    Op_Var    = *(Kai_u8*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_u8);   \
 	Kai_Reg   Dst_Var   = *(Kai_Reg*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_Reg); \
 	Kai_Reg   Left_Var  = *(Kai_Reg*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_Reg); \
-	Kai_Value Value_Var = *(Kai_Value*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += kai__size_of_type(Type_Var)
+	Kai_Value Value_Var = *(Kai_Value*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += kai__typeid_to_size(Type_Var)
 
 #define kai__decode_compare(Decoder, Type_Var, Op_Var, Dst_Var, Left_Var, Right_Var)                       \
 	Kai_u8  Type_Var  = *(Kai_u8*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_u8);   \
@@ -3913,7 +3982,7 @@ char const* bc__op_to_name[] = {
 	Kai_u8    Op_Var    = *(Kai_u8*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_u8);   \
 	Kai_Reg   Dst_Var   = *(Kai_Reg*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_Reg); \
 	Kai_Reg   Left_Var  = *(Kai_Reg*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_Reg); \
-	Kai_Value Value_Var = *(Kai_Value*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += kai__size_of_type(Type_Var)
+	Kai_Value Value_Var = *(Kai_Value*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += kai__typeid_to_size(Type_Var)
 
 #define kai__decode_branch(Decoder, Location_Var, Src_Var) \
 	Kai_u32 Location_Var = *(Kai_u32*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_u32); \
@@ -6093,7 +6162,6 @@ Kai_Result kai__bytecode_emit_statement(Kai__Compiler_Context* Context, Kai_Expr
             kai__bytecode_emit_statement(Context, node->then_body);
             Kai_u32 location = Context->bytecode_encoder.code.count;
             kai_encoder_set_branch(&Context->bytecode_encoder, branch, location);
-            Kai_Allocator* allocator = &Context->allocator;
             kai__array_append(&Context->branch_hints, location);
             // TODO: else body
         } break;
@@ -6854,10 +6922,10 @@ static void* kai__memory_jit(Kai_ptr user, void* ptr, Kai_u32 size, Kai_u32 op)
 	Kai__Memory_Internal* internal = user;
 	switch (op) {
 	case KAI_MEMORY_ALLOCATE_WRITE_ONLY: {
-		void* ptr = VirtualAlloc(NULL, size, 0x1000|0x2000, 0x04);
-		kai__assert(ptr != NULL);
+		void* result = VirtualAlloc(NULL, size, 0x1000|0x2000, 0x04);
+		kai__assert(result != NULL);
 		internal->total_allocated += size;
-		return ptr;
+		return result;
 	}
 	case KAI_MEMORY_SET_EXECUTABLE: {
 		DWORD old;
