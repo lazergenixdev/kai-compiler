@@ -1567,9 +1567,8 @@ KAI_API (Kai_bool) kai__hash_table_remove_index_stride(void* Table, Kai_u32 Inde
 
             {
                 Kai_u32 current_desired_index = table->hashes[current] & mask; // Index where current slot wants to be
-                Kai_u32 current_comparable = current_desired_index > current ? current + table->capacity : current; // Handle wrap-around behavior
                 Kai_u32 empty_comparable = current_desired_index > empty ? empty + table->capacity : empty; // Handle wrap-around behavior
-                if (current_comparable < current_desired_index)
+                if (empty_comparable < current_desired_index)
                     break;
             }
 
@@ -1579,8 +1578,8 @@ KAI_API (Kai_bool) kai__hash_table_remove_index_stride(void* Table, Kai_u32 Inde
             table->hashes[empty] = table->hashes[current];
             table->keys[empty] = table->keys[current];
             kai__memory_copy(
-                (Kai_uint)table->values + empty * Elem_Size,
-                (Kai_uint)table->values + current * Elem_Size,
+                (Kai_u8*)table->values + empty * Elem_Size,
+                (Kai_u8*)table->values + current * Elem_Size,
                 Elem_Size
             );
 
@@ -4823,7 +4822,7 @@ typedef struct {
     KAI__ARRAY(Kai__DG_Scope)          scopes;
     KAI__ARRAY(Kai__DG_Node)           nodes;
     Kai_u32                          * compilation_order;
-                                     
+
     // Bytecode                      
     Kai_Bytecode_Encoder               bytecode_encoder;
     Kai_Interpreter                    interpreter; // <3
