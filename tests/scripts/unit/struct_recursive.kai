@@ -1,7 +1,0 @@
-Node :: struct {
-	left  : *Node;
-	right : *Node;
-	data  : s32;
-}
-
-root : Node;

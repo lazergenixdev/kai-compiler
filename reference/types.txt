@@ -30,3 +30,23 @@ c := d => s64; // This will always work *
 // ``` From -> To | #size(To) <= #size(From) ```
 
 
+
+# Primitive Types allowed in the language
+
+```
+Type
+rawptr
+rune
+u8, u16, u32, u64, s8, s16, s32, s64,
+f32, f64,
+```
+
+## Type is really a pointer to a type info struct in C
+Type
+Type_Raw_Pointer
+Type_Integer
+Type_Float
+...
+Type_Pointer
+Type_Procedure
+Type_Struct

@@ -77,7 +77,7 @@ int main(int argc, char** argv)
     };
 
     Timer_Start();
-    Kai_Result result = kai_create_program_from_code(&info, &program);
+    Kai_Result result = kai_create_program(&info, &program);
     double elapsed_ms = Timer_ElapsedMilliseconds();
 
     printf("Compilation Took: %.4f ms\n", elapsed_ms);

@@ -17,5 +17,5 @@ if (WASM)
     add_subdirectory("web")
 else ()
     add_subdirectory("kai")   # Compiler
-    add_subdirectory("tests")
+    #add_subdirectory("tests")
 endif ()

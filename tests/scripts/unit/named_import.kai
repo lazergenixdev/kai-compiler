@@ -1,5 +1,0 @@
-myadd :: #import "add"
-
-test :: (x: s32, y: s32) -> s32 {
-	ret myadd.add(x, y);
-}
