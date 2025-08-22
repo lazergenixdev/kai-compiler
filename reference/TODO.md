@@ -1,5 +1,8 @@
 ﻿# TODO
 - [x] Rename `Kai_String_Writer` to `Kai_Writer`
+- [ ] Add to outputs of nodes (kai__node_add_use)
+- [ ] Create global stack of symbol tables
+- [ ] Push (pop) symbol tables on scope entry (exit)
 - [ ] Variable Declarations + Assignments
 
 ## Website test compiler playground thing

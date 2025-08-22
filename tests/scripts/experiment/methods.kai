@@ -1,0 +1,19 @@
+
+Dog :: struct {
+	bark: f32;
+}
+
+// Not needed, can just overload the type and pass in as first argument
+#method(Dog) do_trick :: (command: str) -> int
+{
+	print("bark");
+	print(command);
+	ret command.length;
+}
+
+main :: ()
+{
+	dog: Dog;
+	
+	value := dog@do_trick("lay down");
+}

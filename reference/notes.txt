@@ -21,53 +21,24 @@ $'@\`~
 
 =================== PARSER ===================
 
-TOPLEVEL
+module : #import string
+       | declaration*
 
-Decl Procedure
-IDENTIFIER ":" ":" "(" IDENTIFER ":" TYPE "," ... ")" ["->" TYPE] STATEMENT
+declaration : identifier ':' [expression] ((':' | '=') expression | ';')
 
-Global Variable
-IDENTIFIER ":" [TYPE] (":","=") EXPRESSION ";"
+expression : '(' expression ')'
+		   | '(' identifier ':' expression [',' identifier ':' expression]* ')' ['->' []] [statement]
+           | expression binaryop expression
+           | unaryop expression
+		   | expression '(' expression [',' expression]* ')'
 
-Import Statement
-#import STRING
-
-
-STATEMENT
-
-Compound Statement
-"{" [STATEMENT ...] "}"
-
-Decl Variable
-IDENTIFIER ":" [TYPE] (":","=") EXPRESSION ";"
-
-Modify Variable
-IDENTIFIER "=" EXPRESSION ";"
-
-If Statement
-"if" EXPRESSION ["then"] STATEMENT
-
-Return Statement
-"ret" EXPRESSION ";"
-
-Null Statement
-';'
-
-
-EXPRESSION
-
-"(" EXPRESSION ")"
-EXPRESSION "(" EXPRESSION "," ... ")"
-EXPRESSION BINARY_OPERATOR EXPRESSION
-UNARY_OPERATOR EXPRESSION
-
-
-TYPE
-
-"*" TYPE
-IDENTIFIER
-IDENTIFER . TYPE
-
+statement : declaration
+          | 'ret' expression ';'
+		  | expression '=' expression ';'
+		  | 'if' expression statement
+		  | 'for' expression statement
+		  | 'defer' statement
+		  | '{' statement* '}'
 
 
 =================== ERROR MESSAGES ===================
@@ -125,76 +96,6 @@ A :: B;
 B :: A;
 
 =================== NUMBER INFO -> FLOATING POINT ===================
-
-// @TODO: there is some rounding error, pls fix (try std::fma)
-// @NOTE: check https://github.com/odin-lang/Odin/blob/master/src/gb/gb.h
-double to_float(kai_Number_Info& i) {
-
-	// https://github.com/ochafik/LibCL/blob/master/src/main/resources/LibCL/strtof.c
-	const double _strtof_powersOf10_[] = {	// Table giving binary powers of 10.  Entry 
-						10.0,			// is 10^2^i.  Used to convert decimal 
-						100.0,			// exponents into floating-point numbers. 
-						1.0e4,
-						1.0e8,
-						1.0e16,
-						1.0e32,
-						1.0e64,
-						1.0e128,
-						1.0e256,
-	};
-
-	double fraction, den;
-	auto exp = i.Exp_Part;
-
-	if (i.Frac_Denom == 0) {
-		fraction = (double)i.Whole_Part;
-		goto do_exponent;
-	}
-
-	{
-		int exp = i.Frac_Denom;
-		den = 1.0;
-		double const* d;
-		for (d = _strtof_powersOf10_; exp != 0; exp >>= 1, d += 1) {
-			if (exp & 01) {
-				den *= *d;
-			}
-		}
-	}
-	
-	fraction = (double)i.Whole_Part + ((double)i.Frac_Part/den);
-
-do_exponent:
-	bool neg = false;
-
-	if (exp < 0) {
-		neg = true;
-		exp = -exp;
-	}
-
-	if (exp > DBL_MAX_10_EXP) {
-		exp = DBL_MAX_10_EXP;
-	}
-		
-	double dblExp = 1.0;
-	double const* d;
-	for (d = _strtof_powersOf10_; exp != 0; exp >>= 1, d += 1) {
-		if (exp & 01) {
-			dblExp *= *d;
-		}
-	}
-	if (neg) {
-		return fraction / dblExp;
-	}
-	return fraction * dblExp;
-}
-
-void print_float_bits(double d) {
-	auto _d = std::bit_cast<kai_u64>(d);
-	std::cout << (_d >> 63) << ' ';
-	std::cout << std::bitset<11>(_d>>52) << ' ';
-	std::cout << std::bitset<52>(_d);
-}
 
 Forward + Reverse mode autodiff ???
 /*

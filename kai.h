@@ -5422,10 +5422,10 @@ static inline Kai__Node* kai__peephole(Kai__Compiler_Context* Context, Kai__Node
     return kai__idealize(Context, node);
 }
 
-static Kai__Node* kai__generate_ir_from_tree(Kai__Compiler_Context* Context, Kai_Expr Expr)
+static Kai__Node* kai__generate_ir(Kai__Compiler_Context* Context, Kai_Expr Expr)
 {
     Kai_Allocator* allocator = &Context->allocator;
-    Kai_Writer* writer = &Context->debug_writer;
+    Kai_Writer* writer = kai_writer_stdout();
 
     void* void_Expr = Expr;
     switch (Expr->id) {
@@ -5435,15 +5435,20 @@ static Kai__Node* kai__generate_ir_from_tree(Kai__Compiler_Context* Context, Kai
     }
     break; case KAI_STMT_COMPOUND: {
         Kai_Stmt_Compound* node = void_Expr;
+
+        // Push scope
+
         Kai_Stmt current = node->head;
         while (current) {
-            kai__generate_ir_from_tree(Context, current);
+            kai__generate_ir(Context, current);
             current = current->next;
         }
+
+        // Pop scope
     }
     break; case KAI_EXPR_PROCEDURE: {
         Kai_Expr_Procedure* node = void_Expr;
-        kai__generate_ir_from_tree(Context, node->body);
+        kai__generate_ir(Context, node->body);
     }
     break; case KAI_EXPR_IDENTIFIER: {
         Kai_Expr_Identifier* node = void_Expr;
@@ -5452,7 +5457,7 @@ static Kai__Node* kai__generate_ir_from_tree(Kai__Compiler_Context* Context, Kai
     break; case KAI_EXPR_UNARY: {
         Kai_Expr_Unary* node = void_Expr;
         Kai__Node* new_node = kai__new_node(Context, (Kai__Node) { .kind = KAI__NODE_NEGATE, .source = node->source_code });
-        kai__array_append(&new_node->inputs, kai__generate_ir_from_tree(Context, node->expr));
+        kai__array_append(&new_node->inputs, kai__generate_ir(Context, node->expr));
         return kai__peephole(Context, new_node);
     }
     break; case KAI_EXPR_BINARY: {
@@ -5464,23 +5469,14 @@ static Kai__Node* kai__generate_ir_from_tree(Kai__Compiler_Context* Context, Kai
         case '*': new_node->kind = KAI__NODE_MUL; break;
         case '/': new_node->kind = KAI__NODE_DIV; break;
         }
-        kai__array_append(&new_node->inputs, kai__generate_ir_from_tree(Context, node->left));
-        kai__array_append(&new_node->inputs, kai__generate_ir_from_tree(Context, node->right));
+        kai__array_append(&new_node->inputs, kai__generate_ir(Context, node->left));
+        kai__array_append(&new_node->inputs, kai__generate_ir(Context, node->right));
         return kai__peephole(Context, new_node);
     }
     break; case KAI_STMT_DECLARATION: {
         Kai_Stmt_Declaration* node = void_Expr;
         kai__unused(node);
-
-        kai__array_append(&Context->graph_stack, (Kai__Node_Graph) {
-            .start_node  = kai__new_node(Context, (Kai__Node) { .kind = KAI__NODE_START }),
-            .return_node = kai__new_node(Context, (Kai__Node) { .kind = KAI__NODE_RETURN }),
-        });
-
-        kai__generate_ir_from_tree(Context, node->expr);
-
-        kai__array_append(&Context->graphs, *kai__current_graph(Context));
-        Context->graph_stack.count -= 1;
+        kai__unreachable();
     }
     break; case KAI_EXPR_NUMBER: {
         Kai_Expr_Number* node = void_Expr;
@@ -5491,7 +5487,7 @@ static Kai__Node* kai__generate_ir_from_tree(Kai__Compiler_Context* Context, Kai
     }
     break; case KAI_STMT_RETURN: {
         Kai_Stmt_Return* node = void_Expr;
-        Kai__Node* data_node = kai__generate_ir_from_tree(Context, node->expr);
+        Kai__Node* data_node = kai__generate_ir(Context, node->expr);
         Kai__Node_Graph* graph = kai__current_graph(Context);
         Kai__Node* return_node = graph->return_node;
         kai__array_append(&return_node->inputs, graph->start_node);
@@ -5500,11 +5496,6 @@ static Kai__Node* kai__generate_ir_from_tree(Kai__Compiler_Context* Context, Kai
     }
 
     return NULL;
-}
-
-static void kai_generate_ir(Kai__Compiler_Context* Context)
-{
-    kai__generate_ir_from_tree(Context, (Kai_Expr) &Context->tree->root);
 }
 
 KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Program* out_Program)
@@ -5525,10 +5516,26 @@ KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Progra
     context.allocator = Info->allocator;
     context.tree = &tree;
 
-    /*
-    kai_generate_ir(&context);
+    {
+        Kai_Allocator* allocator = &context.allocator;
 
-    //kai_writer_file_open(&context.debug_writer, "ir.dot");
+        Kai_Stmt_Compound* compound = &tree.root;
+        kai__assert(compound->head->id == KAI_STMT_DECLARATION);
+        Kai_Stmt_Declaration* decl = (void*)compound->head;
+        kai__assert(decl->expr != NULL);
+        
+        kai__array_append(&context.graph_stack, (Kai__Node_Graph) {
+            .start_node  = kai__new_node(&context, (Kai__Node) { .kind = KAI__NODE_START }),
+            .return_node = kai__new_node(&context, (Kai__Node) { .kind = KAI__NODE_RETURN }),
+        });
+        {
+            kai__generate_ir(&context, decl->expr);
+        }
+        kai__array_append(&context.graphs, *kai__current_graph(&context));
+        context.graph_stack.count -= 1;
+    }
+
+    kai_writer_file_open(&context.debug_writer, "ir.dot");
     Kai_Writer* writer = &context.debug_writer;
     kai__for_n (context.graphs.count)
     {
@@ -5536,9 +5543,9 @@ KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Progra
         kai__write_ir(writer, &(context.graphs.elements[i]));
         kai__write("}\n");
     }
-    //kai_writer_file_close(&context.debug_writer);
-    */
-	return kai__error_internal(Info->error, KAI_STRING("reached end :)"));
+    kai_writer_file_close(&context.debug_writer);
+	
+    return kai__error_internal(Info->error, KAI_STRING("reached end :)"));
 }
 
 Kai_Result kai__error_redefinition(

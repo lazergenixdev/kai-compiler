@@ -16,7 +16,7 @@ message("Using compiler: " ${CMAKE_C_COMPILER})
 set(CMAKE_C_COMPILER_TARGET wasm32 CACHE STRING "Target for Clang")
 
 # Base C flags for WebAssembly
-set(CMAKE_C_FLAGS_INIT "--target=wasm32 -D__WASM__ -fno-builtin -nostdlib")
+set(CMAKE_C_FLAGS_INIT "--target=wasm32 -D__WASM__ -nostdlib")
 
 # Linker flags to control WebAssembly output
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-Wl,--no-entry -Wl,--allow-undefined -Wl,--export-dynamic")
