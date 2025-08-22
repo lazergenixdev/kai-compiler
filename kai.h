@@ -30,13 +30,21 @@
     Internal API:    begin with "KAI__" or "kai__" or "Kai__"
 
     This header is divided into sections with `KAI__SECTION` for convenience
+        KAI__SECTION_SETUP
         KAI__SECTION_BUILTIN_TYPES
+        KAI__SECTION_PLATFORM_INTRINSICS
         KAI__SECTION_TYPE_INFO_STRUCTS
         KAI__SECTION_CORE_STRUCTS
+        KAI__SECTION_INTERNAL_STRUCTS
         KAI__SECTION_SYNTAX_TREE
         KAI__SECTION_PROGRAM
         KAI__SECTION_CORE_API
+        KAI__SECTION_NUMBER_API
         KAI__SECTION_INTERNAL_API
+        KAI__SECTION_BYTECODE_API
+        KAI__SECTION_MEMORY_API
+        KAI__SECTION_WRITER_API
+        KAI__SECTION_CPP_API
 
 ---------------------------------------------------------------------------------------------------------
 
@@ -73,6 +81,8 @@
 #include <fstream>
 #endif
 #endif
+
+#ifndef KAI__SECTION_SETUP
 
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
@@ -122,9 +132,7 @@
 #	error "[KAI] Architecture not supported!"
 #endif
 
-#if defined(KAI__PLATFORM_WASM)
-#	define KAI_API(RETURN_TYPE) __attribute__((__visibility__("default"))) extern RETURN_TYPE
-#else
+#if !defined(KAI_API)
 #	define KAI_API(RETURN_TYPE) extern RETURN_TYPE
 #endif
 
@@ -140,13 +148,7 @@
 #	define KAI_UTF8(STRING) STRING
 #endif
 
-#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
-#	pragma GCC diagnostic push
-#   pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
-#elif defined(KAI__COMPILER_MSVC)
-#	pragma warning(push) // Ex: pragma warning(disable: 4127)
-#endif
-
+// Helper Macros
 
 #define KAI_BOOL(EXPR) ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
 
@@ -157,6 +159,16 @@
 #endif
 #define KAI_STRING(LITERAL) KAI_STRUCT(Kai_string){(Kai_u8*)(LITERAL), sizeof(LITERAL)-1}
 #define KAI_EMPTY_STRING KAI_STRUCT(Kai_string){0}
+
+#endif
+
+#if defined(KAI__COMPILER_GNU) || defined(KAI__COMPILER_CLANG)
+#	pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
+#   pragma GCC diagnostic ignored "-Wmissing-field-initializers" // ? sometimes you just want default zero, seriously clang, what is wrong with you?
+#elif defined(KAI__COMPILER_MSVC)
+#	pragma warning(push) // Ex: pragma warning(disable: 4127)
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -184,6 +196,50 @@ enum {
 #define X(TYPE, NAME, _) typedef TYPE Kai_##NAME;
     KAI_X_PRIMITIVE_TYPES
 #undef X
+
+// 128 bit integers (unsigned)
+
+#if defined(KAI__PLATFORM_WASM)
+    typedef struct { Kai_u64 low, high; } Kai_u128;
+#   define kai__u128_low(Value) (Value).low
+#   define kai__u128_high(Value) (Value).high
+    static inline Kai_u128 kai__u128_multiply(Kai_u64 A, Kai_u64 B) {
+    // https://www.codeproject.com/Tips/618570/UInt-Multiplication-Squaring
+        Kai_u64 a1 = (A & 0xffffffff);
+        Kai_u64 b1 = (B & 0xffffffff);
+        Kai_u64 t = (a1 * b1);
+        Kai_u64 w3 = (t & 0xffffffff);
+        Kai_u64 k = (t >> 32);
+
+        A >>= 32;
+        t = (A * b1) + k;
+        k = (t & 0xffffffff);
+        Kai_u64 w1 = (t >> 32);
+
+        B >>= 32;
+        t = (a1 * B) + k;
+        k = (t >> 32);
+
+        return (Kai_u128) {
+            .high = (A * B) + w1 + k,
+            .low = (t << 32) + w3,
+        };
+    }
+#elif defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GNU)
+    typedef unsigned __int128 Kai_u128;
+#   define kai__u128_low(Value) (Kai_u64)(Value)
+#   define kai__u128_high(Value) (Kai_u64)(Value >> 64)
+#   define kai__u128_multiply(A,B) ((Kai_u128)(A) * (Kai_u128)(B))
+#elif defined(KAI__COMPILER_MSVC)
+    typedef struct { unsigned __int64 low, high; } Kai_u128;
+#   define kai__u128_low(Value) (Value).low
+#   define kai__u128_high(Value) (Value).high
+    static inline Kai_u128 kai__u128_multiply(Kai_u64 A, Kai_u64 B) {
+        Kai_u128 r;
+        r.low = _umul128(A, B, &r.high);
+        return r;
+    }
+#endif
 
 typedef uint8_t   Kai_bool;
 typedef void*     Kai_ptr;
@@ -216,6 +272,32 @@ typedef struct {
     Kai_ptr data;
     Kai_u32 count;
 } Kai_slice;
+
+#endif
+#ifndef KAI__SECTION_PLATFORM_INTRINSICS
+
+static inline Kai_u32 kai_intrinsic_clz(Kai_u64 Value)
+{
+#if defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GNU)
+    return __builtin_clzll(Value);
+#elif defined(KAI__COMPILER_MSVC)
+    Kai_u32 index;
+    if (_BitScanReverse64(&index, Value) == 0)
+        return 64;
+    return 63 - index;
+#endif
+}
+static inline Kai_u32 kai_intrinsic_ctz(Kai_u64 Value)
+{
+#if defined(KAI__COMPILER_CLANG) || defined(KAI__COMPILER_GNU)
+    return __builtin_ctzll(Value);
+#elif defined(KAI__COMPILER_MSVC)
+    Kai_u32 index;
+    if (_BitScanForward64(&index, Value) == 0)
+        return 64;
+    return index;
+#endif
+}
 
 #endif
 #ifndef KAI__SECTION_TYPE_INFO_STRUCTS
@@ -271,7 +353,7 @@ typedef struct {
     Kai_string * field_names;
 } Kai_Type_Info_Struct;
 
-// If there is a better solution to this, let me know
+// TODO: move to implementation
 #define KAI__X_TYPE_INFO_DEFINITIONS                                                                                  \
     X(Kai_Type_Info         , kai__type_info_type , { .type = KAI_TYPE_TYPE })                                        \
     X(Kai_Type_Info_Integer , kai__type_info_s8   , { .type = KAI_TYPE_INTEGER, .bits = 8,  .is_signed = KAI_TRUE })  \
@@ -306,7 +388,7 @@ enum {
     KAI_F64  =  9 | (8 << 4),
     KAI_TYPE = 10 | (sizeof(void*) << 4),
 
-    // Special type for String_Writer to
+    // Special type for Writer to
     // only use the fill_character + min_count
     KAI_FILL = 0x800,
 };
@@ -331,6 +413,12 @@ enum {
 };
 typedef Kai_u32 Kai_Write_Color;
 
+enum {
+    KAI_WRITE_FLAG_NONE        = 0,
+    KAI_WRITE_FLAG_HEXIDECIMAL = 1 << 0,
+};
+typedef Kai_u32 Kai_Write_Flags;
+
 typedef struct {
     Kai_u32 flags;
     Kai_u32 min_count; // default is 0 (no minimum)
@@ -347,7 +435,7 @@ typedef struct {
     Kai_P_Write_Value  * write_value;
     Kai_P_Set_Color    * set_color;
     void               * user;
-} Kai_String_Writer;
+} Kai_Writer;
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- Base Memory Allocator -------------------------------------------------
@@ -413,16 +501,6 @@ typedef struct Kai_Error {
     struct Kai_Error * next;
 } Kai_Error;
 
-// TODO: I don't like this
-// Used to describe number literals
-// Value = ( Whole + Frac / (10 ^ Frac_Denom) ) * 10 ^ Exp
-typedef struct {
-    Kai_u64 Whole_Part;
-    Kai_u64 Frac_Part;
-    Kai_s32 Exp_Part;
-    Kai_u16 Frac_Denom;
-} Kai_Number;
-
 #endif
 #ifndef KAI__SECTION_INTERNAL_STRUCTS
 
@@ -479,6 +557,16 @@ typedef struct {
     Kai_u32             bucket_size;
     Kai_Allocator       allocator;
 } Kai__Arena_Allocator;
+
+// Number type used for number literals, I call it the dual mantissa number.
+//  - abs(value) = (n/d) * 2^e
+//  - (161 bit) + 31 padding
+typedef struct {
+    Kai_u64 n;
+    Kai_u64 d; // never 0 (except when n == 0)
+    Kai_u32 is_neg;
+    Kai_s32 e;
+} Kai_Number;
 
 #endif
 #ifndef KAI__SECTION_SYNTAX_TREE
@@ -698,10 +786,38 @@ KAI_API (void)       kai_destroy_program (Kai_Program Program);
 //! @note With WASM backend you cannot get any function pointers
 KAI_API (void*) kai_find_procedure (Kai_Program Program, Kai_string Name, Kai_Type opt_Type);
 
-KAI_API (void) kai_write_syntax_tree (Kai_String_Writer* Writer, Kai_Syntax_Tree* Tree);
-KAI_API (void) kai_write_error       (Kai_String_Writer* Writer, Kai_Error* Error);
-KAI_API (void) kai_write_type        (Kai_String_Writer* Writer, Kai_Type Type);
-KAI_API (void) kai_write_expression  (Kai_String_Writer* Writer, Kai_Expr Expr);
+KAI_API (void) kai_write_syntax_tree (Kai_Writer* Writer, Kai_Syntax_Tree* Tree);
+KAI_API (void) kai_write_error       (Kai_Writer* Writer, Kai_Error* Error);
+KAI_API (void) kai_write_type        (Kai_Writer* Writer, Kai_Type Type);
+KAI_API (void) kai_write_expression  (Kai_Writer* Writer, Kai_Expr Expr);
+
+#endif
+#ifndef KAI__SECTION_NUMBER_API
+
+KAI_API (void) kai_write_number(Kai_Writer* Writer, Kai_Number Number);
+KAI_API (Kai_s32) kai_number_compare(Kai_Number A, Kai_Number B); // -1 (less than), 0 (equal), 1 (greater than)
+KAI_API (Kai_Number) kai_number_normalize(Kai_Number A);
+
+// Arithmetic Operations
+
+KAI_API (Kai_Number) kai_number_neg(Kai_Number A); // -A
+KAI_API (Kai_Number) kai_number_inv(Kai_Number A); // 1 / A
+KAI_API (Kai_Number) kai_number_add(Kai_Number A, Kai_Number B); // A + B
+KAI_API (Kai_Number) kai_number_sub(Kai_Number A, Kai_Number B); // A - B
+KAI_API (Kai_Number) kai_number_mul(Kai_Number A, Kai_Number B); // A * B
+KAI_API (Kai_Number) kai_number_div(Kai_Number A, Kai_Number B); // A / B
+KAI_API (Kai_Number) kai_number_pow_int(Kai_Number A, Kai_u32 Exp);
+
+// Conversions
+
+#define kai_number_is_integer(Number) ((Number).d == 1 && (Number).e >= 0)
+KAI_API (Kai_f64) kai_number_to_f64(Kai_Number Number);
+
+// Parsing
+
+KAI_API (Kai_Number) kai_number_parse_whole(Kai_string Text, Kai_u32* Offset, Kai_u32 Base);
+KAI_API (Kai_Number) kai_number_parse_decimal(Kai_string Text, Kai_u32* Offset); // ! Base 10 only
+KAI_API (Kai_Number) kai_number_parse_exponent(Kai_string Text, Kai_u32* Offset); // ! Base 10 only
 
 #endif
 #ifndef KAI__SECTION_BYTECODE_API
@@ -868,11 +984,11 @@ KAI_API (void) kai_interp_push_output (Kai_Interpreter* Interp, Kai_Reg reg);
 KAI_API (void) kai_interp_load_from_encoder (Kai_Interpreter* Interp, Kai_Bytecode_Encoder* Encoder);
 KAI_API (void) kai_interp_load_from_memory  (Kai_Interpreter* Interp, void* Code, Kai_u32 Size);
 
-KAI_API (Kai_Result) kai_bytecode_to_string (Kai_Bytecode* Bytecode, Kai_String_Writer* Writer);
-KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_String_Writer* Writer);
+KAI_API (Kai_Result) kai_bytecode_to_string (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
+KAI_API (Kai_Result) kai_bytecode_to_c      (Kai_Bytecode* Bytecode, Kai_Writer* Writer);
 
 #endif
-#ifndef KAI_DONT_USE_MEMORY_API
+#ifndef KAI_DONT_USE_MEMORY_API // KAI__SECTION_MEMORY_API
 
 enum {
     KAI_MEMORY_ERROR_OUT_OF_MEMORY  = 1, //! @see kai_memory_create implementation
@@ -884,12 +1000,12 @@ KAI_API (Kai_Result) kai_memory_destroy (Kai_Allocator* Allocator);
 KAI_API (Kai_u64)    kai_memory_usage   (Kai_Allocator* Allocator);
 
 #endif
-#ifndef KAI_DONT_USE_WRITER_API
+#ifndef KAI_DONT_USE_WRITER_API // KAI__SECTION_WRITER_API
 
-KAI_API (Kai_String_Writer*) kai_writer_stdout (void);
+KAI_API (Kai_Writer*) kai_writer_stdout (void);
 
-KAI_API (void) kai_writer_file_open  (Kai_String_Writer* out_Writer, const char* Path);
-KAI_API (void) kai_writer_file_close (Kai_String_Writer* Writer);
+KAI_API (void) kai_writer_file_open  (Kai_Writer* out_Writer, const char* Path);
+KAI_API (void) kai_writer_file_close (Kai_Writer* Writer);
 
 #endif
 #ifndef KAI__SECTION_INTERNAL_API
@@ -913,9 +1029,20 @@ KAI_API (void) kai_writer_file_close (Kai_String_Writer* Writer);
 #define kai__array_iterate(Array, Var)                                         \
   for (Kai_u32 Var = 0; Var < (Array).count; ++Var)
 
+#define kai__array_iterate_reverse(Array, Var)                                 \
+  for (Kai_u32 Var = (Array).count - 1; Var != (Kai_u32)-1; --Var)
+
+#define kai__array_clear(Ptr_Array)                                            \
+  (Ptr_Array)->count = 0
+
 #define kai__array_reserve(Ptr_Array, Size)                                    \
   kai__array_reserve_stride(Ptr_Array, Size, allocator,                        \
                             sizeof((Ptr_Array)->elements[0]))
+
+#define kai__array_resize(Ptr_Array, Size)                                     \
+  kai__array_reserve_stride(Ptr_Array, Size, allocator,                        \
+                            sizeof((Ptr_Array)->elements[0]));                 \
+  (Ptr_Array)->count = Size
 
 #define kai__array_destroy(Ptr_Array)                                          \
   kai__array_destroy_stride(Ptr_Array, allocator,                              \
@@ -1004,7 +1131,7 @@ KAI_API (void)     kai__hash_table_destroy_stride(void* Table, Kai_Allocator* al
 KAI_API (Kai_bool) kai__hash_table_remove_index_stride(void* Table, Kai_u32 Index, Kai_u32 Elem_Size);
 
 #endif
-#ifndef KAI_DONT_USE_CPP_API
+#ifndef KAI_DONT_USE_CPP_API // KAI__SECTION_CPP_API
 #ifdef __cplusplus
 
 namespace Kai {
@@ -1075,7 +1202,7 @@ namespace Kai {
 #ifdef KAI_IMPLEMENTATION
 #define KAI__DEBUG_DEPENDENCY_GRAPH    0
 #define KAI__DEBUG_COMPILATION_ORDER   0
-#define KAI__DEBUG_BYTECODE_GENERATION 1
+#define KAI__DISABLE_PEEPHOLES         0
 
 #ifndef KAI__SECTION_IMPLEMENTATION_STRUCTS
 
@@ -1148,6 +1275,18 @@ static struct {
 
 #define kai__write_u32(Value) \
     writer->write_value(writer->user, KAI_U32, (Kai_Value){.u32 = Value}, (Kai_Write_Format){0})
+
+#define kai__write_s32(Value) \
+    writer->write_value(writer->user, KAI_S32, (Kai_Value){.s32 = Value}, (Kai_Write_Format){0})
+
+#define kai__write_u64(Value) \
+    writer->write_value(writer->user, KAI_U64, (Kai_Value){.u64 = Value}, (Kai_Write_Format){0})
+
+#define kai__write_s64(Value) \
+    writer->write_value(writer->user, KAI_S64, (Kai_Value){.s64 = Value}, (Kai_Write_Format){0})
+
+#define kai__write_f64(Value) \
+    writer->write_value(writer->user, KAI_F64, (Kai_Value){.f64 = Value}, (Kai_Write_Format){0})
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 // --- (Fatal) Error Handling + Debug Assertions -----------------------------
@@ -1229,6 +1368,10 @@ static inline Kai_u32 kai__ceil_div(Kai_u32 Num, Kai_u32 Den)
 {
     return (Num + Den - 1) / Den;
 }
+static inline Kai_u32 kai__ceil_div_fast(Kai_u64 Num, Kai_u32 Exp)
+{
+    return (Kai_u32)( (Num + ((Kai_u64)1 << Exp) - 1) >> Exp );
+}
 static inline Kai_u32 kai__min_u32(Kai_u32 A, Kai_u32 B)
 {
     return A < B ? A : B;
@@ -1236,6 +1379,47 @@ static inline Kai_u32 kai__min_u32(Kai_u32 A, Kai_u32 B)
 static inline Kai_u32 kai__max_u32(Kai_u32 A, Kai_u32 B)
 {
     return A < B ? B : A;
+}
+static inline Kai_u64 kai__gcd(Kai_u64 A, Kai_u64 B)
+{
+    Kai_u64 r;
+    do {
+        r = A % B;
+        A = B;
+        B = r;
+    } while (r != 0);
+    return A;
+}
+static inline double kai__ldexp(Kai_f64 x, int n)
+{
+    // Copyright (C) 1993,2004 Sun Microsystems
+	union { double f; uint64_t i; } u;
+	double y = x;
+
+	if (n > 1023) {
+		y *= 0x1p1023;
+		n -= 1023;
+		if (n > 1023) {
+			y *= 0x1p1023;
+			n -= 1023;
+			if (n > 1023)
+				n = 1023;
+		}
+	} else if (n < -1022) {
+		/* make sure final n < -53 to avoid double
+		   rounding in the subnormal range */
+		y *= 0x1p-1022 * 0x1p53;
+		n += 1022 - 53;
+		if (n < -1022) {
+			y *= 0x1p-1022 * 0x1p53;
+			n += 1022 - 53;
+			if (n < -1022)
+				n = -1022;
+		}
+	}
+	u.i = (uint64_t)(0x3ff+n)<<52;
+	x = y * u.f;
+	return x;
 }
 
 // :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -1661,7 +1845,7 @@ static inline Kai_Memory kai__dynamic_buffer_release(Kai__Dynamic_Buffer* Buffer
 #endif
 #ifndef KAI__SECTION_IMPLEMENTATION_SIMPLE
 
-KAI_API(Kai_vector3_u32) kai_version(void)
+KAI_API (Kai_vector3_u32) kai_version(void)
 {
     return (Kai_vector3_u32) {
         .x = KAI_VERSION_MAJOR,
@@ -1669,30 +1853,30 @@ KAI_API(Kai_vector3_u32) kai_version(void)
         .z = KAI_VERSION_PATCH,
     };
 }
-KAI_API(Kai_string) kai_version_string(void)
+KAI_API (Kai_string) kai_version_string(void)
 {
     return KAI_STRING("Kai Compiler v" KAI_VERSION_STRING);
 }
 
-KAI_API(Kai_bool) kai_string_equals(Kai_string A, Kai_string B)
+KAI_API (Kai_bool) kai_string_equals(Kai_string A, Kai_string B)
 {
     if (A.count != B.count)
         return KAI_FALSE;
-    for (Kai_int i = 0; i < A.count; ++i)
+    for (Kai_u32 i = 0; i < A.count; ++i)
     {
         if (A.data[i] != B.data[i])
             return KAI_FALSE;
     }
     return KAI_TRUE;
 }
-KAI_API(Kai_string) kai_string_from_c(char const* String)
+KAI_API (Kai_string) kai_string_from_c(char const* String)
 {
     Kai_u32 len = 0;
     while (String[len] != '\0') ++len;
     return (Kai_string) { .data = (Kai_u8*)String, .count = len };
 }
 
-KAI_API(void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
+KAI_API (void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
 {
     while (Error)
     {
@@ -1701,6 +1885,353 @@ KAI_API(void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
             kai__free(Error->memory.data, Error->memory.size);
         Error = next;
     }
+}
+
+KAI_API(void) kai_write_number(Kai_Writer* writer, Kai_Number Number)
+{
+    if (Number.is_neg)
+        kai__write_char('-');
+
+    // If number is a fraction, write it out as a float
+    if (Number.d != 1 || Number.e < 0)
+    {
+        kai__write_f64(kai_number_to_f64(Number));
+        return;
+    }
+
+    // If number fits into u64, write it out as u64
+    if ((Kai_u32)(Number.e) <= kai_intrinsic_clz(Number.n))
+    {
+        kai__write_u64(Number.n << Number.e);
+        return;
+    }
+
+    // Might change this to just write as float, this representation
+    // is accurate, but don't know how useful it actually is
+    kai__write_u64(Number.n);
+    kai__write(" * 2^");
+    kai__write_s32(Number.e);
+}
+
+static inline Kai_u64 kai__mul_with_shift(Kai_u64 A, Kai_u64 B, Kai_s32* Exp, Kai_bool Sub)
+{
+    Kai_u128 full = kai__u128_multiply(A, B);
+    Kai_u64 hi = kai__u128_low(full);
+    Kai_u64 lo = kai__u128_high(full);
+    
+    if (hi == 0) {
+        // Fits in 64 bits, no shift needed
+        return lo;
+    }
+    
+    // Amount of right shift required to fit in 64 bits
+    Kai_s32 shift = 64 - (Kai_s32)(kai_intrinsic_clz(hi));
+    
+    if (Sub) *Exp -= shift;
+    else     *Exp += shift;
+    return (hi << (64 - shift)) | (lo >> shift);
+}
+static inline Kai_u64 kai__add_with_shift(Kai_u64 A, Kai_u64 B, Kai_s32* Exp, Kai_bool Sub)
+{
+    Kai_u64 sum = A + B;
+    Kai_u32 carry = (sum < A);
+
+    if (!carry)
+        return sum;
+
+    if (Sub) *Exp -= 1;
+    else     *Exp += 1;
+    return ((Kai_u64)1 << 63) | (sum >> 1);
+}
+KAI_API (Kai_Number) kai_number_add_same_exp(Kai_Number A, Kai_Number B)
+{
+    Kai_s32 t0e = 0, t1e = 0;
+    Kai_u64 t0 = kai__mul_with_shift(A.n, B.d, &t0e, 0);
+    Kai_u64 t1 = kai__mul_with_shift(B.n, A.d, &t1e, 0);
+    Kai_s32 ex = A.e;
+
+    // Exponents have changed, need to make them the same again
+    if (t0e != t1e) {
+        if (t0e < t1e) {
+            t0 >>= (t1e - t0e);
+            ex += t1e;
+        }
+        else {
+            t1 >>= (t0e - t1e);
+            ex += t0e;
+        }
+    }
+
+    Kai_u64 de = kai__mul_with_shift(A.d, B.d, &ex, 1);
+    Kai_u64 nu;
+
+    // Handle resulting sign, TODO: simplify
+    Kai_u32 is_neg = A.is_neg & B.is_neg;
+    if (A.is_neg && !B.is_neg) {
+        if (t0 > t1) nu = t0 - t1, is_neg = 1; // -5 + 1
+        else         nu = t1 - t0, is_neg = 0; // -1 + 5
+    }
+    else if (B.is_neg && !A.is_neg) {
+        if (t0 > t1) nu = t0 - t1, is_neg = 0; // 5 + -1
+        else         nu = t1 - t0, is_neg = 1; // 1 + -5
+    }
+    else {
+        nu = kai__add_with_shift(t0, t1, &ex, 0);
+    }
+
+    return kai_number_normalize((Kai_Number) {
+        .n = nu, .d = de, .e = ex,
+        .is_neg = is_neg,
+    });
+}
+KAI_API (void) kai_number_match_exponents(Kai_Number* A, Kai_Number* B)
+{
+    if (A->e < B->e) {
+        // reduce b.e or increase a.e
+        while (A->e != B->e && (A->d >> 63) == 0) {
+            A->d <<= 1;
+            A->e += 1;
+        }
+        while (A->e != B->e && (B->n >> 63) == 0) {
+            B->n <<= 1;
+            B->e -= 1;
+        }
+        // must lose some precision now :(
+        Kai_s64 diff = B->e - A->e;
+        A->n >>= (Kai_u32)(diff);
+        A->e = B->e;
+    }
+    else /* a.e > b.e */ {
+        // reduce a.e or increase b.e
+        while (A->e != B->e && (B->d >> 63) == 0) {
+            B->d <<= 1;
+            B->e += 1;
+        }
+        while (A->e != B->e && (A->n >> 63) == 0) {
+            A->n <<= 1;
+            A->e -= 1;
+        }
+        // must lose some precision now :(
+        Kai_s64 diff = A->e - B->e;
+        B->n >>= (Kai_u32)(diff);
+        B->e = A->e;
+    }
+}
+KAI_API (Kai_s32) kai_number_compare(Kai_Number A, Kai_Number B)
+{
+    if (A.n == 0 || B.n == 0)
+    {
+        if (A.n == 0 && B.n == 0) return 0;
+        if (A.n == 0)             return B.is_neg ?  1 : -1;
+        if (B.n == 0)             return A.is_neg ? -1 :  1;
+    }
+    if (A.is_neg != B.is_neg)
+    {
+        return A.is_neg ? -1 : 1;
+    }
+    Kai_s64 de = A.e - B.e;
+    Kai_u128 l = kai__u128_multiply(A.n, B.d);
+    Kai_u128 r = kai__u128_multiply(B.n, A.d);
+    Kai_u64 lh = kai__u128_high(l);
+    Kai_u64 rh = kai__u128_high(r);
+    Kai_u64 ll = kai__u128_low(l);
+    Kai_u64 rl = kai__u128_low(r);
+
+    if (de < 0)
+    {
+        // Shift left side
+        de = -de;
+        ll >>= de;
+        if (de <= 64) {
+            ll = (lh << (64 - de)) | ll;
+            lh >>= de;
+        }
+        else {
+            ll = lh >> (de - 64);
+            lh = 0;
+        }
+    }
+    else
+    {
+        // Shift right side
+        rl >>= de;
+        if (de <= 64) {
+            rl = (rh << (64 - de)) | rl;
+            rh >>= de;
+        }
+        else {
+            rl = rh >> (de - 64);
+            rh = 0;
+        }
+    }
+
+    Kai_s32 result = 0;
+    if      (lh != rh) result = lh < rh ? -1 : 1;
+    else if (ll != rl) result = ll < rl ? -1 : 1;
+    else               result = 0;
+    return A.is_neg ? -result : result;
+}
+KAI_API (Kai_Number) kai_number_normalize(Kai_Number A)
+{
+    Kai_s32 ns = kai_intrinsic_ctz(A.n);
+    Kai_s32 ds = kai_intrinsic_ctz(A.d);
+    Kai_s32 ex = A.e + (ns - ds);
+    Kai_u64 nu = A.n >> ns;
+    Kai_u64 de = A.d >> ds;
+    Kai_u64 d = kai__gcd(nu, de);
+    return (Kai_Number) {
+        .n = nu / d,
+        .d = de / d,
+        .is_neg = A.is_neg,
+        .e = ex,
+    };
+}
+
+KAI_API (Kai_Number) kai_number_neg(Kai_Number A)
+{
+    return (Kai_Number) {.n = A.n, .d = A.d, .e = A.e, .is_neg = A.is_neg ^ 1};
+}
+KAI_API (Kai_Number) kai_number_abs(Kai_Number A)
+{
+    return (Kai_Number) {.n = A.n, .d = A.d, .e = A.e, .is_neg = 0};
+}
+KAI_API (Kai_Number) kai_number_inv(Kai_Number A)
+{
+    return (Kai_Number) {.n = A.d, .d = A.n, .e = -A.e, .is_neg = A.is_neg};
+}
+KAI_API (Kai_Number) kai_number_add(Kai_Number A, Kai_Number B)
+{
+    if (A.n == 0) return B;
+    if (B.n == 0) return A;
+
+    if (A.e == B.e)
+        return kai_number_add_same_exp(A, B);
+
+    kai_number_match_exponents(&A, &B);
+    return kai_number_add_same_exp(A, B);
+}
+KAI_API (Kai_Number) kai_number_sub(Kai_Number A, Kai_Number B)
+{
+    return kai_number_add(A, kai_number_neg(B));
+}
+KAI_API (Kai_Number) kai_number_mul(Kai_Number A, Kai_Number B)
+{
+    if (A.n == 0 || B.n == 0)
+        return (Kai_Number){0};
+
+    Kai_s32 ex = A.e + B.e;
+    Kai_u64 d0 = kai__gcd(A.n, B.d);
+    Kai_u64 d1 = kai__gcd(B.n, A.d);
+    Kai_u64 nu = kai__mul_with_shift(A.n / d0, B.n / d1, &ex, 0);
+    Kai_u64 de = kai__mul_with_shift(A.d / d1, B.d / d0, &ex, 1);
+
+    return kai_number_normalize((Kai_Number) {
+        .is_neg = A.is_neg ^ B.is_neg,
+        .n = nu, .d = de, .e = ex,
+    });
+}
+KAI_API (Kai_Number) kai_number_div(Kai_Number A, Kai_Number B)
+{
+    return kai_number_mul(A, kai_number_inv(B));
+}
+KAI_API (Kai_Number) kai_number_pow_int(Kai_Number A, Kai_u32 Exp)
+{
+    Kai_Number r = A;
+    Kai_s32 i = 30 - (Kai_s32)(kai_intrinsic_clz(Exp));
+    if (i >= 0)
+    {
+        for (Kai_u32 bit = (Kai_u32)1 << i; bit != 0; bit >>= 1)
+        {
+            r = kai_number_mul(r, r);
+            if (Exp & bit)
+                r = kai_number_mul(r, A);
+        }
+    }
+    return r;
+}
+
+KAI_API (Kai_f64) kai_number_to_f64(Kai_Number Number)
+{
+    if (Number.n == 0)
+        return 0.0;
+    
+    Kai_f64 val = (Kai_f64)(Number.n) / (Kai_f64)(Number.d);
+
+    if (Number.is_neg)
+        val = -val;
+    return kai__ldexp(val, Number.e);
+}
+
+KAI_API (Kai_Number) kai_number_parse_whole(Kai_string Text, Kai_u32* Offset, Kai_u32 Base)
+{
+    Kai_Number result = {0};
+    // TODO: Better to call normalize, or leave base as is?
+    Kai_Number base = kai_number_normalize((Kai_Number){Base, 1});
+    Kai_u32 offset = *Offset;
+
+    for (;offset < Text.count; offset += 1)
+    {
+        Kai_u64 ch = Text.data[offset];
+        Kai_u64 d;
+
+        if (ch >= '0' && ch <= '9')
+            d = ch - '0';
+        else if (ch >= 'A' && ch <= 'F')
+            d = (ch - 'A') + 0xA;
+        else if (ch >= 'a' && ch <= 'f')
+            d = (ch - 'a') + 0xA;
+        else if (ch == '_')
+            continue;
+        else break;
+
+        if (d >= Base)
+            break;
+
+        result = kai_number_mul(result, base);
+        result = kai_number_add(result, (Kai_Number){d, 1});
+    }
+
+    *Offset = offset;
+    return result;
+}
+KAI_API (Kai_Number) kai_number_parse_decimal(Kai_string Text, Kai_u32* Offset)
+{
+    Kai_Number result = {0};
+    Kai_Number power = {1, 5, 0, -1}; // 1 / 10
+    Kai_u32 offset = *Offset;
+    
+    for (;offset < Text.count; offset += 1)
+    {
+        Kai_u32 d = (Kai_u32)(Text.data[offset] - '0');
+        if (d > 9) break;
+        
+        Kai_Number h = kai_number_mul(power, (Kai_Number){d, 1});
+        result = kai_number_add(result, h);
+        power = kai_number_mul(power, (Kai_Number){1, 5, 0, -1}); // 1 / 10
+    }
+    
+    *Offset = offset;
+    return result;
+}
+Kai_u64 const kai__powers_of_five[10] = {
+    1, 5, 25, 125, 625, 3125, 15625, 78125, 390625, 1953125,
+};
+KAI_API (Kai_Number) kai_number_parse_exponent(Kai_string Text, Kai_u32* Offset)
+{
+    Kai_Number result = {1, 1};
+    Kai_u32 offset = *Offset;
+    
+    for (;offset < Text.count; offset += 1)
+    {
+        Kai_u32 d = (Kai_u32)(Text.data[offset] - '0');
+        if (d > 9) break;
+        
+        result = kai_number_pow_int(result, 10);
+        result = kai_number_mul(result, (Kai_Number){kai__powers_of_five[d], 1, 0, d}); // 10^d
+    }
+    
+    *Offset = offset;
+    return result;
 }
 
 #endif
@@ -1750,7 +2281,7 @@ static Kai_u8* kai__advance_to_line(Kai_u8 const* source, Kai_int line)
 
 
 // TODO: Audit code
-static void kai__write_source_code(Kai_String_Writer* writer, Kai_u8* src)
+static void kai__write_source_code(Kai_Writer* writer, Kai_u8* src)
 {
     while (*src != 0 && *src != '\n')
     {
@@ -1800,7 +2331,7 @@ static uint32_t kai__utf8_decode(Kai_u8 **s)
     return cp;
 }
 
-static int kai__unicode_char_width(Kai_String_Writer* writer, uint32_t cp, Kai_u8 first, Kai_u8 ch) {
+static int kai__unicode_char_width(Kai_Writer* writer, uint32_t cp, Kai_u8 first, Kai_u8 ch) {
     int count = 0;
     if ((cp == 0)                     // NULL
     ||  (cp < 0x20 && cp != '\t')     // Control not including TAB
@@ -1831,7 +2362,7 @@ static int kai__unicode_char_width(Kai_String_Writer* writer, uint32_t cp, Kai_u
 }
 
 // TODO: Audit code
-static void kai__write_source_code_fill(Kai_String_Writer* writer, Kai_u8* src, Kai_u8* end, Kai_u8 first, Kai_u8 ch)
+static void kai__write_source_code_fill(Kai_Writer* writer, Kai_u8* src, Kai_u8* end, Kai_u8 first, Kai_u8 ch)
 {
     while (src < end && *src != 0 && *src != '\n')
     {
@@ -1841,7 +2372,7 @@ static void kai__write_source_code_fill(Kai_String_Writer* writer, Kai_u8* src, 
     }
 }
 
-KAI_API (void) kai_write_error(Kai_String_Writer* writer, Kai_Error* error)
+KAI_API (void) kai_write_error(Kai_Writer* writer, Kai_Error* error)
 {
     for (; error != NULL; error = error->next)
     {
@@ -1916,7 +2447,7 @@ KAI_API (void) kai_write_error(Kai_String_Writer* writer, Kai_Error* error)
     }
 }
 
-KAI_API (void) kai_write_type(Kai_String_Writer* writer, Kai_Type Type)
+KAI_API (void) kai_write_type(Kai_Writer* writer, Kai_Type Type)
 {
     void* void_Type = Type;
     if (Type == NULL) {
@@ -2020,7 +2551,7 @@ static Kai_string kai__unary_operator_name(Kai_u32 op)
 }
 
 typedef struct {
-    Kai_String_Writer * writer;
+    Kai_Writer * writer;
     Kai_u64             stack[256]; // 64 * 256 max depth
     Kai_u32             stack_count;
     Kai_string          prefix;
@@ -2044,7 +2575,7 @@ typedef struct {
 
 static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Expr)
 {
-    Kai_String_Writer* writer = Context->writer;
+    Kai_Writer* writer = Context->writer;
 
     kai__set_color(KAI_COLOR_DECORATION);
     Kai_int last = Context->stack_count - 1;
@@ -2326,7 +2857,7 @@ static void kai__traverse_tree(Kai__Tree_Traversal_Context* Context, Kai_Expr Ex
     }
 }
 
-KAI_API (void) kai_write_syntax_tree(Kai_String_Writer* writer, Kai_Syntax_Tree* tree)
+KAI_API (void) kai_write_syntax_tree(Kai_Writer* writer, Kai_Syntax_Tree* tree)
 {
     Kai__Tree_Traversal_Context context = {
         .writer = writer,
@@ -2336,7 +2867,7 @@ KAI_API (void) kai_write_syntax_tree(Kai_String_Writer* writer, Kai_Syntax_Tree*
     kai__write("Top Level\n");
     kai__traverse_tree(&context, (Kai_Stmt)&tree->root);
 }
-KAI_API (void) kai_write_expression(Kai_String_Writer* writer, Kai_Expr expr)
+KAI_API (void) kai_write_expression(Kai_Writer* writer, Kai_Expr expr)
 {
     Kai__Tree_Traversal_Context context = { .writer = writer };
     kai__traverse_tree(&context, expr);
@@ -2381,7 +2912,7 @@ enum {
 typedef struct {
     Kai_u32     type;
     Kai_u32     line_number;
-    Kai_string     string;
+    Kai_string  string;
     Kai_Number  number;
 } Kai__Token;
 
@@ -2392,6 +2923,7 @@ typedef struct {
     Kai_u32     cursor;
     Kai_u32     line_number;
     Kai_bool    peeking;
+    Kai_Allocator allocator;
 } Kai__Tokenizer;
 
 // out_String->count: Maximum number of characters
@@ -2441,67 +2973,6 @@ static inline void kai__token_type_string(Kai_u32 Type, Kai_string* out_String)
     break;
     KAI__X_TOKEN_KEYWORDS
 #undef X
-    }
-}
-
-//! @TODO: Handle parsing of values during compilation
-
-static inline void parse_number_bin(Kai__Tokenizer* context, Kai_u64* n) {
-    for(; context->cursor < context->source.count; ++context->cursor) {
-        Kai_u8 ch = context->source.data[context->cursor];
-
-        if( ch < '0' ) break;
-        if( ch > '1' ) {
-            if( ch == '_' ) continue;
-            else break;
-        }
-
-        *n = *n << 1;
-        *n += (Kai_u64)ch - '0';
-    }
-}
-
-static inline void parse_number_dec(Kai__Tokenizer* context, Kai_u64* n) {
-    for(; context->cursor < context->source.count; ++context->cursor) {
-        Kai_u8 ch = context->source.data[context->cursor];
-
-        if( ch < '0' ) break;
-        if( ch > '9' ) {
-            if( ch == '_' ) continue;
-            else break;
-        }
-
-        *n = *n * 10;
-        *n += (Kai_u64)ch - '0';
-    }
-}
-
-static inline void parse_number_hex(Kai__Tokenizer* context, Kai_u64* n)
-{
-    // TODO: just use switch
-    enum {
-        X = 16, /* BREAK */ S = 17, /* SKIP */
-        A = 0xA, B = 0xB, C = 0xC, D = 0xD, E = 0xE, F = 0xF,
-    };
-    Kai_u8 lookup_table[56] = {
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, X, X, X, X, X, X,
-        X, A, B, C, D, E, F, X, X, X, X, X, X, X, X, X,
-        X, X, X, X, X, X, X, X, X, X, X, X, X, X, X, S,
-        X, A, B, C, D, E, F, X,
-    };
-
-    for(; context->cursor < context->source.count; ++context->cursor) {
-        Kai_u8 ch = context->source.data[context->cursor];
-
-        if( ch < '0' || ch > 'f' ) break;
-
-        Kai_u8 what = lookup_table[ch - '0'];
-
-        if( what == S ) continue;
-        if( what == X ) break;
-
-        *n = *n << 4;
-        *n += what;
     }
 }
 
@@ -2617,7 +3088,8 @@ static inline Kai__Token kai__tokenizer_generate(Kai__Tokenizer* context)
         .line_number = context->line_number,
     };
 
-    while (context->cursor < context->source.count) {
+    while (context->cursor < context->source.count)
+    {
         token.string.data = context->source.data + context->cursor;
         Kai_u8 ch = *token.string.data;
 
@@ -2707,52 +3179,56 @@ static inline Kai__Token kai__tokenizer_generate(Kai__Tokenizer* context)
         case KAI__T_NUMBER: {
             ++context->cursor;
             token.type = KAI__TOKEN_NUMBER;
-            token.number.Whole_Part = ch - '0';
 
             // Integer
-            if (token.number.Whole_Part == 0 && context->cursor < context->source.count) {
-                if (context->source.data[context->cursor] == 'b') {
+            if (ch == '0' && context->cursor < context->source.count)
+            {
+                if (context->source.data[context->cursor] == 'b')
+                {
                     ++context->cursor;
-                    parse_number_bin(context, &token.number.Whole_Part);
-                    token.string.count = (Kai_u32)((Kai_uint)(context->source.data + context->cursor) - (Kai_uint)token.string.data);
-                    return token;
+                    token.number = kai_number_parse_whole(context->source, &context->cursor, 2);
+                    goto return_number;
                 }
-                if (context->source.data[context->cursor] == 'x') {
+                if (context->source.data[context->cursor] == 'x')
+                {
                     ++context->cursor;
-                    parse_number_hex(context, &token.number.Whole_Part);
-                    token.string.count = (Kai_u32)((Kai_uint)(context->source.data + context->cursor) - (Kai_uint)token.string.data);
-                    return token;
+                    token.number = kai_number_parse_whole(context->source, &context->cursor, 16);
+                    goto return_number;
                 }
             }
+            else --context->cursor;
 
-            parse_number_dec(context, &token.number.Whole_Part);
+            token.number = kai_number_parse_whole(context->source, &context->cursor, 10);
 
         parse_fraction:
             // Fractional Part
-            if (context->cursor < context->source.count && context->source.data[context->cursor] == '.' && !kai__next_character_equals('.')) {
+            if (context->cursor < context->source.count
+            &&  context->source.data[context->cursor] == '.' && !kai__next_character_equals('.'))
+            {
                 ++context->cursor;
-                Kai_int start = context->cursor;
-                parse_number_dec(context, &token.number.Frac_Part);
-                token.number.Frac_Denom = (Kai_u16)(context->cursor - start);
+                Kai_Number decimal = kai_number_parse_decimal(context->source, &context->cursor);
+                token.number = kai_number_add(token.number, decimal);
             }
 
             // Parse Exponential Part
-            if (context->cursor < context->source.count && (context->source.data[context->cursor] == 'e' || context->source.data[context->cursor] == 'E')) {
-                Kai_u64 n = 0;
-                Kai_s32 factor = 1;
-
+            if (context->cursor < context->source.count
+            && (context->source.data[context->cursor] == 'e' || context->source.data[context->cursor] == 'E'))
+            {
+                Kai_bool is_neg = KAI_FALSE;
+                
                 ++context->cursor;
-                if (context->cursor < context->source.count) {
-                    if (context->source.data[context->cursor] == '-') { ++context->cursor; factor = -1; }
+                if (context->cursor < context->source.count)
+                {
+                    if (context->source.data[context->cursor] == '-') { ++context->cursor; is_neg = KAI_TRUE; }
                     if (context->source.data[context->cursor] == '+') ++context->cursor; // skip
                 }
-
-                parse_number_dec(context, &n);
-
-                if( n > INT32_MAX ) token.number.Exp_Part = factor * INT32_MAX;
-                else                token.number.Exp_Part = factor * (Kai_s32)n;
+                
+                Kai_Number exponent = kai_number_parse_exponent(context->source, &context->cursor);
+                if (is_neg) exponent = kai_number_inv(exponent);
+                token.number = kai_number_mul(token.number, exponent);
             }
 
+        return_number:
             token.string.count = (Kai_u32)((context->source.data + context->cursor) - token.string.data);
             return token;
         }
@@ -3273,13 +3749,15 @@ Kai_Expr kai__parse_expression(Kai__Parser* parser, Kai_s32 prec)
 
 		if (t->type != ']') {
 			kai__expect(t->type == KAI__TOKEN_NUMBER, "in array type", "should be a number here");
-			rows = (Kai_u32)t->number.Whole_Part;
+            kai__unreachable(); // TODO: make sure number is an integer
+            //rows = (Kai_u32)t->number.Whole_Part;
 		
 			kai__next_token(); // skip number
 			if (t->type == ',') {
 				kai__next_token(); // skip ','
 			    kai__expect(t->type == KAI__TOKEN_NUMBER, "in array type", "should be a number here");
-				cols = (Kai_u32)t->number.Whole_Part;
+                kai__unreachable(); // TODO: make sure number is an integer
+				//cols = (Kai_u32)t->number.Whole_Part;
 				kai__next_token(); // skip number
 			}
 		}
@@ -3692,6 +4170,7 @@ KAI_API (Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* Info, K
             .source = Info->source_code,
             .cursor = 0,
             .line_number = 1,
+            .allocator = Info->allocator,
         },
         .error = Info->error,
     };
@@ -3997,7 +4476,7 @@ char const* bc__op_to_name[] = {
 	Kai_u8 Count_Var = *(Kai_u8*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_u8); \
 	kai__for_n (Count_Var) Regs_Var[i] = *(Kai_Reg*)(Decoder.bytecode + Decoder.cursor); Decoder.cursor += sizeof(Kai_Reg)
 
-Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_String_Writer* writer)
+Kai_Result kai_bytecode_to_c(Kai_Bytecode* bytecode, Kai_Writer* writer)
 {
     //! TODO: use type info
     //! TODO: find all branch locations
@@ -4719,7 +5198,6 @@ int kai_interp_step(Kai_Interpreter* interp)
 
 #endif
 #ifndef KAI__SECTION_IMPLEMENTATION_COMPILATION
-#define KAI__DISABLE_PEEPHOLES 0
 
 typedef enum {
 	KAI__NODE_START    = 0,
@@ -4751,7 +5229,7 @@ typedef struct Kai__Node {
 	KAI__ARRAY(Kai__Node*) outputs;
 	Kai_string             source;
     Kai_u32                value_type;
-    Kai_Value              value;
+    Kai_Number             value;
 } Kai__Node;
 
 typedef struct {
@@ -4767,10 +5245,10 @@ typedef struct {
     KAI__ARRAY(Kai__Node_Graph)   graph_stack;
     KAI__ARRAY(Kai__Node_Graph)   graphs;
 
-    Kai_String_Writer             debug_writer;
+    Kai_Writer             debug_writer;
 } Kai__Compiler_Context;
 
-static inline void kai__write_ir_node(Kai_String_Writer* writer, Kai__Node* node)
+static inline void kai__write_ir_node(Kai_Writer* writer, Kai__Node* node)
 {
 	if (node == NULL)
 		return;
@@ -4782,7 +5260,7 @@ static inline void kai__write_ir_node(Kai_String_Writer* writer, Kai__Node* node
     switch (node->kind) {
         case KAI__NODE_START:    { kai__write("START"); } break;
         case KAI__NODE_RETURN:   { kai__write("RETURN"); } break;
-        case KAI__NODE_CONSTANT: { kai__write_u32((Kai_u32)node->value.s64); } break;
+        case KAI__NODE_CONSTANT: { kai_write_number(writer, node->value); } break;
         case KAI__NODE_ADD:      { kai__write("+"); } break;
         case KAI__NODE_SUB:      { kai__write("-"); } break;
         case KAI__NODE_MUL:      { kai__write("*"); } break;
@@ -4814,7 +5292,7 @@ static inline void kai__write_ir_node(Kai_String_Writer* writer, Kai__Node* node
     }
 }
 
-static inline void kai__write_ir(Kai_String_Writer* writer, Kai__Node_Graph* graph)
+static inline void kai__write_ir(Kai_Writer* writer, Kai__Node_Graph* graph)
 {
 	kai__assert(writer != NULL);
 	kai__assert(graph != NULL);
@@ -4836,6 +5314,7 @@ static inline Kai__Node_Graph* kai__current_graph(Kai__Compiler_Context* Context
 }
 static inline void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* node)
 {
+    kai__unused(Context);
     switch (node->kind) {
     default: {
         KAI__FATAL_ERROR("compute_type", "invalid node type");
@@ -4849,7 +5328,7 @@ static inline void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* 
         {
             if (kai__is_constant(input->type))
             {
-                node->value.s64 = -input->value.s64;
+                node->value = kai_number_neg(input->value);
                 node->type = KAI__NODE_TYPE_NUMBER;
                 break;
             }
@@ -4863,7 +5342,7 @@ static inline void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* 
         {
             if (kai__is_constant(left->type) && kai__is_constant(right->type))
             {
-                node->value.s64 = left->value.s64 + right->value.s64;
+                node->value = kai_number_add(left->value, right->value);
                 node->type = KAI__NODE_TYPE_NUMBER;
                 break;
             }
@@ -4877,7 +5356,7 @@ static inline void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* 
         {
             if (kai__is_constant(left->type) && kai__is_constant(right->type))
             {
-                node->value.s64 = left->value.s64 - right->value.s64;
+                node->value = kai_number_sub(left->value, right->value);
                 node->type = KAI__NODE_TYPE_NUMBER;
                 break;
             }
@@ -4891,7 +5370,7 @@ static inline void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* 
         {
             if (kai__is_constant(left->type) && kai__is_constant(right->type))
             {
-                node->value.s64 = left->value.s64 * right->value.s64;
+                node->value = kai_number_mul(left->value, right->value);
                 node->type = KAI__NODE_TYPE_NUMBER;
                 break;
             }
@@ -4905,7 +5384,7 @@ static inline void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* 
         {
             if (kai__is_constant(left->type) && kai__is_constant(right->type))
             {
-                node->value.s64 = left->value.s64 / right->value.s64;
+                node->value = kai_number_div(left->value, right->value);
                 node->type = KAI__NODE_TYPE_NUMBER;
                 break;
             }
@@ -4922,6 +5401,7 @@ static inline void kai__kill_node(Kai__Compiler_Context* Context, Kai__Node* nod
 }
 static inline Kai__Node* kai__idealize(Kai__Compiler_Context* Context, Kai__Node* node)
 {
+    kai__unused(Context);
     return node;
 }
 static inline Kai__Node* kai__peephole(Kai__Compiler_Context* Context, Kai__Node* node)
@@ -4945,7 +5425,7 @@ static inline Kai__Node* kai__peephole(Kai__Compiler_Context* Context, Kai__Node
 static Kai__Node* kai__generate_ir_from_tree(Kai__Compiler_Context* Context, Kai_Expr Expr)
 {
     Kai_Allocator* allocator = &Context->allocator;
-    Kai_String_Writer* writer = &Context->debug_writer;
+    Kai_Writer* writer = &Context->debug_writer;
 
     void* void_Expr = Expr;
     switch (Expr->id) {
@@ -5006,7 +5486,7 @@ static Kai__Node* kai__generate_ir_from_tree(Kai__Compiler_Context* Context, Kai
         Kai_Expr_Number* node = void_Expr;
         Kai__Node* new_node = kai__new_node(Context, (Kai__Node) { .kind = KAI__NODE_CONSTANT, .source = node->source_code });
         kai__array_append(&new_node->inputs, kai__current_graph(Context)->start_node);
-        new_node->value.s64 = node->value.Whole_Part;
+        new_node->value = node->value;
         return kai__peephole(Context, new_node);
     }
     break; case KAI_STMT_RETURN: {
@@ -5045,18 +5525,19 @@ KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Progra
     context.allocator = Info->allocator;
     context.tree = &tree;
 
+    /*
     kai_generate_ir(&context);
 
-    kai_writer_file_open(&context.debug_writer, "ir.dot");
-    Kai_String_Writer* writer = &context.debug_writer;
+    //kai_writer_file_open(&context.debug_writer, "ir.dot");
+    Kai_Writer* writer = &context.debug_writer;
     kai__for_n (context.graphs.count)
     {
         kai__write("digraph {\n");
         kai__write_ir(writer, &(context.graphs.elements[i]));
         kai__write("}\n");
     }
-    kai_writer_file_close(&context.debug_writer);
-
+    //kai_writer_file_close(&context.debug_writer);
+    */
 	return kai__error_internal(Info->error, KAI_STRING("reached end :)"));
 }
 
@@ -5161,8 +5642,7 @@ KAI_API (void*) kai_find_procedure(Kai_Program Program, Kai_string Name, Kai_Typ
 }
 
 #endif
-
-#ifndef KAI_DONT_USE_MEMORY_API
+#ifndef KAI_DONT_USE_MEMORY_API // KAI__SECTION_IMPLEMENTATION_MEMORY_API
 #define KAI__REALLOC realloc
 #define KAI__FREE    free
 
@@ -5263,8 +5743,8 @@ static void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_si
         kai__assert(old_ptr != NULL || old_size == 0);
         ptr = KAI__REALLOC(old_ptr, new_size);
 		kai__assert(ptr != NULL);
-        if (ptr != NULL && old_ptr == NULL) {
-            kai__memory_zero(ptr, new_size);
+        if (ptr != NULL) {
+            kai__memory_zero((Kai_u8*)ptr + old_size, new_size - old_size);
         }
     }
     Kai__Memory_Internal* internal = user;
@@ -5313,7 +5793,7 @@ KAI_API (Kai_u64) kai_memory_usage(Kai_Allocator* Memory)
 }
 
 #endif
-#ifndef KAI_DONT_USE_DEBUG_API
+#ifndef KAI_DONT_USE_WRITER_API // KAI__SECTION_IMPLEMENTATION_WRITER_API
 
 char const* kai__term_debug_colors [KAI__COLOR_COUNT] = {
     [KAI_COLOR_PRIMARY]     = "\x1b[0;37m",
@@ -5334,12 +5814,43 @@ static void kai__file_writer_write_value(void* User, Kai_u32 Type, Kai_Value Val
             }
         } break;
 
+        case KAI_F64: {
+            fprintf(f, "%f", Value.f64);
+        } break;
+
+        case KAI_S32: {
+            fprintf(f, "%i", Value.s32);
+        } break;
+
         case KAI_U32: {
             fprintf(f, "%u", Value.u32);
         } break;
 
+        case KAI_U64: {
+            char base = 'u';
+            if (Format.flags & KAI_WRITE_FLAG_HEXIDECIMAL)
+                base = 'X';
+            if (Format.min_count != 0) {
+                if (Format.fill_character != 0) {
+                    char* fmt = "%.*ll.";
+                    fmt[1] = Format.fill_character;
+                    fmt[5] = base;
+                    fprintf(f, fmt, Format.min_count, Value.u64);
+                }
+                else {
+                    char* fmt = "%*ll.";
+                    fmt[4] = base;
+                    fprintf(f, fmt, Format.min_count, Value.u64);
+                }
+                break;
+            }
+            char* fmt = "%ll.";
+            fmt[3] = base;
+            fprintf(f, fmt, Value.u64);
+        } break;
+
         default: {
-            fprintf(f, "[StdOut Writer] -- Case not defined for type %i\n", Type);
+            fprintf(f, "[Writer] -- Case not defined for type %i\n", Type);
         } break;
     }
 }
@@ -5379,13 +5890,13 @@ static FILE* kai__stdc_file_open(char const* path, char const* mode) {
 #    define kai__stdc_file_open fopen
 #endif
 
-KAI_API (Kai_String_Writer*) kai_writer_stdout(void)
+KAI_API (Kai_Writer*) kai_writer_stdout(void)
 {
 #if defined(KAI__PLATFORM_WINDOWS)
     SetConsoleOutputCP(65001);
 #endif
     setlocale(LC_CTYPE, ".UTF8");
-    static Kai_String_Writer writer = {
+    static Kai_Writer writer = {
         .write_string   = kai__stdout_write_string,
         .write_value    = kai__stdout_write_value,
         .set_color      = kai__stdout_writer_set_color,
@@ -5394,16 +5905,16 @@ KAI_API (Kai_String_Writer*) kai_writer_stdout(void)
     return &writer;
 }
 
-KAI_API (void) kai_writer_file_open(Kai_String_Writer* out_Writer, const char* path)
+KAI_API (void) kai_writer_file_open(Kai_Writer* out_Writer, const char* path)
 {
-    *out_Writer = (Kai_String_Writer) {
+    *out_Writer = (Kai_Writer) {
         .write_string   = kai__file_writer_write_string,
         .write_value    = kai__file_writer_write_value,
         .set_color      = NULL,
         .user           = kai__stdc_file_open(path, "wb"),
     };
 }
-KAI_API (void) kai_writer_file_close(Kai_String_Writer* writer)
+KAI_API (void) kai_writer_file_close(Kai_Writer* writer)
 {
     if (writer->user != NULL)
         fclose(writer->user);
@@ -5411,7 +5922,6 @@ KAI_API (void) kai_writer_file_close(Kai_String_Writer* writer)
 
 #endif
 #endif
-
 #ifdef __cplusplus
 }
 #endif

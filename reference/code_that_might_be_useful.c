@@ -1,5 +1,5 @@
 #if 0 // dump bytes
-inline void dev_dump_memory(Kai_String_Writer* writer, void* data, Kai_u32 count)
+inline void dev_dump_memory(Kai_Writer* writer, void* data, Kai_u32 count)
 {
     Kai_u8* bytes = data;
     Kai_u32 k = 0;

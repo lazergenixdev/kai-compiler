@@ -80,7 +80,7 @@ static int test(Kai_Allocator* allocator)
 		.error = &error,
 		.source = { source_code },
 	};
-	Kai_Result result = kai_create_program_from_code(&info, &program);
+	Kai_Result result = kai_create_program(&info, &program);
 
 	if (result != KAI_SUCCESS) {
 		error.location.file_name = KAI_STRING(__FUNCTION__);

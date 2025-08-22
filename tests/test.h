@@ -3,7 +3,7 @@
 
 extern void* error_writer(void);
 
-#define kai__debug_writer ((Kai_String_Writer*)error_writer())
+#define kai__debug_writer ((Kai_Writer*)error_writer())
 #include "kai.h"
 #include <stdio.h>
 

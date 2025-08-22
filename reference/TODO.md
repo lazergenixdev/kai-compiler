@@ -1,5 +1,5 @@
 ﻿# TODO
-- [ ] Rename `Kai_String_Writer` to `Kai_Writer`
+- [x] Rename `Kai_String_Writer` to `Kai_Writer`
 - [ ] Variable Declarations + Assignments
 
 ## Website test compiler playground thing

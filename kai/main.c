@@ -19,7 +19,7 @@ void parse(char const* file, Kai_string source_code, Kai_Error* error, Kai_Alloc
 
 #define error(...) printf("\x1b[91mError\x1b[0m: "), printf(__VA_ARGS__), putchar('\n')
 
-Kai_String_Writer* writer = NULL;
+Kai_Writer* writer = NULL;
 
 int main(int argc, char** argv)
 {

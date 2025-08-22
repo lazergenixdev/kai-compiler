@@ -4,16 +4,17 @@
 
 #define test ++test_count, pass_count +=
 
+extern int hash_table         (void);
+extern int number             (void);
 extern int bytecode           (void);
 extern int parser             (void);
-extern int hash_table         (void);
 extern int compile_simple_add (void);
 
 int main(int argc, char** argv)
 {
 	kai__unused(argc);
 	kai__unused(argv);
-    Kai_String_Writer* writer = kai_writer_stdout();
+    Kai_Writer* writer = kai_writer_stdout();
     kai__write_string(kai_version_string());
     kai__write_string(KAI_STRING("\n\n"));
     kai_writer_file_open(error_writer(), "errors.txt");
@@ -21,9 +22,10 @@ int main(int argc, char** argv)
     int test_count = 0;
     int pass_count = 0;
 
+    test hash_table();
+    test number();
     test parser();
     test bytecode();
-    test hash_table();
     test compile_simple_add();
 
     kai_writer_file_close(error_writer());
@@ -42,11 +44,11 @@ void begin_test(const char* name) {
     fflush(stdout);
     char buffer[64];
     int size = snprintf(buffer, sizeof(buffer), "******** %40s ********\n", name);
-    Kai_String_Writer* writer = error_writer();
+    Kai_Writer* writer = error_writer();
     kai__write_string((Kai_string) { .count = size, .data = (Kai_u8*)buffer });
 }
 
 extern void* error_writer(void) {
-    static Kai_String_Writer writer;
+    static Kai_Writer writer;
     return &writer;
 }

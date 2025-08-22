@@ -13,9 +13,11 @@ else ()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif ()
 
+set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
+
 if (WASM)
     add_subdirectory("web")
 else ()
     add_subdirectory("kai")   # Compiler
-    #add_subdirectory("tests")
+    add_subdirectory("tests")
 endif ()
