@@ -28,25 +28,28 @@ int number(void)
         if (kai_number_compare(w4, w5) != 0) return FAIL;
         if (kai_number_compare(w5, w4) != 0) return FAIL;
 
-        Kai_Number w6 = {0x982763547832123, 1};
+        Kai_Number w6 = {0x982763547832123, 1, 0, 0};
 
-        if (kai_number_compare(w6, (Kai_Number){0xFFFFFFFFFFFFFFFF, 1}) != -1) return FAIL;
+        if (kai_number_compare(w6, (Kai_Number){0xFFFFFFFFFFFFFFFF, 1, 0, 0}) != -1) return FAIL;
         if (kai_number_compare(w6, (Kai_Number){0}) != 1) return FAIL;
     }
 
     // Arithmetic, no overflow
     {
-        Kai_Number r0 = kai_number_add((Kai_Number){4324, 32}, (Kai_Number){582, 532});
-        assert_eq(r0, (Kai_Number){144937, 1064});
+        Kai_Number r0 = kai_number_add((Kai_Number){4324, 32, 0, 0}, (Kai_Number){582, 532, 0, 0});
+        assert_eq(r0, (Kai_Number){144937, 1064, 0, 0});
 
-        Kai_Number r1 = kai_number_sub((Kai_Number){4324, 32}, (Kai_Number){582, 532});
-        assert_eq(r1, (Kai_Number){142609, 1064});
+        Kai_Number r1 = kai_number_sub((Kai_Number){4324, 32, 0, 0}, (Kai_Number){582, 532, 0, 0});
+        assert_eq(r1, (Kai_Number){142609, 1064, 0, 0});
 
-        Kai_Number r2 = kai_number_mul((Kai_Number){4324, 32}, (Kai_Number){582, 532});
-        assert_eq(r2, (Kai_Number){314571, 2128});
+        Kai_Number r2 = kai_number_mul((Kai_Number){4324, 32, 0, 0}, (Kai_Number){582, 532, 0, 0});
+        assert_eq(r2, (Kai_Number){314571, 2128, 0, 0});
 
-        Kai_Number r3 = kai_number_div((Kai_Number){4324, 32}, (Kai_Number){582, 532});
-        assert_eq(r3, (Kai_Number){143773, 1164});
+        Kai_Number r3 = kai_number_div((Kai_Number){4324, 32, 0, 0}, (Kai_Number){582, 532, 0, 0});
+        assert_eq(r3, (Kai_Number){143773, 1164, 0, 0});
+
+        Kai_Number r4 = kai_number_add((Kai_Number){4, 1, 0, 0}, (Kai_Number){4, 1, 0, 0});
+        assert_eq(r4, (Kai_Number){8, 1, 0, 0});
     }
 
     return PASS;

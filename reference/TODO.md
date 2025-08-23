@@ -1,9 +1,12 @@
 ﻿# TODO
 - [x] Rename `Kai_String_Writer` to `Kai_Writer`
-- [ ] Add to outputs of nodes (kai__node_add_use)
-- [ ] Create global stack of symbol tables
-- [ ] Push (pop) symbol tables on scope entry (exit)
-- [ ] Variable Declarations + Assignments
+- [x] Add to outputs of nodes (kai__node_add_use)
+- [x] Create global stack of symbol tables
+- [x] Push (pop) symbol tables on scope entry (exit)
+- [x] Variable Declarations + Assignments
+- [ ] `KAI_INTERNAL` for internal functions
+- [ ] Deallocate nodes correctly
+- [ ] Manage list of killed nodes, so we can reuse
 
 ## Website test compiler playground thing
 - [ ] Move WASM memory allocator out of header

@@ -27,7 +27,7 @@ int hash_table(void)
 
         //putchar('\n');
         for (int i = 0; i < 7; ++i) {
-            kai__hash_table_emplace(table, keys[i], values[i]);
+            kai__hash_table_emplace(&table, keys[i], values[i]);
         }
 
         int value;
@@ -49,20 +49,20 @@ int hash_table(void)
         Kai_string s1 = KAI_STRING("\x01\x21");
         Kai_string s2 = KAI_STRING("\x02\x00"); // gauranteed to collide
 
-        kai__hash_table_emplace(table, s0, 0x45);
-        kai__hash_table_emplace(table, s1, 0x46);
-        kai__hash_table_emplace(table, s2, 0x47);
+        kai__hash_table_emplace(&table, s0, 0x45);
+        kai__hash_table_emplace(&table, s1, 0x46);
+        kai__hash_table_emplace(&table, s2, 0x47);
 
-        int* find_before = kai__hash_table_find(table, s2);
+        int* find_before = kai__hash_table_find(&table, s2);
         if (find_before == NULL) return FAIL;
 
-        int* value = kai__hash_table_find(table, s1);
+        int* value = kai__hash_table_find(&table, s1);
         Kai_u32 index = (int)(value - table.values) / sizeof(int);
         kai__hash_table_remove_index(table, index);
         
-        int* find_after = kai__hash_table_find(table, s2);
-        int* find_s0 = kai__hash_table_find(table, s0);
-        int* find_s1 = kai__hash_table_find(table, s1);
+        int* find_after = kai__hash_table_find(&table, s2);
+        int* find_s0 = kai__hash_table_find(&table, s0);
+        int* find_s1 = kai__hash_table_find(&table, s1);
 
         if (find_after == NULL) return FAIL;
         if (*find_after != 0x47) return FAIL;

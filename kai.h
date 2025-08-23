@@ -1097,8 +1097,8 @@ KAI_API (void) kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* allocat
 #define kai__hash_table_destroy(Table)                                         \
   kai__hash_table_destroy_stride(&(Table), allocator, sizeof((Table).values[0]))
 
-#define kai__hash_table_find(Table, Key)                                       \
-  kai__hash_table_find_stride(&(Table), Key, sizeof((Table).values[0]))
+#define kai__hash_table_find(Ptr_Table, Key)                                   \
+  kai__hash_table_find_stride(Ptr_Table, Key, sizeof((Ptr_Table)->values[0]))
 
 #define kai__hash_table_remove_index(Table, Index)                             \
   kai__hash_table_remove_index_stride(&(Table), Index, sizeof((Table).values[0]))
@@ -1115,16 +1115,22 @@ KAI_API (void) kai__array_destroy_stride(void* Ptr_Array, Kai_Allocator* allocat
   for (Kai_u32 Iter_Var = 0; Iter_Var < (Table).capacity; ++Iter_Var)          \
     if ((Table).occupied[Iter_Var / 64] & ((Kai_u64)1 << (Iter_Var % 64)))
 
-#define kai__hash_table_emplace(Table, Key, ...)                               \
+#define kai__hash_table_emplace(Ptr_Table, Key, ...)                           \
   do {                                                                         \
-    Kai_u32 __index__ = kai__hash_table_emplace_key_stride(                    \
-        &(Table), Key, allocator, sizeof((Table).values[0]));                  \
-    (Table).values[__index__] = (__VA_ARGS__);                                 \
+    Kai_u32 __index__; kai__hash_table_emplace_key_stride(Ptr_Table,           \
+        Key, &__index__, allocator, sizeof((Ptr_Table)->values[0]));           \
+    (Ptr_Table)->values[__index__] = (__VA_ARGS__);                            \
   } while (0)
+
+// Only insert key and get index of insertion
+// Return true => new key was inserted
+#define kai__hash_table_emplace_key(Ptr_Table, Key, out_Index)                 \
+  kai__hash_table_emplace_key_stride(Ptr_Table, Key, out_Index, allocator,     \
+                                     sizeof((Ptr_Table)->values[0]))
   
 KAI_API (Kai_u64)  kai__string_hash(Kai_string In);
 KAI_API (void)     kai__hash_table_grow(void* Table, Kai_Allocator* allocator, Kai_u32 Elem_Size);
-KAI_API (Kai_u32)  kai__hash_table_emplace_key_stride(void* Table, Kai_string Key, Kai_Allocator* Allocator, Kai_u32 Elem_Size);
+KAI_API (Kai_bool) kai__hash_table_emplace_key_stride(void* Table, Kai_string Key, Kai_u32* out_Index, Kai_Allocator* Allocator, Kai_u32 Elem_Size);
 KAI_API (void*)    kai__hash_table_find_stride(void* Table, Kai_string Key, Kai_u32 Elem_Size);
 KAI_API (Kai_bool) kai__hash_table_get_stride(void* Table, Kai_string Key, void* out_Value, Kai_u32 Value_Size, Kai_u32 Elem_Size);
 KAI_API (void)     kai__hash_table_destroy_stride(void* Table, Kai_Allocator* allocator, Kai_u32 Elem_Size);
@@ -1611,7 +1617,7 @@ KAI_API (void) kai__hash_table_grow(void* Table, Kai_Allocator* allocator, Kai_u
     table->keys     = keys;
     table->values   = values;
 }
-KAI_API (Kai_u32) kai__hash_table_emplace_key_stride(void* Table, Kai_string Key, Kai_Allocator* Allocator, Kai_u32 Elem_Size)
+KAI_API (Kai_bool) kai__hash_table_emplace_key_stride(void* Table, Kai_string Key, Kai_u32* out_Index, Kai_Allocator* Allocator, Kai_u32 Elem_Size)
 {
     kai__assert(Table != NULL);
     kai__assert(Allocator != NULL);
@@ -1641,21 +1647,23 @@ KAI_API (Kai_u32) kai__hash_table_emplace_key_stride(void* Table, Kai_string Key
             table->hashes[index] = hash;
             table->keys[index] = Key;
             table->count += 1;
-            return index;
+            *out_Index = index;
+            return KAI_TRUE;
         }
 
         // Emplace an existing item
         if (table->hashes[index] == hash
         &&  kai_string_equals(table->keys[index], Key))
         {
-            return index;
+            *out_Index = index;
+            return KAI_FALSE;
         }
 
         index = (index + 1) & mask;
     }
 
     kai__unreachable();
-    return 0xFFFFFFFF;
+    return KAI_FALSE;
 }
 KAI_API (void*) kai__hash_table_find_stride(void* Table, Kai_string Key, Kai_u32 Elem_Size)
 {
@@ -1889,15 +1897,15 @@ KAI_API (void) kai_destroy_error(Kai_Error* Error, Kai_Allocator* allocator)
 
 KAI_API(void) kai_write_number(Kai_Writer* writer, Kai_Number Number)
 {
-    if (Number.is_neg)
-        kai__write_char('-');
-
     // If number is a fraction, write it out as a float
-    if (Number.d != 1 || Number.e < 0)
+    if (!kai_number_is_integer(Number))
     {
         kai__write_f64(kai_number_to_f64(Number));
         return;
     }
+
+    if (Number.is_neg)
+        kai__write_char('-');
 
     // If number fits into u64, write it out as u64
     if ((Kai_u32)(Number.e) <= kai_intrinsic_clz(Number.n))
@@ -1916,8 +1924,8 @@ KAI_API(void) kai_write_number(Kai_Writer* writer, Kai_Number Number)
 static inline Kai_u64 kai__mul_with_shift(Kai_u64 A, Kai_u64 B, Kai_s32* Exp, Kai_bool Sub)
 {
     Kai_u128 full = kai__u128_multiply(A, B);
-    Kai_u64 hi = kai__u128_low(full);
-    Kai_u64 lo = kai__u128_high(full);
+    Kai_u64 hi = kai__u128_high(full);
+    Kai_u64 lo = kai__u128_low(full);
     
     if (hi == 0) {
         // Fits in 64 bits, no shift needed
@@ -3749,14 +3757,14 @@ Kai_Expr kai__parse_expression(Kai__Parser* parser, Kai_s32 prec)
 
 		if (t->type != ']') {
 			kai__expect(t->type == KAI__TOKEN_NUMBER, "in array type", "should be a number here");
-            kai__unreachable(); // TODO: make sure number is an integer
+            kai__todo("make sure number is an integer");
             //rows = (Kai_u32)t->number.Whole_Part;
 		
 			kai__next_token(); // skip number
 			if (t->type == ',') {
 				kai__next_token(); // skip ','
 			    kai__expect(t->type == KAI__TOKEN_NUMBER, "in array type", "should be a number here");
-                kai__unreachable(); // TODO: make sure number is an integer
+                kai__todo("make sure number is an integer");
 				//cols = (Kai_u32)t->number.Whole_Part;
 				kai__next_token(); // skip number
 			}
@@ -5200,55 +5208,77 @@ int kai_interp_step(Kai_Interpreter* interp)
 #ifndef KAI__SECTION_IMPLEMENTATION_COMPILATION
 
 typedef enum {
-	KAI__NODE_START    = 0,
-	KAI__NODE_RETURN   = 1,
-	KAI__NODE_CONSTANT = 2,
-    KAI__NODE_ADD      = 3,
-    KAI__NODE_SUB      = 4,
-    KAI__NODE_MUL      = 5,
-    KAI__NODE_DIV      = 6,
-    KAI__NODE_NEGATE   = 7,
+	KAI__NODE_START        = 0,
+	KAI__NODE_RETURN       = 1,
+	KAI__NODE_CONSTANT     = 2,
+    KAI__NODE_ADD          = 3,
+    KAI__NODE_SUB          = 4,
+    KAI__NODE_MUL          = 5,
+    KAI__NODE_DIV          = 6,
+    KAI__NODE_NEGATE       = 7,
+    KAI__NODE_SCOPE        = 8,
 } Kai__Node_Kind;
 
 typedef enum {
-    KAI__NODE_TYPE_BOTTOM = 0, // Bottom (ALL)
-    KAI__NODE_TYPE_TOP    = 1, // Top    (ANY)
-    KAI__NODE_TYPE_SIMPLE = 2, // End of the Simple Types
-    KAI__NODE_TYPE_NUMBER = 3,
+    KAI__NODE_TYPE_BOTTOM      = 0, // Bottom (ALL)
+    KAI__NODE_TYPE_TOP         = 1, // Top    (ANY)
+    KAI__NODE_TYPE_SIMPLE      = 2, // End of the Simple Types
+    KAI__NODE_TYPE_NUMBER      = 3,
+} Kai__Node_Type_ID;
+
+typedef enum {
+    KAI__NODE_TYPE_IS_CONSTANT = 0x01,
+    KAI__NODE_TYPE_IS_BOTTOM   = 0x02,
+} Kai__Node_Type_Flags;
+
+typedef struct {
+    Kai__Node_Type_ID    id;
+    Kai__Node_Type_Flags flags;
 } Kai__Node_Type;
 
-#define kai__is_simple(TYPE)   ((TYPE)<KAI__NODE_TYPE_SIMPLE)
-#define kai__is_constant(TYPE) ((TYPE)>=KAI__NODE_TYPE_TOP)
+#define KAI__TYPE_BOTTOM  (Kai__Node_Type) {.id = KAI__NODE_TYPE_BOTTOM, .flags = 0}
+#define KAI__TYPE_TOP     (Kai__Node_Type) {.id = KAI__NODE_TYPE_TOP,    .flags = 1}
+
+#define kai__is_simple(TYPE)   ((TYPE).id < KAI__NODE_TYPE_SIMPLE)
+#define kai__is_constant(TYPE) ((TYPE).flags & KAI__NODE_TYPE_IS_CONSTANT)
 
 typedef struct Kai__Node Kai__Node;
-typedef struct Kai__Node {
+typedef KAI__HASH_TABLE(Kai_u32) Kai__Symbol_Table;
+typedef KAI__ARRAY(Kai__Symbol_Table) Kai__Scope_Stack;
+
+struct Kai__Node {
 	Kai_u32                uid;
     Kai__Node_Kind         kind;
     Kai__Node_Type         type;
 	KAI__ARRAY(Kai__Node*) inputs;
 	KAI__ARRAY(Kai__Node*) outputs;
 	Kai_string             source;
-    Kai_u32                value_type;
-    Kai_Number             value;
-} Kai__Node;
+    union Kai__Node_Values {
+        Kai_Number       number;
+        Kai__Scope_Stack scopes;
+    } value;
+};
 
+// Node graph is also just referred to as just "ir"
 typedef struct {
 	Kai__Node* start_node;
-	Kai__Node* return_node;
+    Kai__Node* scope;
+    Kai__Node* _return_node;
 } Kai__Node_Graph;
 
 typedef struct {
-    Kai_Allocator                 allocator;
-    Kai_Syntax_Tree             * tree;
-    Kai__Arena_Allocator          node_arena;
-    Kai_u32                       next_uid;
-    KAI__ARRAY(Kai__Node_Graph)   graph_stack;
-    KAI__ARRAY(Kai__Node_Graph)   graphs;
-
-    Kai_Writer             debug_writer;
+    Kai_Allocator          allocator;
+    Kai_Syntax_Tree      * tree;
+    Kai__Arena_Allocator   node_arena;
+    Kai_u32                next_uid;
+    Kai__Node_Graph        ir;
+    Kai_Writer             debug_writer; // Delete
 } Kai__Compiler_Context;
 
-static inline void kai__write_ir_node(Kai_Writer* writer, Kai__Node* node)
+#define KAI_INTERNAL    static inline
+#define debug_print(X) printf(#X " = %i\n", (int)(X))
+
+KAI_INTERNAL void kai__write_ir_node(Kai_Writer* writer, Kai__Node* node)
 {
 	if (node == NULL)
 		return;
@@ -5260,12 +5290,13 @@ static inline void kai__write_ir_node(Kai_Writer* writer, Kai__Node* node)
     switch (node->kind) {
         case KAI__NODE_START:    { kai__write("START"); } break;
         case KAI__NODE_RETURN:   { kai__write("RETURN"); } break;
-        case KAI__NODE_CONSTANT: { kai_write_number(writer, node->value); } break;
+        case KAI__NODE_CONSTANT: { kai_write_number(writer, node->value.number); } break;
         case KAI__NODE_ADD:      { kai__write("+"); } break;
         case KAI__NODE_SUB:      { kai__write("-"); } break;
         case KAI__NODE_MUL:      { kai__write("*"); } break;
         case KAI__NODE_DIV:      { kai__write("/"); } break;
         case KAI__NODE_NEGATE:   { kai__write("-"); } break;
+        case KAI__NODE_SCOPE:    { kai__write("SCOPE"); } break;
     }
     kai__write("\"");
     if (node->kind == KAI__NODE_CONSTANT)
@@ -5291,152 +5322,248 @@ static inline void kai__write_ir_node(Kai_Writer* writer, Kai__Node* node)
         kai__write(";\n");
     }
 }
-
-static inline void kai__write_ir(Kai_Writer* writer, Kai__Node_Graph* graph)
+KAI_INTERNAL void kai__write_ir(Kai_Writer* writer, Kai__Node_Graph* graph)
 {
 	kai__assert(writer != NULL);
 	kai__assert(graph != NULL);
 
-    kai__write_ir_node(writer, graph->start_node);
-    kai__write_ir_node(writer, graph->return_node);
+    kai__write_ir_node(writer, graph->_return_node);
 }
 
-static inline Kai__Node* kai__new_node(Kai__Compiler_Context* Context, Kai__Node Value)
+#define kai__node_add_use(Node, Used) kai__array_append(&(Node)->outputs, Used)
+#define kai__node_add_input(Node, Input) do { kai__array_append(&(Node)->inputs, Input); kai__node_add_use(Input, Node); } while (0)
+#define kai__node_is_unused(Node) ((Node)->outputs.count == 0)
+
+KAI_INTERNAL Kai__Node* kai__new_node(Kai__Compiler_Context* Context, Kai__Node Value)
 {
     Kai__Node* node = kai__arena_allocate(&Context->node_arena, sizeof(Kai__Node));
     *node = Value;
     node->uid = ++Context->next_uid;
     return node;
 }
-static inline Kai__Node_Graph* kai__current_graph(Kai__Compiler_Context* Context)
+KAI_INTERNAL Kai_bool kai__node_delete_use(Kai__Node* Node, Kai__Node* Use)
 {
-    return &Context->graph_stack.elements[Context->graph_stack.count - 1];
+    kai__array_iterate (Node->outputs, i)
+    {
+        if (Node->outputs.elements[i] == Use)
+        {
+            Node->outputs.elements[i] = Node->outputs.elements[Node->outputs.count - 1];
+            Node->outputs.count -= 1;
+        }
+    }
+    return KAI_BOOL(Node->outputs.count == 0);
 }
-static inline void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* node)
+KAI_INTERNAL void kai__node_free(Kai__Compiler_Context* Context, Kai__Node* Node)
+{
+    Kai_Allocator* allocator = &Context->allocator;
+    kai__array_destroy(&Node->inputs);
+    kai__array_destroy(&Node->outputs);
+}
+KAI_INTERNAL void kai__node_kill(Kai__Compiler_Context* Context, Kai__Node* Node)
+{
+    kai__assert(kai__node_is_unused(Node));
+
+    // Set all inputs to null, recursively killing unused Nodes
+    kai__array_iterate (Node->inputs, i)
+    {
+        Kai__Node* old_def = Node->inputs.elements[i];
+            
+        if (old_def != NULL &&  // If the old def exists, remove a def->use edge
+            kai__node_delete_use(old_def, Node)) // If we removed the last use, the old def is now dead
+            kai__node_kill(Context, old_def);
+    }
+    Node->inputs.count = 0;
+}
+KAI_INTERNAL Kai__Node* kai__node_add_def(Kai__Compiler_Context* Context, Kai__Node* Node, Kai__Node* Def)
+{
+    Kai_Allocator* allocator = &Context->allocator;
+    kai__array_append(&Node->inputs, Def);
+    if (Def != NULL)
+        kai__node_add_use(Def, Node);
+    return Def;
+}
+KAI_INTERNAL Kai__Node* kai__node_set_def(Kai__Compiler_Context* Context, Kai__Node* Node, Kai_u32 Index, Kai__Node* Def)
+{
+    Kai_Allocator* allocator = &Context->allocator;
+    Kai__Node* old_def = Node->inputs.elements[Index];
+
+    if (old_def == Def)
+        return Node; // No change
+        
+    if (Def != NULL)
+        kai__node_add_use(Def, Node);
+
+    if (old_def != NULL &&  // If the old def exists, remove a def->use edge
+        kai__node_delete_use(old_def, Node)) // If we removed the last use, the old def is now dead
+        kai__node_kill(Context, old_def);
+
+    // Set the new_def over the old (killed) edge
+    Node->inputs.elements[Index] = Def;
+    return Def;
+}
+
+#define kai__scope_lookup(Name) \
+  kai__scope_update_or_lookup(Context, Name, NULL, Context->ir.scope->value.scopes.count - 1)
+
+#define kai__scope_update(Name, New_Node) \
+  kai__scope_update_or_lookup(Context, Name, New_Node, Context->ir.scope->value.scopes.count - 1)
+
+KAI_INTERNAL void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* node)
 {
     kai__unused(Context);
     switch (node->kind) {
     default: {
+        debug_print(node->kind);
         KAI__FATAL_ERROR("compute_type", "invalid node type");
     } break;
     case KAI__NODE_CONSTANT: {
-        node->type = KAI__NODE_TYPE_NUMBER;
+        // already have type set for constant nodes
+    } break;
+    case KAI__NODE_RETURN: {
+        node->type = KAI__TYPE_BOTTOM;
     } break;
     case KAI__NODE_NEGATE: {
         Kai__Node* input = node->inputs.elements[0];
-        if (input->type == KAI__NODE_TYPE_NUMBER)
+        if (input->type.id == KAI__NODE_TYPE_NUMBER)
         {
             if (kai__is_constant(input->type))
-            {
-                node->value = kai_number_neg(input->value);
-                node->type = KAI__NODE_TYPE_NUMBER;
-                break;
-            }
+                node->value.number = kai_number_neg(input->value.number);
+            node->type = input->type;
+            break;
         }
-        node->type = KAI__NODE_TYPE_BOTTOM;
+        node->type = KAI__TYPE_BOTTOM;
     } break;
     case KAI__NODE_ADD: {
         Kai__Node* left  = node->inputs.elements[0];
         Kai__Node* right = node->inputs.elements[1];
-        if (left->type == KAI__NODE_TYPE_NUMBER && right->type == KAI__NODE_TYPE_NUMBER)
+        if (left->type.id == KAI__NODE_TYPE_NUMBER && right->type.id == KAI__NODE_TYPE_NUMBER)
         {
+            node->type = left->type;
             if (kai__is_constant(left->type) && kai__is_constant(right->type))
             {
-                node->value = kai_number_add(left->value, right->value);
-                node->type = KAI__NODE_TYPE_NUMBER;
+                node->value.number = kai_number_add(left->value.number, right->value.number);
                 break;
             }
         }
-        node->type = KAI__NODE_TYPE_BOTTOM;
+        node->type = KAI__TYPE_BOTTOM;
     } break;
     case KAI__NODE_SUB: {
         Kai__Node* left  = node->inputs.elements[0];
         Kai__Node* right = node->inputs.elements[1];
-        if (left->type == KAI__NODE_TYPE_NUMBER && right->type == KAI__NODE_TYPE_NUMBER)
+        if (left->type.id == KAI__NODE_TYPE_NUMBER && right->type.id == KAI__NODE_TYPE_NUMBER)
         {
+            node->type = left->type;
             if (kai__is_constant(left->type) && kai__is_constant(right->type))
             {
-                node->value = kai_number_sub(left->value, right->value);
-                node->type = KAI__NODE_TYPE_NUMBER;
+                node->value.number = kai_number_sub(left->value.number, right->value.number);
                 break;
             }
         }
-        node->type = KAI__NODE_TYPE_BOTTOM;
+        node->type = KAI__TYPE_BOTTOM;
     } break;
     case KAI__NODE_MUL: {
         Kai__Node* left  = node->inputs.elements[0];
         Kai__Node* right = node->inputs.elements[1];
-        if (left->type == KAI__NODE_TYPE_NUMBER && right->type == KAI__NODE_TYPE_NUMBER)
+        if (left->type.id == KAI__NODE_TYPE_NUMBER && right->type.id == KAI__NODE_TYPE_NUMBER)
         {
+            node->type = left->type;
             if (kai__is_constant(left->type) && kai__is_constant(right->type))
             {
-                node->value = kai_number_mul(left->value, right->value);
-                node->type = KAI__NODE_TYPE_NUMBER;
+                node->value.number = kai_number_mul(left->value.number, right->value.number);
                 break;
             }
         }
-        node->type = KAI__NODE_TYPE_BOTTOM;
+        node->type = KAI__TYPE_BOTTOM;
     } break;
     case KAI__NODE_DIV: {
         Kai__Node* left  = node->inputs.elements[0];
         Kai__Node* right = node->inputs.elements[1];
-        if (left->type == KAI__NODE_TYPE_NUMBER && right->type == KAI__NODE_TYPE_NUMBER)
+        if (left->type.id == KAI__NODE_TYPE_NUMBER && right->type.id == KAI__NODE_TYPE_NUMBER)
         {
+            node->type = left->type;
             if (kai__is_constant(left->type) && kai__is_constant(right->type))
             {
-                node->value = kai_number_div(left->value, right->value);
-                node->type = KAI__NODE_TYPE_NUMBER;
+                node->value.number = kai_number_div(left->value.number, right->value.number);
                 break;
             }
         }
-        node->type = KAI__NODE_TYPE_BOTTOM;
+        node->type = KAI__TYPE_BOTTOM;
     } break;
     }
 }
-static inline void kai__kill_node(Kai__Compiler_Context* Context, Kai__Node* node)
-{
-    Kai_Allocator* allocator = &Context->allocator;
-    kai__array_destroy(&node->inputs);
-    kai__array_destroy(&node->outputs);
-}
-static inline Kai__Node* kai__idealize(Kai__Compiler_Context* Context, Kai__Node* node)
+KAI_INTERNAL Kai__Node* kai__idealize(Kai__Compiler_Context* Context, Kai__Node* node)
 {
     kai__unused(Context);
     return node;
 }
-static inline Kai__Node* kai__peephole(Kai__Compiler_Context* Context, Kai__Node* node)
+KAI_INTERNAL Kai__Node* kai__peephole(Kai__Compiler_Context* Context, Kai__Node* node)
 {
     Kai_Allocator* allocator = &Context->allocator;
     kai__compute_type(Context, node);
 
-    if (KAI__DISABLE_PEEPHOLES) return node;
+    if (KAI__DISABLE_PEEPHOLES)
+        return node;
 
     if (node->kind != KAI__NODE_CONSTANT && kai__is_constant(node->type))
     {
-        kai__kill_node(Context, node);
+        kai__node_kill(Context, node);
         node->kind = KAI__NODE_CONSTANT;
-        kai__array_append(&node->inputs, kai__current_graph(Context)->start_node);
+        kai__array_append(&node->inputs, Context->ir.start_node);
         return kai__peephole(Context, node);
     }
 
     return kai__idealize(Context, node);
 }
-
-static Kai__Node* kai__generate_ir(Kai__Compiler_Context* Context, Kai_Expr Expr)
+KAI_INTERNAL void kai__scope_define(Kai__Compiler_Context* Context, Kai_string Name, Kai__Node* Node)
 {
     Kai_Allocator* allocator = &Context->allocator;
-    Kai_Writer* writer = kai_writer_stdout();
+    Kai__Scope_Stack* scopes = &Context->ir.scope->value.scopes;
+    Kai__Symbol_Table* table = &scopes->elements[scopes->count - 1];
+    Kai_u32 index = 0;
+    Kai_bool inserted = kai__hash_table_emplace_key(table, Name, &index);
+    kai__assert(inserted == KAI_TRUE);
+    table->values[index] = Context->ir.scope->inputs.count;
+    kai__node_add_def(Context, Context->ir.scope, Node);
+}
+KAI_INTERNAL Kai__Node* kai__scope_update_or_lookup(Kai__Compiler_Context* Context, Kai_string Name, Kai__Node* Node, int depth)
+{
+entry:
+    if (depth < 0)
+        return NULL;
+
+    Kai__Scope_Stack* scopes = &Context->ir.scope->value.scopes;
+    Kai__Symbol_Table* symbols = &scopes->elements[depth];
+    Kai_u32* index = kai__hash_table_find(symbols, Name);
+
+    if (index == NULL)
+    { // recursively look in parent scope
+        depth -= 1;
+        goto entry;
+    }
+
+    Kai__Node* old = Context->ir.scope->inputs.elements[*index];
+
+    if (Node == NULL)
+        return old;
+
+    return kai__node_set_def(Context, Context->ir.scope, *index, Node);
+}
+
+KAI_INTERNAL Kai__Node* kai__generate_ir(Kai__Compiler_Context* Context, Kai_Expr Expr)
+{
+    Kai_Allocator* allocator = &Context->allocator;
 
     void* void_Expr = Expr;
     switch (Expr->id) {
     default: {
-        kai__write_u32(Expr->id);
-        KAI__FATAL_ERROR("unreachable", "unknown expression type");
+        kai__todo("Implement kai__generate_ir for expr.id = %u", Expr->id);
     }
-    break; case KAI_STMT_COMPOUND: {
+    break; case KAI_STMT_COMPOUND:
+    {
         Kai_Stmt_Compound* node = void_Expr;
 
-        // Push scope
+        Kai__Scope_Stack* stack = &Context->ir.scope->value.scopes;
+        kai__array_append(stack, (Kai__Symbol_Table){0}); // Push
 
         Kai_Stmt current = node->head;
         while (current) {
@@ -5444,23 +5571,31 @@ static Kai__Node* kai__generate_ir(Kai__Compiler_Context* Context, Kai_Expr Expr
             current = current->next;
         }
 
-        // Pop scope
+        stack->count -= 1; // Pop
     }
-    break; case KAI_EXPR_PROCEDURE: {
+    break; case KAI_EXPR_PROCEDURE:
+    {
         Kai_Expr_Procedure* node = void_Expr;
         kai__generate_ir(Context, node->body);
     }
-    break; case KAI_EXPR_IDENTIFIER: {
+    break; case KAI_EXPR_IDENTIFIER:
+    {
         Kai_Expr_Identifier* node = void_Expr;
-        kai__unused(node);
+        Kai_string name = node->source_code;
+        Kai__Node* data_node = kai__scope_lookup(name);
+        kai__assert(data_node != NULL);
+        return data_node;
     }
-    break; case KAI_EXPR_UNARY: {
+    break; case KAI_EXPR_UNARY:
+    {
         Kai_Expr_Unary* node = void_Expr;
         Kai__Node* new_node = kai__new_node(Context, (Kai__Node) { .kind = KAI__NODE_NEGATE, .source = node->source_code });
-        kai__array_append(&new_node->inputs, kai__generate_ir(Context, node->expr));
+        Kai__Node* data_node = kai__generate_ir(Context, node->expr);
+        kai__node_add_input(new_node, data_node);
         return kai__peephole(Context, new_node);
     }
-    break; case KAI_EXPR_BINARY: {
+    break; case KAI_EXPR_BINARY:
+    {
         Kai_Expr_Binary* node = void_Expr;
         Kai__Node* new_node = kai__new_node(Context, (Kai__Node) { .source = node->source_code });
         switch (node->op) {
@@ -5469,29 +5604,46 @@ static Kai__Node* kai__generate_ir(Kai__Compiler_Context* Context, Kai_Expr Expr
         case '*': new_node->kind = KAI__NODE_MUL; break;
         case '/': new_node->kind = KAI__NODE_DIV; break;
         }
-        kai__array_append(&new_node->inputs, kai__generate_ir(Context, node->left));
-        kai__array_append(&new_node->inputs, kai__generate_ir(Context, node->right));
+        Kai__Node* left_node = kai__generate_ir(Context, node->left);
+        Kai__Node* right_node = kai__generate_ir(Context, node->right);
+        kai__node_add_input(new_node, left_node);
+        kai__node_add_input(new_node, right_node);
         return kai__peephole(Context, new_node);
     }
-    break; case KAI_STMT_DECLARATION: {
+    break; case KAI_STMT_DECLARATION:
+    {
         Kai_Stmt_Declaration* node = void_Expr;
-        kai__unused(node);
-        kai__unreachable();
+        Kai__Node* data_node = kai__generate_ir(Context, node->expr);
+        kai__scope_define(Context, node->name, data_node);
+        return data_node;
     }
-    break; case KAI_EXPR_NUMBER: {
+    break; case KAI_STMT_ASSIGNMENT:
+    {
+        Kai_Stmt_Assignment* node = void_Expr;
+        kai__assert(node->left->id == KAI_EXPR_IDENTIFIER);
+        Kai_string name = node->left->source_code;
+        Kai__Node* data_node = kai__generate_ir(Context, node->expr);
+        kai__scope_update(name, data_node);
+        return data_node;
+    }
+    break; case KAI_EXPR_NUMBER:
+    {
         Kai_Expr_Number* node = void_Expr;
         Kai__Node* new_node = kai__new_node(Context, (Kai__Node) { .kind = KAI__NODE_CONSTANT, .source = node->source_code });
-        kai__array_append(&new_node->inputs, kai__current_graph(Context)->start_node);
-        new_node->value = node->value;
+        kai__node_add_input(new_node, Context->ir.start_node);
+        new_node->type = (Kai__Node_Type) {.id = KAI__NODE_TYPE_NUMBER, .flags = KAI__NODE_TYPE_IS_CONSTANT};
+        new_node->value.number = node->value;
         return kai__peephole(Context, new_node);
     }
-    break; case KAI_STMT_RETURN: {
+    break; case KAI_STMT_RETURN:
+    {
         Kai_Stmt_Return* node = void_Expr;
         Kai__Node* data_node = kai__generate_ir(Context, node->expr);
-        Kai__Node_Graph* graph = kai__current_graph(Context);
-        Kai__Node* return_node = graph->return_node;
-        kai__array_append(&return_node->inputs, graph->start_node);
-        kai__array_append(&return_node->inputs, data_node);
+        Kai__Node* new_node = kai__new_node(Context, (Kai__Node) { .kind = KAI__NODE_RETURN, .source = node->source_code });
+        kai__node_add_input(new_node, Context->ir.start_node);
+        kai__node_add_input(new_node, data_node);
+        Context->ir._return_node = new_node;
+        return kai__peephole(Context, new_node);
     }
     }
 
@@ -5518,29 +5670,23 @@ KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Progra
 
     {
         Kai_Allocator* allocator = &context.allocator;
-
         Kai_Stmt_Compound* compound = &tree.root;
         kai__assert(compound->head->id == KAI_STMT_DECLARATION);
         Kai_Stmt_Declaration* decl = (void*)compound->head;
         kai__assert(decl->expr != NULL);
         
-        kai__array_append(&context.graph_stack, (Kai__Node_Graph) {
-            .start_node  = kai__new_node(&context, (Kai__Node) { .kind = KAI__NODE_START }),
-            .return_node = kai__new_node(&context, (Kai__Node) { .kind = KAI__NODE_RETURN }),
-        });
-        {
-            kai__generate_ir(&context, decl->expr);
-        }
-        kai__array_append(&context.graphs, *kai__current_graph(&context));
-        context.graph_stack.count -= 1;
+        context.ir.start_node = kai__new_node(&context, (Kai__Node) {.kind = KAI__NODE_START});
+        context.ir.scope = kai__new_node(&context, (Kai__Node){.kind = KAI__NODE_SCOPE});
+        kai__array_append(&context.ir.scope->value.scopes, (Kai__Symbol_Table){0});
+
+        kai__generate_ir(&context, decl->expr);
     }
 
     kai_writer_file_open(&context.debug_writer, "ir.dot");
-    Kai_Writer* writer = &context.debug_writer;
-    kai__for_n (context.graphs.count)
     {
+        Kai_Writer* writer = &context.debug_writer;
         kai__write("digraph {\n");
-        kai__write_ir(writer, &(context.graphs.elements[i]));
+        kai__write_ir(writer, &context.ir);
         kai__write("}\n");
     }
     kai_writer_file_close(&context.debug_writer);
@@ -5642,7 +5788,7 @@ KAI_API (void) kai_destroy_program(Kai_Program Program)
 KAI_API (void*) kai_find_procedure(Kai_Program Program, Kai_string Name, Kai_Type Type)
 {
     kai__unused(Type);
-    Kai_uint* element_ptr = kai__hash_table_find(Program.procedure_table, Name);
+    Kai_uint* element_ptr = kai__hash_table_find(&Program.procedure_table, Name);
     if (element_ptr == NULL)
         return NULL;
     return (void*)*element_ptr;
@@ -5662,32 +5808,27 @@ typedef struct {
 #include <sys/mman.h> // -> mmap
 #include <unistd.h>   // -> getpagesize
 
-// TODO: replace with `kai__jit_allocate`
-static void* kai__memory_allocate(Kai_ptr user, Kai_u32 size, Kai_u32 access)
+static void* kai__memory_jit(Kai_ptr user, void* ptr, Kai_u32 size, Kai_u32 op)
 {
-    int flags = 0;
-    flags |= (access & KAI_MEMORY_ACCESS_READ)?    PROT_READ  : 0;
-    flags |= (access & KAI_MEMORY_ACCESS_WRITE)?   PROT_WRITE : 0;
-    flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)? PROT_EXEC  : 0;
-    void* ptr = mmap(NULL, size, flags, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
-    Kai__Memory_Internal* internal = user;
-    internal->total_allocated += size;
-    return (ptr == MAP_FAILED) ? NULL : ptr;
-}
-static void kai__memory_free(Kai_ptr user, Kai_ptr ptr, Kai_u32 size)
-{
-    munmap(ptr, size);
-    Kai__Memory_Internal* internal = user;
-    internal->total_allocated -= size;
-}
-static void kai__memory_set_access(Kai_ptr user, Kai_ptr ptr, Kai_u32 size, Kai_u32 access)
-{
-    kai__unused(user);
-    int flags = 0;
-    flags |= (access & KAI_MEMORY_ACCESS_READ)?    PROT_READ  : 0;
-    flags |= (access & KAI_MEMORY_ACCESS_WRITE)?   PROT_WRITE : 0;
-    flags |= (access & KAI_MEMORY_ACCESS_EXECUTE)? PROT_EXEC  : 0;
-    mprotect(ptr, size, flags);
+	Kai__Memory_Internal* internal = user;
+	switch (op) {
+	case KAI_MEMORY_ALLOCATE_WRITE_ONLY: {
+        void* new_ptr = mmap(NULL, size, PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
+        if (new_ptr == MAP_FAILED)
+            return NULL;
+        internal->total_allocated += size;
+        return new_ptr;
+	}
+	case KAI_MEMORY_SET_EXECUTABLE: {
+        kai__assert(mprotect(ptr, size, PROT_EXEC) == 0);
+		return NULL;
+	}
+	case KAI_MEMORY_FREE: {
+        kai__assert(munmap(ptr, size) == 0);
+        internal->total_allocated -= size;
+	}
+	}
+    return NULL;
 }
 
 #define kai__page_size() (Kai_u32)sysconf(_SC_PAGESIZE)
@@ -5839,19 +5980,19 @@ static void kai__file_writer_write_value(void* User, Kai_u32 Type, Kai_Value Val
                 base = 'X';
             if (Format.min_count != 0) {
                 if (Format.fill_character != 0) {
-                    char* fmt = "%.*ll.";
+                    char fmt[7] = "%.*ll.";
                     fmt[1] = Format.fill_character;
                     fmt[5] = base;
                     fprintf(f, fmt, Format.min_count, Value.u64);
                 }
                 else {
-                    char* fmt = "%*ll.";
+                    char fmt[6] = "%*ll.";
                     fmt[4] = base;
                     fprintf(f, fmt, Format.min_count, Value.u64);
                 }
                 break;
             }
-            char* fmt = "%ll.";
+            char fmt[5] = "%ll.";
             fmt[3] = base;
             fprintf(f, fmt, Value.u64);
         } break;

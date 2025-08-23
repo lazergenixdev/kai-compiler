@@ -2,6 +2,8 @@ my_function :: () -> s32
 {
 	a := 1;
 	b := 2;
-	c := -1;
-	ret a + b * c;
+	c := 0;
+    b = 3;
+    c = a + b;
+	ret c;
 }
