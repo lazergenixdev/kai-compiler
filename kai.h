@@ -5208,22 +5208,29 @@ int kai_interp_step(Kai_Interpreter* interp)
 #ifndef KAI__SECTION_IMPLEMENTATION_COMPILATION
 
 typedef enum {
-	KAI__NODE_START        = 0,
-	KAI__NODE_RETURN       = 1,
-	KAI__NODE_CONSTANT     = 2,
-    KAI__NODE_ADD          = 3,
-    KAI__NODE_SUB          = 4,
-    KAI__NODE_MUL          = 5,
-    KAI__NODE_DIV          = 6,
-    KAI__NODE_NEGATE       = 7,
-    KAI__NODE_SCOPE        = 8,
+	KAI__NODE_START       = 0, // same as KAI__NODE_MULTI
+	KAI__NODE_RETURN      = 1,
+	KAI__NODE_CONSTANT    = 2,
+    KAI__NODE_ADD         = 3,
+    KAI__NODE_SUB         = 4,
+    KAI__NODE_MUL         = 5,
+    KAI__NODE_DIV         = 6,
+    KAI__NODE_NEGATE      = 7,
+    KAI__NODE_SCOPE       = 8,
+    KAI__NODE_MULTI       = 9,
+    KAI__NODE_PROJECTION  = 10,
+    KAI__NODE_COMPARE     = 11,
+    KAI__NODE_NOT         = 12,
 } Kai__Node_Kind;
 
 typedef enum {
     KAI__NODE_TYPE_BOTTOM      = 0, // Bottom (ALL)
     KAI__NODE_TYPE_TOP         = 1, // Top    (ANY)
-    KAI__NODE_TYPE_SIMPLE      = 2, // End of the Simple Types
-    KAI__NODE_TYPE_NUMBER      = 3,
+    KAI__NODE_TYPE_CONTROL     = 2,
+    KAI__NODE_TYPE_SIMPLE      = 3, // End of the Simple Types
+    KAI__NODE_TYPE_NUMBER      = 4,
+    KAI__NODE_TYPE_PRIMITIVE   = 5, // bool, u8, u16, ...
+    KAI__NODE_TYPE_TUPLE       = 6,
 } Kai__Node_Type_ID;
 
 typedef enum {
@@ -5236,8 +5243,9 @@ typedef struct {
     Kai__Node_Type_Flags flags;
 } Kai__Node_Type;
 
-#define KAI__TYPE_BOTTOM  (Kai__Node_Type) {.id = KAI__NODE_TYPE_BOTTOM, .flags = 0}
-#define KAI__TYPE_TOP     (Kai__Node_Type) {.id = KAI__NODE_TYPE_TOP,    .flags = 1}
+#define KAI__TYPE_BOTTOM  (Kai__Node_Type) {.id = KAI__NODE_TYPE_BOTTOM,  .flags = 0}
+#define KAI__TYPE_TOP     (Kai__Node_Type) {.id = KAI__NODE_TYPE_TOP,     .flags = 1}
+#define KAI__TYPE_CONTROL (Kai__Node_Type) {.id = KAI__NODE_TYPE_CONTROL, .flags = 0}
 
 #define kai__is_simple(TYPE)   ((TYPE).id < KAI__NODE_TYPE_SIMPLE)
 #define kai__is_constant(TYPE) ((TYPE).flags & KAI__NODE_TYPE_IS_CONSTANT)
@@ -5254,8 +5262,10 @@ struct Kai__Node {
 	KAI__ARRAY(Kai__Node*) outputs;
 	Kai_string             source;
     union Kai__Node_Values {
-        Kai_Number       number;
-        Kai__Scope_Stack scopes;
+        Kai_Number       number; // constant node / type = Number
+        Kai__Scope_Stack scopes; // scope node
+        Kai_u32          index; // projection node
+        KAI__ARRAY(Kai__Node_Type) types; // multi-node
     } value;
 };
 
@@ -5297,6 +5307,10 @@ KAI_INTERNAL void kai__write_ir_node(Kai_Writer* writer, Kai__Node* node)
         case KAI__NODE_DIV:      { kai__write("/"); } break;
         case KAI__NODE_NEGATE:   { kai__write("-"); } break;
         case KAI__NODE_SCOPE:    { kai__write("SCOPE"); } break;
+        case KAI__NODE_MULTI:    { kai__write("multi"); } break;
+        case KAI__NODE_PROJECTION: { kai__write_string(node->source); } break;
+        case KAI__NODE_COMPARE:  { kai__write("comp"); } break;
+        case KAI__NODE_NOT:      { kai__write("!"); } break;
     }
     kai__write("\"");
     if (node->kind == KAI__NODE_CONSTANT)
@@ -5420,6 +5434,15 @@ KAI_INTERNAL void kai__compute_type(Kai__Compiler_Context* Context, Kai__Node* n
         // already have type set for constant nodes
     } break;
     case KAI__NODE_RETURN: {
+        node->type = KAI__TYPE_BOTTOM;
+    } break;
+    case KAI__NODE_PROJECTION: {
+        Kai__Node* ctrl = node->inputs.elements[0];
+        if (ctrl->type.id == KAI__NODE_TYPE_TUPLE)
+        {
+            node->type = ctrl->value.types.elements[node->value.index];
+            break;
+        }
         node->type = KAI__TYPE_BOTTOM;
     } break;
     case KAI__NODE_NEGATE: {
@@ -5640,7 +5663,7 @@ KAI_INTERNAL Kai__Node* kai__generate_ir(Kai__Compiler_Context* Context, Kai_Exp
         Kai_Stmt_Return* node = void_Expr;
         Kai__Node* data_node = kai__generate_ir(Context, node->expr);
         Kai__Node* new_node = kai__new_node(Context, (Kai__Node) { .kind = KAI__NODE_RETURN, .source = node->source_code });
-        kai__node_add_input(new_node, Context->ir.start_node);
+        kai__node_add_input(new_node, Context->ir.start_node->outputs.elements[0]);
         kai__node_add_input(new_node, data_node);
         Context->ir._return_node = new_node;
         return kai__peephole(Context, new_node);
@@ -5675,9 +5698,30 @@ KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* Info, Kai_Progra
         Kai_Stmt_Declaration* decl = (void*)compound->head;
         kai__assert(decl->expr != NULL);
         
-        context.ir.start_node = kai__new_node(&context, (Kai__Node) {.kind = KAI__NODE_START});
+        context.ir.start_node = kai__new_node(&context, (Kai__Node) {
+            .kind = KAI__NODE_START,
+            .type = {
+                .id = KAI__NODE_TYPE_TUPLE,
+            },
+        });
+        kai__array_append(&context.ir.start_node->value.types, KAI__TYPE_CONTROL);
+        kai__array_append(&context.ir.start_node->value.types, KAI__TYPE_BOTTOM);
+
         context.ir.scope = kai__new_node(&context, (Kai__Node){.kind = KAI__NODE_SCOPE});
         kai__array_append(&context.ir.scope->value.scopes, (Kai__Symbol_Table){0});
+
+        Kai__Node* ctrl_proj = kai__new_node(&context, (Kai__Node){.kind = KAI__NODE_PROJECTION});
+        ctrl_proj->source = KAI_STRING("$ctrl");
+        ctrl_proj->value.index = 0;
+        kai__node_add_input(ctrl_proj, context.ir.start_node);
+
+        Kai__Node* arg_proj = kai__new_node(&context, (Kai__Node){.kind = KAI__NODE_PROJECTION});
+        arg_proj->source = KAI_STRING("arg");
+        arg_proj->value.index = 1;
+        kai__node_add_input(arg_proj, context.ir.start_node);
+
+        kai__scope_define(&context, KAI_STRING("$ctrl"), kai__peephole(&context, ctrl_proj));
+        kai__scope_define(&context, KAI_STRING("arg"), kai__peephole(&context, arg_proj));
 
         kai__generate_ir(&context, decl->expr);
     }
