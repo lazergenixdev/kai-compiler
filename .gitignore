@@ -15,8 +15,8 @@
 # Visual Studio Code files
 **.vscode
 
-# Build Binaries (except lib.wasm)
-build/*
-!build/bin/
-build/bin/*
-!build/bin/lib.wasm
+# Build Binaries
+build
+build.old
+/tests/*
+!/tests/*.*

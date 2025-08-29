@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE "2025-08-29 13:06:23 PDT"
+#define KAI_BUILD_DATE "2025-08-29 12:26:20 PDT"
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0

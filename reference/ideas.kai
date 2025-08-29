@@ -1,0 +1,98 @@
+
+// Idea: functions that will automatically insert their first argument
+//         by searching for a matching identifier in the local scope
+example :: ()
+{
+    Allocator :: struct {}
+    allocate :: (allocator: Allocator, size: u32) { ret null; }
+
+    allocator: Allocator = get_allocator();
+
+    // this
+    memory := allocate!(100);
+
+    // is same as this
+    memory := allocate(allocator, 100);
+}
+
+// Idea: pointer dereferencing as "[]"
+example :: ()
+{
+    value: int = 7;
+    pointer: *int = *value;
+
+    [pointer] = 0x45;
+}
+
+// Idea: ability to tag any piece of code (== notes in Jai)
+//       (useful for codegen and also reflection)
+example :: ()
+{
+    // {} to parse as a statement, () to parse as a function call
+    Bus :: struct {
+        passengers: *Person; @size(count)
+        count: u32;
+        name: string; @format(width = 24)
+    }
+    @contructor {
+        create_bus :: () -> Bus {
+            ret Bus.{};
+        }
+    }
+
+    // Now the host program could modify the syntax tree
+    // to call `create_bus` as a default contructor
+    bus: Bus;
+
+    // More useful examples
+    Properties :: struct {
+        max: f32; @widget(type = "slider", min = 0, max = 123)
+        frame_limit: u32; @const
+        iterations: u32; @widget(type = "slider", name="i")
+    }
+
+    value: u64 = 0x45; @static
+    ret *value;
+
+    // Note to self:
+    // In Parser: look for '(' -> parse inside as function call
+    //            look for '{' -> parse as statement
+    //            else no expression associated with tag
+    // In CodeGen: tag values should be compile time constants,
+    //             making them runtime values does not make any sense semantically
+}
+
+// Idea: Hash table syntax
+example :: ()
+{
+    // if inside the brackets '[]' there is type 'string'
+    // then the type becomes a hash table
+    table: [string] int;
+
+    table.count; // get number of elements
+    table_set(&table, "this", 123) // sets value of element, overwriting previous value
+    table_find(&table, "this") // get index of element, or -1 if not found
+    table_get(&table, "this") // get element, or -1 if not found
+    table_remove(&table, "this"); // deletes entry
+    table_destroy(&table); // free memory
+}
+
+// Idea: Distinct directive or keyword?
+example :: ()
+{
+    //BigInt :: distinct int;
+    BigInt :: #distinct int;
+}
+
+// COMPILER SPECIFIC
+// Idea: Store bit mask of what is stored on each AST node
+example :: ()
+{
+    Ast :: struct {
+        id:     u8;
+        fields: u16;
+        name:   string; // only present if fields & 0x0001
+        next:   *Ast;   // only present if fields & 0x0002
+        // ...
+    }
+}

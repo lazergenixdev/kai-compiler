@@ -1,0 +1,1406 @@
+
+// Primitive meta-data
+
+Primitive_Type :: enum u32 {
+    //         ID   SIZE
+    U8   =  0 | (1 << 4);
+    U16  =  1 | (2 << 4);
+    U32  =  2 | (4 << 4);
+    U64  =  3 | (8 << 4);
+    S8   =  4 | (1 << 4);
+    S16  =  5 | (2 << 4);
+    S32  =  6 | (4 << 4);
+    S64  =  7 | (8 << 4);
+    F32  =  8 | (4 << 4);
+    F64  =  9 | (8 << 4);
+    TYPE = 10 | (sizeof(*void) << 4);
+}
+
+// Version
+
+version_string :: () -> string
+{
+	ret STRING(VERSION_STRING);
+}
+
+version :: () -> vector3_u32
+{
+	v: vector3_u32;
+	v.x = VERSION_MAJOR;
+	v.y = VERSION_MINOR;
+	v.z = VERSION_PATCH;
+	ret v;
+}
+
+
+// Core Structs
+
+Range :: struct {
+    start: u32;
+    count: u32;
+}
+
+Memory :: struct {
+    size : u32;
+    data : *void;
+}
+
+Result :: enum u32 {
+    SUCCESS        = 0;
+	ERROR_MEMORY   = 1; // allocator failed
+    ERROR_SYNTAX   = 2;
+    ERROR_SEMANTIC = 3;
+    ERROR_INFO     = 4;
+    ERROR_FATAL    = 5; // means compiler bug probably
+    ERROR_INTERNAL = 6; // means compiler error unrelated to source code (e.g. out of memory)
+    RESULT_COUNT   = 7;
+}
+
+Location :: struct {
+    file_name : string;
+    string : string;
+    source : *u8; // source code for this file // TODO: *u8 -> string
+    line : u32;
+}
+
+Error :: struct {
+    result    : Result;
+    location  : Location;
+    message   : string;
+    context   : string;
+    memory    : Memory;
+    next      : *Error;
+}
+
+_range_to_string :: (range: Range, memory: Memory) -> string
+{
+    ret string.{data = memory.data->*u8 + range.start, count = range.count};
+}
+
+
+// Math
+
+_ceil_div :: (num: u64, den: u64) -> u64
+{
+    ret (num + den - 1) / den;
+}
+
+_ceil_div_fast :: (num: u64, exp: u32) -> u64
+{
+    ret ( (num + (1->u64 << exp) - 1) >> exp )->u32;
+}
+
+_max_u32 :: (a: u32, b: u32) -> u32
+{
+    if a < b ret b;
+    ret a;
+}
+
+_min_u32 :: (a: u32, b: u32) -> u32
+{
+    if a < b ret a;
+    ret b;
+}
+
+_gcd :: (a: u64, b: u64) -> u64
+{
+    r: u64 = 1;
+    while r != 0 {
+        r = a % b;
+        a = b;
+        b = r;
+    }
+    ret a;
+}
+
+_ldexp :: (x: f64, n: int) -> f64
+{
+    // Copyright (C) 1993,2004 Sun Microsystems
+	u: union { f: f64; i: u64; };
+	y: f64 = x;
+
+	if (n > 1023) {
+		y *= C("0x1p1023");
+		n -= 1023;
+		if (n > 1023) {
+			y *= C("0x1p1023");
+			n -= 1023;
+			if (n > 1023)
+				n = 1023;
+		}
+	} else if (n < -1022) {
+		/* make sure final n < -53 to avoid double
+		   rounding in the subnormal range */
+		y *= C("0x1p-1022") * C("0x1p53");
+		n += 1022 - 53;
+		if (n < -1022) {
+			y *= C("0x1p-1022") * C("0x1p53");
+			n += 1022 - 53;
+			if (n < -1022)
+				n = -1022;
+		}
+	}
+	u.i = (0x3ff+n)->u64 << 52;
+	x = y * u.f;
+	ret x;
+}
+
+_mul_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
+{
+    full: u128 = intrinsics_u128_multiply(a, b);
+    hi: u64 = intrinsics_u128_high(full);
+    lo: u64 = intrinsics_u128_low(full);
+    
+    if hi == 0 {
+        // Fits in 64 bits, no shift needed
+        ret lo;
+    }
+    
+    // Amount of right shift required to fit in 64 bits
+    shift: s32 = 64 - kai_intrinsics_clz(hi)->s32;
+    
+    if sub { /exp -= shift; }
+    else   { /exp += shift; }
+    ret (hi << (64 - shift)) | (lo >> shift);
+}
+
+_add_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
+{
+    sum: u64 = a + b;
+    carry: u32 = sum < a;
+
+    if !carry ret sum;
+
+    if sub { /exp -= 1; }
+    else   { /exp += 1; }
+    ret (1->u64 << 63) | (sum >> 1);
+}
+
+
+// Memory Allocator
+
+Memory_Command :: enum u32 {
+	ALLOCATE_WRITE_ONLY = 0; // input: Size
+	SET_EXECUTABLE      = 1; // input: Ptr, Size
+	FREE                = 2; // input: Ptr, Size
+};
+
+P_Memory_Heap_Allocate     :: #type (user: *void, ptr: *void, new_size: u32, old_size: u32) -> *void;
+P_Memory_Platform_Allocate :: #type (user: *void, ptr: *void, size: u32, op: Memory_Command) -> *void;
+
+Allocator :: struct {
+    heap_allocate      : *P_Memory_Heap_Allocate;
+    platform_allocate  : *P_Memory_Platform_Allocate;
+    user               : *void;
+    page_size          : u32;
+}
+
+_memory_copy :: (dst: *void, src: *void, size: u32)
+{
+    for i: 0..size-1 {
+        (dst->*u8)[i] = (src->*u8)[i];
+    }
+}
+_memory_zero :: (dst: *void, size: u32)
+{
+    for i: 0..size-1 {
+        (dst->*u8)[i] = 0;
+    }
+}
+_memory_fill :: (dst: *void, byte: u8, size: u32)
+{
+    for i: 0..size-1 {
+        (dst->*u8)[i] = byte;
+    }
+}
+
+
+// Strings
+
+string_equals :: (left: string, right: string) -> bool
+{
+    if left.count != right.count ret false;
+    for i: 0..left.count-1 {
+        if left.data[i] != right.data[i] ret false;
+    }
+    ret true;
+}
+string_from_c :: (s: cstring) -> string
+{
+    count: u32;
+    while (s[count] != 0) count += 1;
+    ret string.{data = s->*u8, count = count};
+}
+string_copy_from_c :: (dst: string, src: cstring) -> string
+{
+    i: u32;
+    while i < dst.count && src[i] != 0 {
+        dst.data[i] = src[i];
+        i += 1;
+    }
+    ret string.{data = dst.data, count = i};
+}
+merge_strings :: (a: string, b: string) -> string
+{
+    left: string;
+    right: string;
+    if a.data < b.data {
+        left  = a;
+        right = b;
+    }
+    else {
+        left  = b;
+        right = a;
+    }
+    ret string.{
+        data = left.data,
+        count = (right.data + right.count->uint - left.data)->u32,
+    };
+}
+
+// Dynamic Array
+
+Raw_Dynamic_Array :: struct {
+    count    : u32;
+    capacity : u32;
+    data     : *void;
+}
+
+raw_array_reserve :: (array: *Raw_Dynamic_Array, new_capacity: u32, allocator: *Allocator, elem_size: u32)
+{    
+    if new_capacity <= array.capacity ret;
+    array.data = allocator.heap_allocate(allocator.user, array.data, new_capacity * elem_size, array.capacity * elem_size);
+    array.capacity = new_capacity;
+}
+
+raw_array_resize :: (array: *Raw_Dynamic_Array, new_size: u32, allocator: *Allocator, elem_size: u32)
+{    
+    raw_array_reserve(array, new_size, allocator, elem_size);
+    array.count = new_size;
+}
+
+raw_array_grow :: (array: *Raw_Dynamic_Array, count: u32, allocator: *Allocator, elem_size: u32)
+{    
+    if (array.count + count) <= array.capacity ret;
+    n: u32 = array.count + count;
+    new_capacity: u32 = _max_u32(n + (n >> 1), 8);
+    raw_array_reserve(array, new_capacity, allocator, elem_size);
+}
+
+
+// Hash Table
+
+Raw_Hash_Table :: struct {
+    count    : u32;
+    capacity : u32;
+    occupied : *u64;
+    hashes   : *u64;
+    keys     : *string;
+    values   : *void;
+}
+
+
+// Type Info Structs
+
+Type_Id :: enum u8 {
+    TYPE      = 0;
+    INTEGER   = 1;
+    FLOAT     = 2;
+    POINTER   = 3;
+    PROCEDURE = 4;
+    ARRAY     = 5;
+    STRUCT    = 6;
+}
+
+Type :: *Type_Info;
+
+Type_Info :: struct {
+    id : u8;
+}
+
+Type_Info_Integer :: struct {
+    id : u8;
+    bits : u8;
+    is_signed : bool;
+}
+
+Type_Info_Float :: struct {
+    id : u8;
+    bits : u8; // 32, 64
+}
+
+Type_Info_Pointer :: struct {
+    id : u8;
+    sub_type : Type;
+}
+
+Type_Info_Procedure :: struct {
+    id : u8;
+    in_count : u8;
+    out_count : u8;
+    sub_types : Type; // list of parameters types, then return types
+}
+
+Type_Info_Array :: struct {
+    id : u8;
+    rows : u32;
+    cols : u32;
+    sub_type : Type;
+}
+
+Type_Info_Struct :: struct {
+    id : u8;
+    field_count : u32;
+    field_types : *Type;
+    field_names : *string;
+}
+
+
+// Numbers
+
+// Number type used for number literals, I call it the dual mantissa number.
+//  - abs(value) = (n/d) * 2^e
+//  - (161 bit) + 31 padding
+Number :: struct {
+    n : u64;
+    d : u64; // never 0 (except when n == 0)
+    is_neg : u32;
+    e : s32;
+}
+
+number_to_u64 :: (number: Number) -> u64
+{
+    ret number.n << number.e;
+}
+
+number_to_f64 :: (number: Number) -> f64
+{
+    if number.n == 0 ret 0.0;
+    
+    val: f64 = number.n->f64 / number.d->f64;
+
+    if number.is_neg {
+        val = -val;
+	}
+
+    ret _ldexp(val, number.e);
+}
+
+number_normalize :: (number: Number) -> Number
+{
+    ns: s32 = intrinsics_ctz(number.n);
+    ds: s32 = intrinsics_ctz(number.d);
+    ex: s32 = number.e + (ns - ds);
+    nu: u64 = number.n >> ns;
+    de: u64 = number.d >> ds;
+    cd: u64 = _gcd(nu, de);
+    ret Number.{
+        n = nu / cd,
+        d = de / cd,
+        is_neg = number.is_neg,
+        e = ex,
+    };
+}
+
+number_neg :: (a: Number) -> Number
+{
+    ret Number.{n = a.n, d = a.d, e = a.e, is_neg = a.is_neg ^ 1};
+}
+
+number_abs :: (a: Number) -> Number
+{
+    ret Number.{n = a.n, d = a.d, e = a.e, is_neg = 0};
+}
+
+number_inv :: (a: Number) -> Number
+{
+    ret Number.{n = a.d, d = a.n, e = -a.e, is_neg = a.is_neg};
+}
+
+number_add :: (a: Number, b: Number) -> Number
+{
+    if a.n == 0 ret b;
+    if b.n == 0 ret a;
+
+    if a.e == b.e
+        ret number_add_same_exp(a, b);
+
+    number_match_exponents(*a, *b);
+    ret number_add_same_exp(a, b);
+}
+
+number_sub :: (a: Number, b: Number) -> Number
+{
+    ret number_add(a, number_neg(b));
+}
+
+number_mul :: (a: Number, b: Number) -> Number
+{
+    if a.n == 0 || b.n == 0
+        ret Number.{};
+
+    ex: s32 = a.e + b.e;
+    d0: u64 = _gcd(a.n, b.d);
+    d1: u64 = _gcd(b.n, a.d);
+    nu: u64 = _mul_with_shift(a.n / d0, b.n / d1, *ex, 0);
+    de: u64 = _mul_with_shift(a.d / d1, b.d / d0, *ex, 1);
+
+    ret number_normalize(Number.{
+        is_neg = a.is_neg ^ b.is_neg,
+        n = nu, d = de, e = ex,
+    });
+}
+
+number_div :: (a: Number, b: Number) -> Number
+{
+    ret number_mul(a, number_inv(b));
+}
+
+number_pow_int :: (a: Number, exp: u32) -> Number
+{
+    r: Number = a;
+    i: s32 = 30 - kai_intrinsics_clz(exp) -> s32;
+    if i >= 0 {
+        bit: u32 = 1->u32 << i;
+        while bit != 0 {
+            r = kai_number_mul(r, r);
+            if exp & bit
+                r = kai_number_mul(r, a);
+            bit = bit >> 1;
+        }
+    }
+    ret r;
+}
+
+number_add_same_exp :: (a: Number, b: Number) -> Number
+{
+    t0e: s32 = 0;
+    t1e: s32 = 0;
+    t0: u64 = _mul_with_shift(a.n, b.d, *t0e, 0);
+    t1: u64 = _mul_with_shift(b.n, a.d, *t1e, 0);
+    ex: s32 = a.e;
+
+    // Exponents have changed, need to make them the same again
+    if t0e != t1e {
+        if (t0e < t1e) {
+            t0 = t0 >> (t1e - t0e);
+            ex += t1e;
+        }
+        else {
+            t1 = t1 >> (t0e - t1e);
+            ex += t0e;
+        }
+    }
+
+    de: u64 = _mul_with_shift(a.d, b.d, *ex, 1);
+    nu: u64;
+
+    // Handle resulting sign, TODO: simplify
+    is_neg: u32 = a.is_neg & b.is_neg;
+    if a.is_neg && !b.is_neg {
+        if t0 > t1 { nu = t0 - t1; is_neg = 1; } // -5 + 1
+        else       { nu = t1 - t0; is_neg = 0; } // -1 + 5
+    }
+    else if b.is_neg && !a.is_neg {
+        if t0 > t1 { nu = t0 - t1; is_neg = 0; } // 5 + -1
+        else       { nu = t1 - t0; is_neg = 1; } // 1 + -5
+    }
+    else {
+        nu = _add_with_shift(t0, t1, *ex, 0);
+    }
+
+    ret number_normalize(Number.{
+        n = nu, d = de, e = ex,
+        is_neg = is_neg,
+    });
+}
+
+number_match_exponents :: (a: *Number, b: *Number)
+{
+    if a.e < b.e {
+        // reduce b.e or increase a.e
+        while a.e != b.e && (a.d >> 63) == 0 {
+            a.d = a.d << 1;
+            a.e += 1;
+        }
+        while a.e != b.e && (b.n >> 63) == 0 {
+            b.n = b.n << 1;
+            b.e -= 1;
+        }
+        // must lose some precision now :(
+        diff: s64 = b.e - a.e;
+        a.n = a.n >> diff->u32;
+        a.e = b.e;
+    }
+    else /* a.e > b.e */ {
+        // reduce a.e or increase b.e
+        while (a.e != b.e && (b.d >> 63) == 0) {
+            b.d = b.d << 1;
+            b.e += 1;
+        }
+        while (a.e != b.e && (a.n >> 63) == 0) {
+            a.n = a.n << 1;
+            a.e -= 1;
+        }
+        // must lose some precision now :(
+        diff: s64 = a.e - b.e;
+        b.n = b.n >> diff->u32;
+        b.e = a.e;
+    }
+}
+
+number_parse_whole :: (source: string, offset: *u32, base: u32) -> Number
+{
+    result: Number;
+    // TODO: Better to call normalize, or leave base as is?
+    base_number: Number = number_normalize(Number.{n = base, d = 1});
+    i: u32 = /offset;
+
+    while i < source.count
+    {
+        ch: u64 = source.data[i];
+        dg: u64;
+
+        if (ch >= #char "0" && ch <= #char "9")
+            dg = ch - #char "0";
+        else if (ch >= #char "A" && ch <= #char "F")
+            dg = (ch - #char "A") + 0xA;
+        else if (ch >= #char "a" && ch <= #char "f")
+            dg = (ch - #char "a") + 0xA;
+        else if (ch == #char "_")
+        {
+            i += 1;
+            continue;
+        }
+        else break;
+
+        if (dg >= base)
+            break;
+
+        result = number_mul(result, base_number);
+        result = number_add(result, Number.{n = dg, d = 1});
+        i += 1;
+    }
+
+    /offset = i;
+    ret result;
+}
+
+number_parse_decimal :: (source: string, offset: *u32) -> Number
+{
+    result: Number;
+    power: Number = Number.{1, 5, 0, -1}; // 1 / 10
+    i: u32 = /offset;
+    
+    while i < source.count
+    {
+        d: u32 = (source.data[i] - #char "0")->u32;
+        if (d > 9) break;
+        
+        h: Number = kai_number_mul(power, Number.{d, 1, 0, 0});
+        result = kai_number_add(result, h);
+        power = kai_number_mul(power, Number.{1, 5, 0, -1}); // 1 / 10
+        i += 1;
+    }
+    
+    /offset = i;
+    ret result;
+}
+
+_powers_of_five: [10] u64 = .{
+    1, 5, 25, 125, 625, 3125, 15625, 78125, 390625, 1953125,
+};
+
+number_parse_exponent :: (source: string, offset: *u32) -> Number
+{
+    result: Number = Number.{1, 1, 0, 0};
+    i: u32 = /offset;
+    
+    while i < source.count
+    {
+        d: u32 = source.data[i] - #char "0";
+        if (d > 9) break;
+        
+        result = kai_number_pow_int(result, 10);
+        result = kai_number_mul(result, Number.{_powers_of_five[d], 1, 0, d}); // 10^d
+        i += 1;
+    }
+    
+    /offset = i;
+    ret result;
+}
+
+Value :: union {
+	u8  : u8;
+	u16 : u16;
+	u32 : u32;
+	u64 : u64;
+	s8  : s8;
+	s16 : s16;
+	s32 : s32;
+	s64 : s64;
+	f32 : f32;
+	f64 : f64;
+}
+
+
+// Writer API
+
+Write_Color :: enum u32 {
+    PRIMARY     = 0;
+    SECONDARY   = 1;
+    IMPORTANT   = 2;
+    IMPORTANT_2 = 3;
+    DECORATION  = 4;
+    COUNT       = 5;
+};
+
+Write_Flags :: enum u32 {
+    NONE        = 0;
+    HEXIDECIMAL = 1 << 0;
+};
+
+Write_Format :: struct {
+    flags : u32;
+    min_count : u32;
+    max_count : u32;
+    fill_character : u8;
+}
+
+P_Write_String :: #type (user: *void, str: string);
+P_Write_Value  :: #type (user: *void, type: u32, value: Value, format: Write_Format);
+P_Set_Color    :: #type (user: *void, color: Write_Color);
+
+Writer :: struct {
+    write_string : *P_Write_String;
+    write_value  : *P_Write_Value;
+    set_color    : *P_Set_Color;
+    user         : *void;
+}
+
+
+// Fixed Arena Allocator
+
+Fixed_Allocator :: struct {
+    data   : *void;
+    offset : u32;
+    size   : u32;
+}
+
+fixed_allocate :: (arena: *Fixed_Allocator, size: u32) -> *void
+{    
+    assert(arena != null);
+    assert(arena.offset + size <= arena.size);
+
+    ptr: *void = arena.data -> *u8 + arena.offset;
+    arena.offset += size;
+    ret ptr;
+}
+
+
+// Arena Allocator
+
+Arena_Bucket :: struct {
+    prev: *Arena_Bucket;
+}
+
+Arena_Allocator :: struct {
+    current_bucket    : *Arena_Bucket;
+    current_allocated : u32;
+    bucket_size       : u32;
+    base              : Allocator;
+}
+
+arena_create :: (arena: *Arena_Allocator, base: *Allocator)
+{
+    assert(arena != null);
+    assert(base != null);
+
+    arena.base = /base;
+    arena.bucket_size = _ceil_div(0x10000, base.page_size) * base.page_size;
+    arena.current_allocated = sizeof(*Arena_Bucket);
+    arena.current_bucket = base.heap_allocate(base.user, null, arena.bucket_size, 0);
+}
+arena_destroy :: (arena: *Arena_Allocator)
+{
+    arena_free_all(arena);
+    arena.bucket_size = 0;
+    arena.base = Allocator.{};
+}
+arena_free_all :: (arena: *Arena_Allocator)
+{
+    assert(arena != null);
+    bucket: *Arena_Bucket = arena.current_bucket;
+
+    while bucket {
+        prev: *Arena_Bucket = bucket.prev;
+        arena.base.heap_allocate(arena.base.user, bucket, 0, arena.bucket_size);
+        bucket = prev;
+    }
+    arena.current_bucket = null;
+    arena.current_allocated = 0;
+}
+arena_allocate :: (arena: *Arena_Allocator, size: u32) -> *void
+{    
+    assert(arena != null);
+
+    if (size > arena.bucket_size)
+        fatal_error("Arena Allocator", "Object size greater than bucket size (incorrect usage)");
+    
+    if (arena.current_allocated + size > arena.bucket_size)
+    {
+        new_bucket: *Arena_Bucket = arena.base.heap_allocate(arena.base.user, null, arena.bucket_size, 0);
+
+        // Bubble failure to caller
+        if new_bucket == null ret null;
+        
+        new_bucket.prev = arena.current_bucket;
+        arena.current_bucket = new_bucket;
+        arena.current_allocated = sizeof(*Arena_Bucket);
+    }
+    bytes: *u8 = arena.current_bucket -> *u8;
+    ptr: *void = bytes + arena.current_allocated;
+    arena.current_allocated += size;
+    ret ptr;
+}
+
+// Buffer
+
+Buffer :: struct {
+    array     : [..] u8;
+    offset    : u32;
+    allocator : Allocator;
+}
+
+_buffer_append_string :: (buffer: *Buffer, s: string)
+{
+    allocator: *Allocator = *buffer.allocator;
+    array_grow(*buffer.array, s.count);
+    _memory_copy(buffer.array.data + buffer.array.count, s.data, s.count);
+    buffer.array.count += s.count;
+}
+
+_buffer_end :: (buffer: *Buffer) -> Range
+{
+    out: Range = Range.{
+        start = buffer.offset,
+        count = buffer.array.count - buffer.offset,
+    };
+    buffer.offset = buffer.array.count;
+    ret out;
+}
+
+_buffer_done :: (buffer: *Buffer) -> Memory
+{
+    memory: Memory = Memory.{
+        data = buffer.array.data,
+        size = buffer.array.capacity,
+    };
+    /buffer = Buffer.{0};
+    ret memory;
+}
+
+
+// Writing
+
+_base10_digit_count :: (x: u32) -> u32
+{
+    if (x <         10) ret 1;
+    if (x <        100) ret 2;
+    if (x <       1000) ret 3;
+    if (x <      10000) ret 4;
+    if (x <     100000) ret 5;
+    if (x <    1000000) ret 6;
+    if (x <   10000000) ret 7;
+    if (x <  100000000) ret 8;
+    if (x < 1000000000) ret 9;
+    ret 0;
+}
+
+_advance_to_line :: (source: *u8, line: u32) -> *u8
+{
+    line -= 1;
+    while line > 0 {
+        if /source == #char "\n"
+            line -= 1;
+        source += 1;
+    }
+    ret source;
+}
+
+// TODO: Audit code
+_write_source_code :: (writer: *Writer, src: *u8)
+{
+    while (/src != 0 && /src != #char "\n")
+    {
+        if (/src == #char "\t")
+            _write(" ");
+        else
+            _write_string(string.{data = src, count = 1});
+        src += 1;
+    }
+}
+
+_utf8_decode :: (s: **u8) -> u32
+{
+    p: *u8 = /s;
+    cp: u32 = 0;
+    len: u32 = 0;
+
+    // No idea if this is right
+    if (p[0] < 0x80)
+    {
+        cp = p[0];
+        len = 1;
+    }
+    else if ((p[0] & 0xE0) == 0xC0)
+    {
+        cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+        len = 2;
+    }
+    else if ((p[0] & 0xF0) == 0xE0)
+    {
+        cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+        len = 3;
+    }
+    else if ((p[0] & 0xF8) == 0xF0)
+    {
+        cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) |
+             ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+        len = 4;
+    }
+    else
+    {
+        cp = 0xFFFD; // Invalid byte
+        len = 1;     // skip
+    }
+
+    /s += len;
+    ret cp;
+}
+
+_unicode_char_width :: (writer: *Writer, cp: u32, first: u8, ch: u8) -> u32
+{
+    count: u32 = 0;
+
+    if ((cp == 0)                         // NULL
+    ||  (cp <  0x20  && cp != #char "\t") // Control not including TAB
+    ||  (cp >= 0x7f  && cp < 0xa0)        // Control
+    ||  (cp >= 0x300 && cp <= 0x36F))     // Combining marks
+        ret 0;
+
+    // Codepoint that would be the width of 2 ascii characters
+    if ((cp >= 0x1100  && cp <= 0x115F)
+    ||  (cp >= 0x2329  && cp <= 0x232A)
+    ||  (cp >= 0x2E80  && cp <= 0xA4CF)
+    ||  (cp >= 0xAC00  && cp <= 0xD7A3)
+    ||  (cp >= 0xF900  && cp <= 0xFAFF)
+    ||  (cp >= 0xFE10  && cp <= 0xFE19)
+    ||  (cp >= 0xFE30  && cp <= 0xFE6F)
+    ||  (cp >= 0xFF00  && cp <= 0xFF60)
+    ||  (cp >= 0xFFE0  && cp <= 0xFFE6)
+    ||  (cp >= 0x1F300 && cp <= 0x1FAFF))
+    {
+        _write_fill(first, 1);
+        first = ch;
+        count += 1;
+    }
+
+    _write_fill(first, 1);
+    first = ch;
+    ret count + 1;
+}
+
+// TODO: Audit code
+_write_source_code_fill :: (writer: *Writer, src: *u8, end: *u8, first: u8, ch: u8)
+{
+    while (src < end && /src != 0 && /src != #char "\n")
+    {
+        cp: u32 = _utf8_decode(*src);
+        _unicode_char_width(writer, cp, first, ch);
+        first = ch;
+    }
+}
+
+result_string_map: [7] string = .{
+    STRING("Success"),
+    STRING("Memory Error"),
+    STRING("Syntax Error"),
+    STRING("Semantic Error"),
+    STRING("Info"),
+    STRING("Fatal Error"),
+    STRING("Internal Error"),
+};
+
+write_error :: (writer: *Writer, error: *Error)
+{
+    while error != null
+    {
+        if (error.result == KAI_SUCCESS) {
+            _write("[Success]\n");
+            ret;
+        }
+        if (error.result >= KAI_RESULT_COUNT) {
+            _write("[Invalid result value]\n");
+            ret;
+        }
+
+        // ------------------------- Write Error Message --------------------------
+
+        _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        _write_string(error.location.file_name);
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
+    //#if KAI_SHOW_LINE_NUMBER_WITH_FILE {
+    //    _write(":");
+    //    _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+    //    _write_u32(error.location.line);
+    //    _set_color(KAI_WRITE_COLOR_PRIMARY);
+    //}
+        _write(" --> ");
+        if error.result != KAI_ERROR_INFO _set_color(KAI_WRITE_COLOR_IMPORTANT);
+        _write_string(result_string_map[error.result]);
+        if error.result != KAI_ERROR_INFO _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _write(": ");
+        _set_color(KAI_WRITE_COLOR_SECONDARY);
+        _write_string(error.message);
+        _write("\n");
+
+        // -------------------------- Write Source Code ---------------------------
+
+        if error.result == KAI_ERROR_FATAL || error.result == KAI_ERROR_INTERNAL {
+            error = error.next;
+            continue;
+        }
+
+        _set_color(KAI_WRITE_COLOR_DECORATION);
+        digits: u32 = _base10_digit_count(error.location.line);
+        _write_fill(#char " ", digits);
+        _write("  |\n");
+
+        _write(" ");
+        _write_u32(error.location.line);
+        _write(" | ");
+
+        // TODO: Should start from location.string.data and go back
+        begin: *u8 = _advance_to_line(error.location.source, error.location.line);
+
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _write_source_code(writer, begin);
+        _write("\n");
+
+        _set_color(KAI_WRITE_COLOR_DECORATION);
+        _write_fill(#char " ", digits);
+        _write("  | ");
+
+        _write_source_code_fill(writer, begin, error.location.string.data, #char " ", #char " ");
+
+        _set_color(KAI_WRITE_COLOR_IMPORTANT);
+        _write_source_code_fill(writer, error.location.string.data,
+            error.location.string.data + error.location.string.count,
+            #char "^", #char "~");
+
+        _write(" ");
+        _write_string(error.context);
+
+        _write("\n");
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        
+        error = error.next;
+    }
+}
+
+write_type :: (writer: *Writer, type: Type)
+{
+    writer->void;
+    type->void;
+}
+
+_Tree_Traversal_Context :: struct {
+    writer: *Writer;
+    stack: [256] u64; // 64 * 256 max depth
+    stack_count: u32;
+    prefix: string;
+}
+
+_tree_traversal_push :: (context: *_Tree_Traversal_Context, is_last: bool)
+{
+    if (is_last) context.stack[context.stack_count/64] |= 1->u64 << (context.stack_count%64);
+    else         context.stack[context.stack_count/64] &= ~(1->u64 << (context.stack_count%64));
+    context.stack_count += 1;
+}
+_tree_traversal_pop :: (context: *_Tree_Traversal_Context)
+{
+    context.stack_count -= 1;
+}
+
+_tree_branches: [4] string = .{
+    STRING("\u2503   "), STRING("\u2523\u2501\u2501 "),
+    STRING("    "),      STRING("\u2517\u2501\u2501 "),
+};
+
+_write_expr_id_with_name :: (writer: *Writer, id: string, name: string)
+{
+    _set_color(KAI_WRITE_COLOR_SECONDARY);
+    _write_string(id);
+    _set_color(KAI_WRITE_COLOR_PRIMARY);
+    if name.count == 0 ret;
+    _write(" (name = \"");
+    _set_color(KAI_WRITE_COLOR_IMPORTANT);
+    _write_string(name);
+    _set_color(KAI_WRITE_COLOR_PRIMARY);
+    _write("\")");
+}
+
+_write_unary_operator_name :: (writer: *Writer, op: u32)
+{
+    if op == {
+    case #char "-"; _write("negate");
+    case #char "*"; _write("pointer to");
+    case #char "["; _write("array");
+    case #char "."; _write("inference");
+    case;           _write("[unknown]");
+    }
+}
+
+_write_binary_operator_name :: (writer: *Writer, op: u32)
+{
+    if op == {
+    case #multi "->"; _write("cast");
+    case #multi "&&"; _write("and");
+    case #multi "||"; _write("or");
+    case #multi "=="; _write("equals");
+    case #multi "<="; _write("less or equal");
+    case #multi ">="; _write("greater or equal");
+    case #char "+";   _write("add");
+    case #char "-";   _write("subtract");
+    case #char "*";   _write("multiply");
+    case #char "/";   _write("divide");
+    case #char "%";   _write("mod");
+    case #char ".";   _write("member access");
+    case #char "[";   _write("index");
+    case;             _write("[unknown]");
+    }
+}
+
+_write_assignment_operator_name :: (writer: *Writer, op: u32)
+{
+    if op == {
+    case #multi "+="; _write("+=");
+    case #multi "-="; _write("-=");
+    case #multi "*="; _write("*=");
+    case #multi "/="; _write("/=");
+    case;             _write("[unknown]");
+    }
+}
+
+_write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
+{
+    writer: *Writer = context.writer;
+
+    _set_color(KAI_WRITE_COLOR_DECORATION);
+    last: u32 = context.stack_count - 1;
+    for i: 0..context.stack_count-1 {
+		bit: u64 = context.stack[i/64] >> (i%64);
+        a: u32 = bit & 1;
+        b: u32 = i == last;
+        _write_string(_tree_branches[(a << 1) | b]);
+    }
+
+    if context.prefix.count > 0 {
+        _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        _write_string(context.prefix);
+        _write(" ");
+        context.prefix = string.{0};
+    }
+    if expr == null {
+        _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        _write("null\n");
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        ret;
+    }
+    if expr.id == {
+        case KAI_EXPR_IDENTIFIER; {
+            _write_expr_id_with_name(writer, STRING("identifier"), expr.name);
+            _write(" \"");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            _write_string(expr.source_code);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write("\"\n");
+        }
+        case KAI_EXPR_STRING; {
+            s: *Expr_String = expr->*void;
+            _write_expr_id_with_name(writer, STRING("string"), expr.name);
+            _write(" ");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            _write_string(s.source_code);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write("\n");
+        }
+        case KAI_EXPR_NUMBER; {
+            n: *Expr_Number = expr->*void;
+            _write_expr_id_with_name(writer, STRING("number"), expr.name);
+            _write(" ");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            write_number(writer, n.value);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write("\n");
+        }
+        case KAI_EXPR_LITERAL; {
+            l: *Expr_Literal = expr->*void;
+            _write_expr_id_with_name(writer, STRING("literal"), expr.name);
+            _write("\n");
+
+            current: *Stmt = l.head;
+            while current {
+                _explore(current, current.next == null);
+                current = current.next;
+            }
+        }
+        case KAI_EXPR_UNARY; {
+            u: *Expr_Unary = expr->*void;
+            _write_expr_id_with_name(writer, STRING("unary"), expr.name);
+            _write(" (op = ");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            _write_unary_operator_name(writer, u.op);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write(")\n");
+
+            _explore(u.expr, true);
+        }
+        case KAI_EXPR_BINARY; {
+            b: *Expr_Binary = expr->*void;
+            _write_expr_id_with_name(writer, STRING("binary"), expr.name);
+            _write(" (op = ");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            _write_binary_operator_name(writer, b.op);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write(")\n");
+
+            _explore(b.left, false);
+            _explore(b.right, true);
+        }
+        case KAI_EXPR_ARRAY; {
+            a: *Expr_Array = expr->*void;
+            _write_expr_id_with_name(writer, STRING("array type"), expr.name);
+            _write(" [");
+            _write_u32(a.rows);
+            _write("x");
+            _write_u32(a.cols);
+            _write("]\n");
+            _explore(a.expr, true);
+        }
+        case KAI_EXPR_PROCEDURE_TYPE; {
+            p: *Expr_Procedure_Type = expr->*void;
+            _write_expr_id_with_name(writer, STRING("procedure type"), expr.name);
+            _write(" (");
+            _write_u32(p.in_count);
+            _write(" in, ");
+            _write_u32(p.out_count);
+            _write(" out)\n");
+
+            end: u32 = p.in_count + p.out_count - 1;
+            current: *Expr = p.in_out_expr;
+
+            if p.in_count for i: 0..p.in_count-1 {
+                context.prefix = STRING("in ");
+                _explore(current, i == end);
+                current = current.next;
+            }
+
+            if p.out_count for i: 0..p.out_count-1 {
+                context.prefix = STRING("out");
+                idx: int = i + p.in_count;
+                _explore(current, idx == end);
+                current = current.next;
+            }
+        }
+        case KAI_EXPR_PROCEDURE_CALL; {
+            p: *Expr_Procedure_Call = expr->*void;
+            _write_expr_id_with_name(writer, STRING("procedure call"), expr.name);
+            _write("\n");
+
+            context.prefix = KAI_STRING("proc");
+            _explore(p.proc, p.arg_count == 0);
+
+            current: *Expr = p.arg_head;
+            while current != null {
+                _explore(current, current.next == null);
+                current = current.next;
+            }
+        }
+        case KAI_EXPR_PROCEDURE; {
+            p: *Expr_Procedure = expr->*void;
+            _write_expr_id_with_name(writer, STRING("procedure"), expr.name);
+            _write(" (");
+            _write_u32(p.in_count);
+            _write(" in, ");
+            _write_u32(p.out_count);
+            _write(" out)\n");
+
+            current: *Expr = p.in_out_expr;
+
+            if p.in_count for i: 0..p.in_count-1 {
+                context.prefix = STRING("in ");
+                _explore(current, false);
+                current = current.next;
+            }
+
+            if p.out_count for i: 0..p.out_count-1 {
+                context.prefix = STRING("out");
+                _explore(current, false);
+                current = current.next;
+            }
+
+            _explore(p.body, true);
+        }
+        case KAI_EXPR_IMPORT; {
+            _write_expr_id_with_name(writer, STRING("import"), expr.name);
+            _write("\n");
+        }
+        case KAI_EXPR_STRUCT; {
+            s: *Expr_Struct = expr->*void;
+            _write_expr_id_with_name(writer, STRING("struct"), expr.name);
+            kai__write("\n");
+
+            current: *Stmt = s.head;
+            while current {
+                _explore(current, current.next == null);
+                current = current.next;
+            }
+        }
+        case KAI_EXPR_ENUM; {
+            e: *Expr_Enum = expr->*void;
+            _write_expr_id_with_name(writer, STRING("enum"), expr.name);
+            kai__write("\n");
+
+            current: *Stmt = e.head;
+            while current {
+                _explore(current, current.next == null);
+                current = current.next;
+            }
+        }
+        case KAI_STMT_RETURN; {
+            r: *Stmt_Return = expr->*void;
+            _write_expr_id_with_name(writer, STRING("return"), expr.name);
+            _write("\n");
+            _explore(r.expr, true);
+        }
+        case KAI_STMT_DECLARATION; {
+            d: *Stmt_Declaration = expr->*void;
+            _write_expr_id_with_name(writer, STRING("declaration"), expr.name);
+            if (d.flags & KAI_FLAG_DECL_CONST) _write(" CONST");
+            _write("\n");
+
+            has_expr: bool = d.expr != null;
+
+            if d.type {
+                context.prefix = STRING("type");
+                _explore(d.type, !has_expr);
+            }
+
+            if has_expr _explore(d.expr, true);
+        }
+        case KAI_STMT_ASSIGNMENT; {
+            a: *Stmt_Assignment = expr->*void;
+            _write_expr_id_with_name(writer, STRING("assignment"), expr.name);
+            if a.op != #char "=" {
+                _write(" (op = ");
+                _set_color(KAI_WRITE_COLOR_IMPORTANT);
+                _write_assignment_operator_name(writer, a.op);
+                _set_color(KAI_WRITE_COLOR_PRIMARY);
+                _write(")");
+            }
+            _write("\n");
+
+            context.prefix = STRING("left ");
+            _explore(a.left, false);
+            context.prefix = STRING("right");
+            _explore(a.expr, true);
+        }
+        case KAI_STMT_COMPOUND; {
+            c: *Stmt_Compound = expr->*void;
+            _write_expr_id_with_name(writer, STRING("compound statement"), expr.name);
+            _write("\n");
+
+            current: *Stmt = c.head;
+            while current {
+                _explore(current, current.next == null);
+                current = current.next;
+            }
+        }
+        case KAI_STMT_IF; {
+            i: *Stmt_If = expr->*void;
+            _write_expr_id_with_name(writer, STRING("if statement"), expr.name);
+            _write("\n");
+
+            context.prefix = STRING("expr");
+            _explore(i.expr, false);
+            _explore(i.then_body, i.else_body == null);
+            if i.else_body != null {
+                _explore(i.else_body, true);
+            }
+        }
+        case KAI_STMT_FOR; {
+            f: *Stmt_For = expr->*void;
+            _write_expr_id_with_name(writer, STRING("for statement"), expr.name);
+            _write(" (iterator name = ");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            _write_string(f.iterator_name);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write(")\n");
+            context.prefix = STRING("from");
+            _explore(f.from, 0);
+            context.prefix = STRING("to");
+            _explore(f.to, 0);
+            _explore(f.body, 1);
+        }
+        case; {
+            _set_color(KAI_WRITE_COLOR_SECONDARY);
+            _write("unknown");
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write(" (id = ");
+            _write_u32(expr.id);
+            _write(")\n");
+        }
+    }
+}
+
+write_expression :: (writer: *Writer, expr: *Expr)
+{
+    context: _Tree_Traversal_Context;
+    context.writer = writer;
+    context.stack[0] = 1;
+    context.stack_count = 1;
+    _write_tree(*context, expr);
+}
+
+write_syntax_tree :: (writer: *Writer, tree: *Syntax_Tree)
+{
+    writer->void;
+    tree->void;
+}
+
+write_number :: (writer: *Writer, number: Number)
+{
+    // If number is a fraction, write it out as a float
+    if !number_is_integer(number) {
+        _write_f64(number_to_f64(number));
+        ret;
+    }
+
+    if number.is_neg {
+        _write("-");
+    }
+
+    // If number fits into u64, write it out as u64
+    if number.e->u32 <= intrinsics_clz(number.n) {
+        _write_u64(number_to_u64(number));
+        ret;
+    }
+
+    // Might change this to just write as float, this representation
+    // is accurate, but don't know how useful it actually is
+    _write_u64(number.n);
+    _write(" * 2^");
+    _write_s32(number.e);
+}

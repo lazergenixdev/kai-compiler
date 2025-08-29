@@ -1,4 +1,0 @@
-my_function :: (arg: s32) -> s32
-{
-	ret arg;
-}

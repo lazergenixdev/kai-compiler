@@ -1,0 +1,1821 @@
+
+Expr_Id :: enum u8 {
+    EXPR_IDENTIFIER     = 0; // no struct
+    EXPR_STRING         = 1;
+    EXPR_NUMBER         = 2;
+    EXPR_LITERAL        = 3;
+    EXPR_UNARY          = 4;
+    EXPR_BINARY         = 5;
+    EXPR_PROCEDURE_TYPE = 6;
+    EXPR_PROCEDURE_CALL = 7;
+    EXPR_PROCEDURE      = 8;
+    EXPR_CODE           = 9;
+    EXPR_IMPORT         = 10; // no struct
+    EXPR_STRUCT         = 11;
+    EXPR_ENUM           = 12;
+    EXPR_ARRAY          = 13;
+    STMT_RETURN         = 14;
+    STMT_DECLARATION    = 15;
+    STMT_ASSIGNMENT     = 16;
+    STMT_IF             = 17;
+    STMT_WHILE          = 18;
+    STMT_FOR            = 19;
+    STMT_CONTROL        = 20;
+    STMT_COMPOUND       = 21;
+}
+
+Control_Kind :: enum u8 {
+    CONTROL_CASE     = 0;
+    CONTROL_BREAK    = 1;
+    CONTROL_CONTINUE = 2;
+    CONTROL_THROUGH  = 3;
+    CONTROL_DEFER    = 4;
+}
+
+Expr_Flags :: enum u8 {
+    FLAG_DECL_CONST   = 1 << 0;
+    FLAG_DECL_USING   = 1 << 1;
+    FLAG_EXPR_USING   = 1 << 1;
+    FLAG_PROC_USING   = 1 << 1;
+	FLAG_STRUCT_UNION = 1 << 2;
+    FLAG_IF_CASE      = 1 << 2;
+}
+
+Expr :: struct {
+    id          : Expr_Id;
+    flags       : Expr_Flags;
+    source_code : string;
+    name        : string;
+    next        : *Expr;
+    line_number : u32;
+}
+
+Stmt :: Expr;
+
+Expr_String :: struct {
+    using Expr;
+    value : string;
+}
+
+Expr_Number :: struct {
+    using Expr;
+    value : Number;
+}
+
+Expr_Literal :: struct {
+    using Expr;
+    head: *Expr;
+    count: u32;
+}
+
+Expr_Unary :: struct {
+    using Expr;
+    expr : *Expr;
+    op : u32;
+}
+
+Expr_Binary :: struct {
+    using Expr;
+    left : *Expr;
+    right : *Expr;
+    op : u32;
+}
+
+Expr_Procedure_Call :: struct {
+    using Expr;
+    proc : *Expr;
+    arg_head : *Expr;
+    arg_count : u8;
+}
+ 
+Expr_Procedure_Type :: struct {
+    using Expr;
+    in_out_expr : *Expr;
+    in_count : u8;
+    out_count : u8;
+}
+
+Expr_Procedure :: struct {
+    using Expr;
+    in_out_expr : *Expr;
+    body : *Stmt;
+    in_count : u8;
+    out_count : u8;
+}
+
+Expr_Struct :: struct {
+    using Expr;
+	field_count : u32;
+    head : *Stmt;
+}
+
+Expr_Enum :: struct {
+    using Expr;
+	type : *Expr;
+	field_count : u32;
+    head : *Stmt;
+}
+
+Expr_Array :: struct {
+    using Expr;
+    rows : u32;
+    cols : u32;
+    expr : *Expr;
+}
+
+Stmt_Return :: struct {
+    using Expr;
+    expr : *Expr; // optional
+}
+
+Stmt_Declaration :: struct {
+    using Expr;
+    expr : *Expr;
+    type : *Expr; // optional
+}
+
+Stmt_Assignment :: struct {
+    using Expr;
+    op   : u32;
+    left : *Expr;
+    expr : *Expr;
+}
+
+Stmt_Compound :: struct {
+    using Expr;
+    head : *Stmt;
+}
+
+Stmt_If :: struct {
+    using Expr;
+    expr      : *Expr;
+    then_body : *Stmt;
+    else_body : *Stmt;
+}
+
+Stmt_While :: struct {
+    using Expr;
+    expr : *Expr;
+    body : *Stmt;
+}
+
+Stmt_For :: struct {
+    using Expr;
+    body : *Stmt;
+    from : *Expr;
+    to   : *Expr; // optional (interates through `from` if this is null)
+    iterator_name : string;
+}
+
+Stmt_Control :: struct {
+    using Expr;
+    kind : u8;
+    expr : *Expr;
+}
+
+Syntax_Tree :: struct {
+    root            : Stmt_Compound;
+    source_filename : string; // TODO: rename
+    allocator       : Arena_Allocator; // TODO: arena for each syntax tree? ok or no?
+}
+
+Syntax_Tree_Create_Info :: struct {
+	source_code : string;    // input
+	allocator   : Allocator; // input
+	error       : *Error;    // [output]
+}
+
+Expr_List :: LINKED_LIST(Expr);
+Stmt_List :: LINKED_LIST(Stmt);
+
+// Keywords
+
+_keyword_map: [32] u8 = .{
+    8, // if
+    10, // ret
+    1, // case
+    14, // while
+    4, // defer
+    8, // if
+    8, // if
+    8, // if
+    13, // using
+    8, // if
+    12, // union
+    8, // if
+    0, // break
+    9, // loop
+    8, // if
+    8, // if
+    3, // continue
+    2, // cast
+    8, // if
+    6, // enum
+    5, // else
+    11, // struct
+    7, // for
+    8, // if
+    8, // if
+    8, // if
+    8, // if
+    8, // if
+    8, // if
+    8, // if
+    8, // if
+    8, // if
+};
+
+_keywords: [15] string = .{
+    STRING("break"),
+    STRING("case"),
+    STRING("cast"),
+    STRING("continue"),
+    STRING("defer"),
+    STRING("else"),
+    STRING("enum"),
+    STRING("for"),
+    STRING("if"),
+    STRING("loop"),
+    STRING("ret"),
+    STRING("struct"),
+    STRING("union"),
+    STRING("using"),
+    STRING("while"),
+};
+
+_hash_keyword :: (s: string) -> u32 {
+	h: u32 = 0;
+    i: u32 = 0;
+    while i < 8 && i < s.count {
+		h = ((h << 4) + h) + s.data[i] + #char "a";
+        i += 1;
+    }
+	ret h % 27;
+}
+
+// Tokenizer
+
+Token_Id :: enum u32 {
+    TOKEN_END        = 0;
+    TOKEN_IDENTIFIER = 1;
+    TOKEN_NUMBER     = 2;
+    TOKEN_DIRECTIVE  = 3;
+    TOKEN_STRING     = 4;
+    TOKEN_break      = 0x80;
+    TOKEN_case       = 0x81;
+    TOKEN_cast       = 0x82;
+    TOKEN_continue   = 0x83;
+    TOKEN_defer      = 0x84;
+    TOKEN_else       = 0x85;
+    TOKEN_enum       = 0x86;
+    TOKEN_for        = 0x87;
+    TOKEN_if         = 0x88;
+    TOKEN_loop       = 0x89;
+    TOKEN_ret        = 0x8A;
+    TOKEN_struct     = 0x8B;
+    TOKEN_union      = 0x8C;
+    TOKEN_using      = 0x8D;
+    TOKEN_while      = 0x8E;
+}
+
+Token :: struct {
+    id : Token_Id;
+    line_number : u32;
+    string : string; // TODO: rename to `source_code`
+    value : struct {
+        string : string;
+        number : Number;
+    };
+}
+
+write_token :: (writer: *Writer, token: Token)
+{
+    symbol: bool = false;
+    if token.id == {
+        case KAI_TOKEN_IDENTIFIER;
+        _write("Identifier");
+        case KAI_TOKEN_STRING;
+        _write("String");
+        case KAI_TOKEN_NUMBER;
+        _write("Number");
+        case KAI_TOKEN_DIRECTIVE;
+        _write("Directive");
+        case;
+        symbol = true;
+    }
+    if !symbol _write("(");
+    if token.id > 256
+        // TODO: fix for different byte-orders (need to shift out characters manually)
+        //_write_string(string.{data = *token.id -> *u8, count = 2});
+        _write_u32(token.id);
+    else
+        _write_string(token.string);
+    if !symbol _write(")");
+}
+
+token_string :: (id: Token_Id, dst: string) -> string
+{
+    assert(dst.count >= 12);
+
+    if id == {
+    case KAI_TOKEN_END; ret string_copy_from_c(dst, "end of file");
+    case KAI_TOKEN_IDENTIFIER; ret string_copy_from_c(dst, "identifier");
+    case KAI_TOKEN_NUMBER; ret string_copy_from_c(dst, "number");
+    case KAI_TOKEN_DIRECTIVE; ret string_copy_from_c(dst, "directive");
+    case KAI_TOKEN_STRING; ret string_copy_from_c(dst, "string");
+    case KAI_TOKEN_break; ret string_copy_from_c(dst, "'break'");
+    case KAI_TOKEN_case; ret string_copy_from_c(dst, "'case'");
+    case KAI_TOKEN_cast; ret string_copy_from_c(dst, "'cast'");
+    case KAI_TOKEN_continue; ret string_copy_from_c(dst, "'continue'");
+    case KAI_TOKEN_defer; ret string_copy_from_c(dst, "'defer'");
+    case KAI_TOKEN_else; ret string_copy_from_c(dst, "'else'");
+    case KAI_TOKEN_enum; ret string_copy_from_c(dst, "'enum'");
+    case KAI_TOKEN_for; ret string_copy_from_c(dst, "'for'");
+    case KAI_TOKEN_if; ret string_copy_from_c(dst, "'if'");
+    case KAI_TOKEN_loop; ret string_copy_from_c(dst, "'loop'");
+    case KAI_TOKEN_ret; ret string_copy_from_c(dst, "'ret'");
+    case KAI_TOKEN_struct; ret string_copy_from_c(dst, "'struct'");
+    case KAI_TOKEN_union; ret string_copy_from_c(dst, "'union'");
+    case KAI_TOKEN_using; ret string_copy_from_c(dst, "'using'");
+    case KAI_TOKEN_while; ret string_copy_from_c(dst, "'while'");
+    case;
+        dst.data[0] = #char "'";
+        i: u32 = 0;
+        while i <= 3 {
+            ch: u8 = (id >> (i*8)) -> u8;
+            if ch == 0 break;
+            dst.data[i+1] = ch;
+            i += 1;
+        }
+        dst.data[i+1] = #char "'";
+        ret string.{data = dst.data, count = i+2};
+    }
+}
+
+Tokenizer :: struct {
+    current_token : Token;
+    peeked_token  : Token;
+    source        : string;
+    cursor        : u32;
+    line_number   : u32;
+    peeking       : bool;
+    string_arena  : Fixed_Allocator;
+}
+
+_parse_fractional_part :: (source: string, offset: *u32, start: Number) -> Number
+{
+    // Fractional Part
+    if (/offset < source.count && source.data[/offset] == #char "."
+    && !(/offset+1 < source.count && source.data[/offset+1] == #char "."))
+    {
+        /offset += 1;
+        decimal: Number = number_parse_decimal(source, offset);
+        start = number_add(start, decimal);
+    }
+
+    // Parse Exponential Part
+    if (/offset < source.count
+    && (source.data[/offset] == #char "e" || source.data[/offset] == #char "E"))
+    {
+        is_neg: bool = false;
+        
+        /offset += 1;
+        if (/offset < source.count)
+        {
+            if (source.data[/offset] == #char "-") { /offset += 1; is_neg = true; }
+            if (source.data[/offset] == #char "+") { /offset += 1; } // skip
+        }
+        
+        exponent: Number = number_parse_exponent(source, offset);
+        if (is_neg) exponent = number_inv(exponent);
+        start = number_mul(start, exponent);
+    }
+
+    ret start;
+}
+
+_make_multi_token :: (context: *Tokenizer, t: *Token, current: u8) -> bool
+{
+    if context.cursor >= context.source.count
+        ret false;
+
+    if current == {
+    case #char "&"; {
+        if context.source.data[context.cursor] == #char "&" {
+            t.id = #multi "&&"; ret true;
+        }
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "&="; ret true;
+        }
+    }
+    case #char "|"; {
+        if context.source.data[context.cursor] == #char "|" {
+            t.id = #multi "||"; ret true;
+        }
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "|="; ret true;
+        }
+    }
+    case #char "="; {
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "=="; ret true;
+        }
+    }
+    case #char ">"; {
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi ">="; ret true;
+        }
+        if context.source.data[context.cursor] == #char ">" {
+            t.id = #multi ">>"; ret true;
+        }
+    }
+    case #char "<"; {
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "<="; ret true;
+        }
+        if context.source.data[context.cursor] == #char "<" {
+            t.id = #multi "<<"; ret true;
+        }
+    }
+    case #char "!"; {
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "!="; ret true;
+        }
+    }
+    case #char "+"; {
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "+="; ret true;
+        }
+    }
+    case #char "-"; {
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "-="; ret true;
+        }
+        if context.source.data[context.cursor] == #char ">" {
+            t.id = #multi "->"; ret true;
+        }
+        if (context.cursor + 1 < context.source.count &&
+            context.source.data[context.cursor] == #char "-" &&
+            context.source.data[context.cursor+1] == #char "-"
+        ) {
+            t.id = #multi "---";
+            context.cursor += 1;
+            t.string.count += 1;
+            ret true;
+        }
+    }
+    case #char "*"; {
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "*="; ret true;
+        }
+    }
+    case #char "/"; {
+        if context.source.data[context.cursor] == #char "=" {
+            t.id = #multi "/="; ret true;
+        }
+    }
+    }
+    ret false;
+}
+
+_W :: 1 << 1 | 1; // White space
+_T :: 2 << 1 | 1; // Character Token
+_D :: 3 << 1 | 1; // Directive
+_K :: 1 << 1 | 0; // Keyword
+_N :: 2 << 1 | 0; // Number
+_C :: 5 << 1 | 1; // Comment
+_S :: 7 << 1 | 1; // String
+_Z :: 8 << 1 | 1; // Dot Symbol
+
+// TODO: table isn't really necessary
+_token_lookup_table: [128] u8 = .{
+//  0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
+   _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, // 0
+   _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, // 1
+   _W, _T, _S, _D, _T, _T, _T, _T, _T, _T, _T, _T, _T, _T, _Z, _C, // 2
+   _N, _N, _N, _N, _N, _N, _N, _N, _N, _N, _T, _T, _T, _T, _T, _T, // 3
+   _T,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 4
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, _T, _T, _T, _T,  0, // 5
+   _T,  0, _K, _K, _K, _K, _K,  0,  0, _K,  0,  0, _K,  0,  0,  0, // 6
+    0,  0, _K, _K,  0, _K,  0, _K,  0,  0,  0, _T, _T, _T, _T, _W, // 7
+};
+
+tokenizer_generate :: (context: *Tokenizer) -> Token
+{
+    token: Token = Token.{
+        id = KAI_TOKEN_END,
+        line_number = context.line_number,
+    };
+
+    while context.cursor < context.source.count
+    {
+        token.string.data = context.source.data + context.cursor;
+        ch: u8 = token.string.data[0];
+        where: u32;
+
+        // treat every multi-byte unicode symbol as just an identifier
+        if !(ch & 0x80)
+            where = _token_lookup_table[ch];
+
+        if where == {
+        /////////////////////////////////////////////////////////////////////////////////
+        // Identifiers
+        case 0; {
+            token.id = KAI_TOKEN_IDENTIFIER;
+            start: u32 = context.cursor;
+            context.cursor += 1;
+            while (context.cursor < context.source.count) {
+                c: u8 = context.source.data[context.cursor];
+                if c < 128 && (_token_lookup_table[c]&1)
+                    break;
+                context.cursor += 1;
+            }
+            token.string.count = context.cursor - start;
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Whitespace
+        case _W; {
+            if ch == #char "\r" {
+                // Handle Windows: CR LF
+                if _next_character_equals(#char "\n")
+                    context.cursor += 1;
+                context.line_number += 1;
+            }
+            else if ch == #char "\n" {
+                context.line_number += 1;
+            }
+            token.line_number = context.line_number;
+            context.cursor += 1;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Numbers
+        case _N; {
+            token.id = KAI_TOKEN_NUMBER;
+            start: u32 = context.cursor;
+
+            // Integer
+            if ch == #char "0" {
+                context.cursor += 1;
+                if context.cursor < context.source.count
+                {
+                    if (context.source.data[context.cursor] == #char "b")
+                    {
+                        context.cursor += 1;
+                        token.value.number = number_parse_whole(context.source, *context.cursor, 2);
+                        token.string.count = context.cursor - start;
+                        ret token;
+                    }
+                    if (context.source.data[context.cursor] == #char "x")
+                    {
+                        context.cursor += 1;
+                        token.value.number = number_parse_whole(context.source, *context.cursor, 16);
+                        token.string.count = context.cursor - start;
+                        ret token;
+                    }
+                }
+            }
+            token.value.number = number_parse_whole(context.source, *context.cursor, 10);
+            token.value.number = _parse_fractional_part(context.source, *context.cursor, token.value.number);
+            token.string.count = context.cursor - start;
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Directives
+        case _D; {
+            token.id = KAI_TOKEN_DIRECTIVE;
+            start: u32 = context.cursor;
+            context.cursor += 1;
+            while (context.cursor < context.source.count) {
+                c: u8 = context.source.data[context.cursor];
+                if c < 128 && (_token_lookup_table[c]&1)
+                    break;
+                context.cursor += 1;
+            }
+            token.string.count = context.cursor - start;
+            token.value.string = token.string;
+            token.value.string.count -= 1;
+            token.value.string.data += 1;
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Keywords
+        case _K; {
+            token.id = KAI_TOKEN_IDENTIFIER;
+            start: u32 = context.cursor;
+            context.cursor += 1;
+            while (context.cursor < context.source.count) {
+                c: u8 = context.source.data[context.cursor];
+                if c < 128 && (_token_lookup_table[c]&1)
+                    break;
+                context.cursor += 1;
+            }
+            token.string.count = context.cursor - start;
+
+            // Check if the string we just parsed is a keyword
+            hash: u32 = _hash_keyword(token.string);
+            keyword_index: u8 = _keyword_map[hash];
+            if string_equals(_keywords[keyword_index], token.string) {
+                token.id = 0x80 | keyword_index;
+                ret token;
+            }
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Strings
+        case _S; {
+            token.id = KAI_TOKEN_STRING;
+            token.string.count = 1;
+            context.cursor += 1;
+            count: u32 = 0;
+            token.value.string = string.{0};
+            while (context.cursor < context.source.count) {
+                if context.source.data[context.cursor] == #char "\"" {
+                    break;
+                }
+                ch: u8 = context.source.data[context.cursor];
+                if ch == #char "\\" {
+                    context.cursor += 1;
+                    token.string.count += 1;
+                    if context.cursor >= context.source.count
+                        break;
+                    
+                    ch = context.source.data[context.cursor];
+                    if ch == {
+                    case #char "\\"; ch = #char "\\";
+                    case #char "\""; ch = #char "\"";
+                    case #char "t"; ch = #char "\t";
+                    case #char "r"; ch = #char "\r";
+                    case #char "n"; ch = #char "\n";
+                    case #char "e"; ch = #char "\e";
+                    // TODO: output warning here somehow
+                    //case;
+                        //printf("!!! warning: could not escape '%c'\n", ch);
+                    }
+                }
+                data: *u8 = fixed_allocate(*context.string_arena, 1);
+                /data = ch;
+                if (token.value.string.data == null)
+                    token.value.string.data = data;
+                count += 1;
+                context.cursor += 1;
+            }
+            context.cursor += 1;
+            token.string.count += count + 1;
+            token.value.string.count = count;
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Comment
+        case _C; {
+            token.string.data = context.source.data + context.cursor;
+            context.cursor += 1;
+
+            if context.cursor < context.source.count && context.source.data[context.cursor] == #char "/" {
+                // single line comment
+                while (context.cursor < context.source.count) {
+                    if (context.source.data[context.cursor] == #char "\r" ||
+                        context.source.data[context.cursor] == #char "\n")
+                        break;
+                    context.cursor += 1;
+                }
+                break;
+            }
+
+            // multi-line comment
+            if (context.source.data[context.cursor] == #char "*") {
+                context.cursor += 1;
+                // TODO: need to skip "/*" and "*/" in strings
+                depth: u32 = 1;
+                while depth > 0 && context.cursor < context.source.count
+                {
+                    if (context.source.data[context.cursor] == #char "/"
+                    &&  (context.cursor + 1) < context.source.count
+                    &&  context.source.data[context.cursor+1] == #char "*") {
+                        context.cursor += 2;
+                        depth += 1;
+                        continue;
+                    }
+
+                    if (context.source.data[context.cursor] == #char "*"
+                    &&  (context.cursor + 1) < context.source.count
+                    &&  context.source.data[context.cursor+1] == #char "/") {
+                        context.cursor += 2;
+                        depth -= 1;
+                        continue;
+                    }
+
+                    if (context.source.data[context.cursor] == #char "\r") {
+                        // Handle Windows: CR LF
+                        if _next_character_equals(#char "\n")
+                            context.cursor += 1;
+                        context.line_number += 1;
+                    }
+                    else if (context.source.data[context.cursor] == #char "\n") {
+                        context.line_number += 1;
+                    }
+
+                    context.cursor += 1;
+                }
+                break;
+            }
+
+            // otherwise just a divide symbol
+            token.id = #char "/";
+            token.string.count = 1;
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Single/Multi Character Tokens
+        case _T; {
+            token.id = ch->u32;
+            token.string.count = 1;
+            context.cursor += 1;
+            if _make_multi_token(context, *token, ch) {
+                context.cursor += 1;
+                token.string.count += 1;
+            }
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Dot Token
+        case _Z; {
+            if _next_character_equals(#char ".") {
+                context.cursor += 2;
+                token.string.count = 2;
+                token.id = #multi "..";
+                ret token;
+            }
+            if (context.cursor + 1) < context.source.count &&
+                context.source.data[context.cursor + 1] >= #char "0" &&
+                context.source.data[context.cursor + 1] <= #char "9"
+            {
+                token.id = KAI_TOKEN_NUMBER;
+                start: u32 = context.cursor;
+                token.value.number = _parse_fractional_part(context.source, *context.cursor, token.value.number);
+                token.string.count = context.cursor - start;
+                ret token;
+            }
+            // Not ".." or Number? then single character token
+            context.cursor += 1;
+            token.string.count = 1;
+            token.id = ch->u32;
+            ret token;
+        }
+        }
+    }
+    ret token;
+}
+
+tokenizer_next :: (context: *Tokenizer) -> *Token
+{
+    if !context.peeking {
+        context.current_token = tokenizer_generate(context);
+        ret *context.current_token;
+    }
+    context.peeking = false;
+    context.current_token = context.peeked_token;
+    ret *context.current_token;
+}
+
+tokenizer_peek :: (context: *Tokenizer) -> *Token
+{
+    if context.peeking
+        ret *context.peeked_token;
+    context.peeking = true;
+    context.peeked_token = tokenizer_generate(context);
+    ret *context.peeked_token;
+}
+
+// Parser
+
+Parser :: struct {
+    tokenizer : Tokenizer;
+    arena     : Arena_Allocator;
+    error     : *Error;
+}
+
+_error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: string) -> *void
+{
+    // Report only the first Syntax Error
+    if parser.error.result != KAI_SUCCESS
+        ret null;
+
+    buffer: Buffer = Buffer.{allocator = parser.arena.base};
+    temp: [32] u8;
+    temp_string: string = string.{data = temp, count = sizeof(temp)};
+
+    _buffer_append_string(*buffer, STRING("unexpected "));
+    _buffer_append_string(*buffer, token_string(token.id, temp_string));
+    _buffer_append_string(*buffer, STRING(" "));
+    _buffer_append_string(*buffer, where);
+    message: Range = _buffer_end(*buffer);
+    memory: Memory = _buffer_done(*buffer);
+
+    /parser.error = Error.{
+        result = KAI_ERROR_SYNTAX,
+        location = Location.{
+            string = token.string,
+            line = token.line_number,
+        },
+        message = _range_to_string(message, memory),
+        context = wanted,
+        memory = memory,
+    };
+
+    ret null;
+}
+
+TOP_PRECEDENCE  :: 1;
+PRECEDENCE_MASK :: 0xFFFF;
+_PREC_CAST      :: 0x00900;
+_PREC_UNARY     :: 0x01000;
+_PREC_MASK      :: 0x0FFFF;
+
+_Operator :: struct {
+    prec : u32;
+    type : u32;
+}
+
+_Operator_Type :: enum u32 {
+    BINARY = 0; INDEX = 1; PROCEDURE_CALL = 2;
+}
+
+_operator_info :: (operator: u32) -> _Operator
+{
+    if operator == {
+    case #multi "||"; ret _Operator.{0x0010, KAI__OPERATOR_TYPE_BINARY};
+    case #multi "&&"; ret _Operator.{0x0011, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "|";  ret _Operator.{0x0020, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "^";  ret _Operator.{0x0021, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "&";  ret _Operator.{0x0022, KAI__OPERATOR_TYPE_BINARY};
+    case #multi "<="; ret _Operator.{0x0040, KAI__OPERATOR_TYPE_BINARY};
+    case #multi ">="; ret _Operator.{0x0040, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "<";  ret _Operator.{0x0040, KAI__OPERATOR_TYPE_BINARY};
+    case #char  ">";  ret _Operator.{0x0040, KAI__OPERATOR_TYPE_BINARY};
+    case #multi "=="; ret _Operator.{0x0050, KAI__OPERATOR_TYPE_BINARY};
+    case #multi "!="; ret _Operator.{0x0050, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "+";  ret _Operator.{0x0100, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "-";  ret _Operator.{0x0100, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "*";  ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "/";  ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "%";  ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
+    case #multi "<<"; ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
+    case #multi ">>"; ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
+    case #char  ".";  ret _Operator.{0xFFFF, KAI__OPERATOR_TYPE_BINARY};  // member access
+    case #multi "->"; ret _Operator.{KAI__PREC_CAST, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "[";  ret _Operator.{0xBEEF, KAI__OPERATOR_TYPE_INDEX};
+    case #char  "(";  ret _Operator.{0xBEEF, KAI__OPERATOR_TYPE_PROCEDURE_CALL};
+    case;             ret _Operator.{0};
+    }
+}
+
+_parser_create_identifier :: (parser: *Parser, token: Token) -> *Expr
+{
+    node: *Expr = arena_allocate(*parser.arena, sizeof(Expr));
+    node.id = KAI_EXPR_IDENTIFIER;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+    ret node -> *Expr;
+}
+_parser_create_string :: (parser: *Parser, token: Token) -> *Expr
+{
+    node: *Expr_String = arena_allocate(*parser.arena, sizeof(Expr_String));
+    node.id = KAI_EXPR_STRING;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+    node.value = token.value.string;
+    ret node -> *Expr;
+}
+_parser_create_number :: (parser: *Parser, token: Token) -> *Expr
+{
+    node: *Expr_Number = arena_allocate(*parser.arena, sizeof(Expr_Number));
+    node.id = KAI_EXPR_NUMBER;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+    node.value = token.value.number;
+    ret node -> *Expr;
+}
+_parser_create_literal :: (parser: *Parser, token: Token, head: *Expr, count: u32) -> *Expr
+{
+    node: *Expr_Literal = arena_allocate(*parser.arena, sizeof(Expr_Literal));
+    node.id = KAI_EXPR_LITERAL;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+    node.head = head;
+    node.count = count;
+    ret node -> *Expr;
+}
+_parser_create_unary :: (parser: *Parser, op_token: Token, expr: *Expr) -> *Expr
+{
+    node: *Expr_Unary = arena_allocate(*parser.arena, sizeof(Expr_Unary));
+    node.id = KAI_EXPR_UNARY;
+    node.source_code = merge_strings(op_token.string, expr.source_code);
+    node.line_number = _min_u32(op_token.line_number, expr.line_number);
+    node.op = op_token.id;
+    node.expr = expr;
+    ret node -> *Expr;
+}
+_parser_create_binary :: (parser: *Parser, left: *Expr, right: *Expr, op: u32) -> *Expr
+{
+    node: *Expr_Binary = arena_allocate(*parser.arena, sizeof(Expr_Binary));
+    node.id = KAI_EXPR_BINARY;
+    node.source_code = merge_strings(left.source_code, right.source_code);
+    node.line_number = _min_u32(left.line_number, right.line_number);
+    node.op = op;
+    node.left = left;
+    node.right = right;
+    ret node -> *Expr;
+}
+_parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: u32, cols: u32) -> *Expr
+{
+    node: *Expr_Array = arena_allocate(*parser.arena, sizeof(Expr_Array));
+    node.id = KAI_EXPR_ARRAY;
+    node.source_code = merge_strings(op_token.string, expr.source_code);
+    node.line_number = _min_u32(op_token.line_number, expr.line_number);
+    node.rows = rows;
+    node.cols = cols;
+    node.expr = expr;
+    ret node -> *Expr;
+}
+_parser_create_procedure_type :: (parser: *Parser, in_out: *Expr, in_count: u8, out_count: u8) -> *Expr
+{
+    node: *Expr_Procedure_Type = arena_allocate(*parser.arena, sizeof(Expr_Procedure_Type));
+    node.id = KAI_EXPR_PROCEDURE_TYPE;
+    node.source_code = in_out.source_code;
+    node.line_number = in_out.line_number;
+    node.in_out_expr = in_out;
+    node.in_count = in_count;
+    node.out_count = out_count;
+    ret node -> *Expr;
+}
+_parser_create_procedure_call :: (parser: *Parser, proc: *Expr, args: *Expr, arg_count: u8) -> *Expr
+{
+    node: *Expr_Procedure_Call = arena_allocate(*parser.arena, sizeof(Expr_Procedure_Call));
+    node.id = KAI_EXPR_PROCEDURE_CALL;
+    node.source_code = proc.source_code;
+    node.line_number = proc.line_number;
+    node.proc = proc;
+    node.arg_head = args;
+    node.arg_count = arg_count;
+    ret node -> *Expr;
+}
+_parser_create_procedure :: (parser: *Parser, token: Token, in_out: *Expr, body: *Stmt, in_count: u8, out_count: u8) -> *Expr
+{
+    node: *Expr_Procedure = arena_allocate(*parser.arena, sizeof(Expr_Procedure));
+    node.id = KAI_EXPR_PROCEDURE;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+    node.in_out_expr = in_out;
+    node.in_count = in_count;
+    node.out_count = out_count;
+    node.body = body;
+    ret node -> *Expr;
+}
+_parser_create_import :: (parser: *Parser, token: Token, import: Token) -> *Expr
+{
+    node: *Expr = arena_allocate(*parser.arena, sizeof(Expr));
+    node.id = KAI_EXPR_IMPORT;
+    node.source_code = merge_strings(token.string, import.string);
+    node.line_number = token.line_number;
+    node.name = import.value.string;
+    ret node -> *Expr;
+}
+_parser_create_struct :: (parser: *Parser, token: Token, field_count: u32, body: *Stmt) -> *Expr
+{
+    node: *Expr_Struct = arena_allocate(*parser.arena, sizeof(Expr_Struct));
+    node.id = KAI_EXPR_STRUCT;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+	node.field_count = field_count;
+    node.head = body;
+    ret node -> *Expr;
+}
+_parser_create_enum :: (parser: *Parser, token: Token, type: *Expr, field_count: u32, body: *Stmt) -> *Expr
+{
+    node: *Expr_Enum = arena_allocate(*parser.arena, sizeof(Expr_Enum));
+    node.id = KAI_EXPR_ENUM;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+	node.type = type;
+	node.field_count = field_count;
+    node.head = body;
+    ret node -> *Expr;
+}
+_parser_create_return :: (parser: *Parser, ret_token: Token, expr: *Expr) -> *Expr
+{
+    node: *Stmt_Return = arena_allocate(*parser.arena, sizeof(Stmt_Return));
+    node.id = KAI_STMT_RETURN;
+    node.source_code = ret_token.string;
+    node.line_number = ret_token.line_number;
+    node.expr = expr;
+    ret node -> *Expr;
+}
+_parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, expr: *Expr, flags: u8, line_number: u32) -> *Expr
+{
+    node: *Stmt_Declaration = arena_allocate(*parser.arena, sizeof(Stmt_Declaration));
+    node.id = KAI_STMT_DECLARATION;
+    node.source_code = name;
+    node.line_number = line_number;
+    node.name = name;
+    node.type = type;
+    node.expr = expr;
+    node.flags = flags;
+    ret node -> *Expr;
+}
+_parser_create_assignment :: (parser: *Parser, op: u32, left: *Expr, expr: *Expr) -> *Expr
+{
+    node: *Stmt_Assignment = arena_allocate(*parser.arena, sizeof(Stmt_Assignment));
+    node.id = KAI_STMT_ASSIGNMENT;
+    node.source_code = left.source_code;
+    node.line_number = left.line_number;
+    node.op = op;
+    node.left = left;
+    node.expr = expr;
+    ret node -> *Expr;
+}
+_parser_create_if :: (parser: *Parser, if_token: Token, flags: u8, expr: *Expr, then_body: *Stmt, else_body: *Stmt) -> *Expr
+{
+    node: *Stmt_If = arena_allocate(*parser.arena, sizeof(Stmt_If));
+    node.id = KAI_STMT_IF;
+    node.source_code = if_token.string;
+    node.line_number = if_token.line_number;
+    node.flags = flags;
+    node.expr = expr;
+    node.then_body = then_body;
+    node.else_body = else_body;
+    ret node -> *Expr;
+}
+_parser_create_while :: (parser: *Parser, while_token: Token, expr: *Expr, body: *Stmt) -> *Expr
+{
+    node: *Stmt_While = arena_allocate(*parser.arena, sizeof(Stmt_While));
+    node.id = KAI_STMT_WHILE;
+    node.source_code = while_token.string;
+    node.line_number = while_token.line_number;
+    node.body = body;
+    node.expr = expr;
+    ret node -> *Expr;
+}
+_parser_create_for :: (parser: *Parser, for_token: Token, name: string, from: *Expr, to: *Expr, body: *Stmt, flags: u8) -> *Expr
+{
+    node: *Stmt_For = arena_allocate(*parser.arena, sizeof(Stmt_For));
+    node.id = KAI_STMT_FOR;
+    node.source_code = for_token.string;
+    node.line_number = for_token.line_number;
+    node.body = body;
+    node.from = from;
+    node.to = to;
+    node.iterator_name = name;
+    node.flags = flags;
+    ret node -> *Expr;
+}
+_parser_create_control :: (parser: *Parser, token: Token, kind: u8, expr: *Expr) -> *Expr
+{
+    node: *Stmt_Control = arena_allocate(*parser.arena, sizeof(Stmt_Control));
+    node.id = KAI_STMT_CONTROL;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+    node.kind = kind;
+    node.expr = expr;
+    ret node -> *Expr;
+}
+_parser_create_compound :: (parser: *Parser, token: Token, body: *Stmt) -> *Expr
+{
+    node: *Stmt_Compound = arena_allocate(*parser.arena, sizeof(Stmt_Compound));
+    node.id = KAI_STMT_COMPOUND;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+    node.head = body;
+    ret node -> *Expr;
+}
+
+_is_procedure_next :: (parser: *Parser) -> bool
+{
+    peeked: *Token = _peek_token();
+    if peeked.id == #char ")" ret true;
+
+    state: Tokenizer = parser.tokenizer;
+    current: *Token = _next_token();
+    found: bool = false;
+
+    // go until we hit ')' or END, searching for ':'
+    while current.id != KAI_TOKEN_END && current.id != #char ")"
+    {
+        if current.id == #char ":" {
+            found = true;
+            break;
+        }
+        _next_token();
+    }
+    parser.tokenizer = state;
+    ret found;
+}
+
+parse_expression :: (parser: *Parser, flags: u32) -> *Expr
+{
+    left: *Expr;
+    current: *Token = *parser.tokenizer.current_token;
+
+    if current.id == {
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Single-Token Expressions
+    case KAI_TOKEN_IDENTIFIER; left = _parser_create_identifier(parser, /current);
+    case KAI_TOKEN_NUMBER;     left = _parser_create_number(parser, /current);
+    case KAI_TOKEN_STRING;     left = _parser_create_string(parser, /current);
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Parenthesis
+    case #char "("; {
+        tokenizer_next(*parser.tokenizer);
+        left = parse_expression(parser, TOP_PRECEDENCE);
+        _expect(left != null, "in expression", "should be an expression here");
+        tokenizer_next(*parser.tokenizer);
+        _expect(current.id == #char ")", "in expression", "an operator or ')' in expression");
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Array/Slice Types
+    case #char "["; {
+        op_token: Token = /current;
+		_next_token(); // skip '['
+
+		rows: u32 = 0;
+        cols: u32 = 0;
+
+        if current.id == #multi ".." {
+            _next_token();
+            rows = 0;
+            cols = 1;
+        }
+		else if current.id != #multi "]" {
+			_expect(current.id == KAI_TOKEN_NUMBER, "in array type", "should be a number here");
+			_expect(number_is_integer(current.value.number), "in array type", "should be an integer");
+            rows = number_to_u64(current.value.number);
+            cols = 1;
+		
+			_next_token(); // skip number
+			if current.id == #char "," {
+				_next_token(); // skip ','
+			    _expect(current.id == KAI_TOKEN_NUMBER, "in array type", "should be a number here");
+                _expect(number_is_integer(current.value.number), "in array type", "should be an integer");
+                cols = number_to_u64(current.value.number);
+				_next_token(); // skip number
+			}
+		}
+
+		_expect(current.id == #char "]", "in array type", "array");
+		_next_token(); // skip ']'
+        type: *Expr = parse_type_expression(parser);
+		_expect(type, "in array type", "expected type here");
+        // Types do not have binary operators, so return early
+        ret _parser_create_array(parser, op_token, type, rows, cols);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Literal Types
+    case #char "{"; {
+        token: Token = /current;
+        body: Expr_List;
+        count: u32;
+		_next_token(); // skip '{'
+        while current.id != #char "}"
+        {
+            expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+            _expect(expr, "in literal expression", "should be an expression here");
+            _next_token();
+            if current.id == #char "," _next_token(); // TODO: need more expects here
+            else if current.id == #char "="
+            {
+                _next_token();
+                right: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+                _expect(right, "in literal expression", "should be an expression here");
+                _next_token();
+                if current.id == #char "," _next_token();
+                expr = _parser_create_assignment(parser, #char "=", expr, right);
+            }
+            else _expect(current.id == #char "}", "in literal expression", "'}' or ','");
+
+            _linked_list_append(body, expr);
+            count += 1;
+        }
+        _expect(current.id == #char "}", "in literal expression", "should be a '}' here");
+        ret _parser_create_literal(parser, token, body.head, count);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Unary Operators
+    case #char "."; #through;
+    case #char "~"; #through;
+    case #char "!"; #through;
+    case #char "-"; #through;
+    case #char "+"; #through;
+    case #char "*"; #through;
+    case #char "/"; {
+        op_token: Token = /current;
+        _next_token(); // skip op token
+        left = parse_expression(parser, _PREC_UNARY); // TODO: should unary have all same precidence?
+        _expect(left, "in unary expression", "should be an expression here");
+        left = _parser_create_unary(parser, op_token, left);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Explicit Casting "cast(int) x"
+    case KAI_TOKEN_cast; {
+        _next_token();
+        _expect(current.id == #char "(", "in expression", "'(' after cast keyword");
+        _next_token();
+        type: *Expr = parse_type_expression(parser);
+        _expect(type, "in expression", "type");
+        _next_token();
+        _expect(current.id == #char ")", "in expression", "')' after Type in cast expression");
+        _next_token();
+        expr: *Expr = parse_expression(parser, KAI__PREC_CAST);
+        _expect(expr, "in expression", "expression after cast");
+        left = _parser_create_binary(parser, expr, type, #multi "->");
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Directives
+    case KAI_TOKEN_DIRECTIVE; {
+        // TODO: directive map
+        if (string_equals(current.value.string, STRING("type")))
+        {
+            _next_token();
+            left = parse_type_expression(parser);
+            _expect(left, "in expression", "type");
+        }
+        else if (string_equals(current.value.string, STRING("import")))
+        {
+            token: Token = /current;
+            _next_token();
+            _expect(current.id == KAI_TOKEN_STRING, "in import", "string");
+            left = _parser_create_import(parser, token, /current);
+        }
+        else if (kai_string_equals(current.value.string, KAI_STRING("through")))
+        {
+            left = _parser_create_control(parser, /current, KAI_CONTROL_THROUGH, null);
+        }
+        else if (string_equals(current.value.string, STRING("char")))
+        {
+            _next_token();
+            _expect(current.id == KAI_TOKEN_STRING, "char", "must be string");
+            _expect(current.value.string.count == 1, "char", "string must be have length of 1");
+            current.value.number = Number.{n = current.value.string.data[0]->u64, d = 1};
+            left = _parser_create_number(parser, /current);
+        }
+        else if (string_equals(current.value.string, STRING("multi")))
+        {
+            _next_token();
+            _expect(current.id == KAI_TOKEN_STRING, "multi", "must be string");
+            _expect(current.value.string.count > 0, "multi", "string cannot be empty");
+            value: Number = Number.{0};
+            base: Number = Number.{n = 1, d = 1, e = 8}; 
+            for i: 0..current.value.string.count-1 {
+                idx: u32 = current.value.string.count - 1 - i;
+                dg: Number = number_normalize(Number.{n = current.value.string.data[idx], d = 1});
+                value = number_add(number_mul(value, base), dg);
+            }
+            current.value.number = value;
+            left = _parser_create_number(parser, /current);
+        }
+        else if (string_equals(current.value.string, STRING("Julie")))
+        {
+            current.string = STRING("\"<3\"");
+            current.value.string = STRING("<3");
+            left = _parser_create_string(parser, /current);
+        }
+        else ret _unexpected("in expression", "?");
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Structs & Unions
+    case KAI_TOKEN_union; #through;
+    case KAI_TOKEN_struct; {
+        struct_token: Token = /current;
+        body: Stmt_List;
+		count: u32;
+
+        _next_token(); // skip struct
+        _next_token(); // skip '{'
+        while current.id != #char "}"
+        {
+            stmt: *Stmt = parse_statement(parser);
+            _expect(stmt, "in struct definition", "expected a statement here");
+            _linked_list_append(body, stmt);
+            _next_token();
+			count += 1;
+        }
+
+        left = _parser_create_struct(parser, struct_token, count, body.head);
+		if struct_token.id == KAI_TOKEN_union
+            left.flags |= KAI_FLAG_STRUCT_UNION;
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Enum
+    case KAI_TOKEN_enum; {
+        struct_token: Token = /current;
+        body: Stmt_List;
+		count: u32;
+
+        _next_token(); // skip enum
+
+		type: *Expr = parse_type_expression(parser);
+		_expect(type, "[todo]", "[todo]");
+        _next_token();
+
+        _next_token(); // skip '{'
+        while current.id != #char "}"
+        {
+            stmt: *Stmt = parse_statement(parser);
+            _expect(stmt, "in struct definition", "expected a statement here");
+            _linked_list_append(body, stmt);
+            _next_token();
+			count += 1;
+        }
+
+        left = _parser_create_enum(parser, struct_token, type, count, body.head);
+    }
+    case; ret null;
+    }
+
+    while true
+    {
+        peeked: *Token = tokenizer_peek(*parser.tokenizer);
+        operator: u32 = peeked.id;
+        op_info: _Operator = _operator_info(operator);
+        prec: u32 = flags & PRECEDENCE_MASK;
+
+        // handle precedence by returning early
+        if op_info.prec == 0 || op_info.prec <= prec
+			ret left;
+
+        if operator == #multi "==" {
+            prev_state: Tokenizer = parser.tokenizer;
+            tokenizer_next(*parser.tokenizer);
+            tokenizer_next(*parser.tokenizer);
+            if (current.id == #char "{") {
+                parser.tokenizer = prev_state;
+                ret left; // if-case
+            }
+        }
+        else {
+            tokenizer_next(*parser.tokenizer);
+            tokenizer_next(*parser.tokenizer);
+        }
+
+        if op_info.type == {
+        case KAI__OPERATOR_TYPE_BINARY; {
+            right: *Expr = parse_expression(parser, op_info.prec);
+            _expect(right != null, "in binary expression", "should be an expression after binary operator");
+            left = _parser_create_binary(parser, left, right, operator);
+        }
+        case KAI__OPERATOR_TYPE_INDEX; {
+            right: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+            _expect(right, "in index operation", "should be an expression here");
+            _next_token();
+            _expect(current.id == #char "]", "in index operation", "expected ']' here");
+            left = _parser_create_binary(parser, left, right, operator);
+        }
+        case KAI__OPERATOR_TYPE_PROCEDURE_CALL; {
+            args: Expr_List;
+            arg_count: u8;
+
+            if current.id != #char ")" while true
+            {
+                expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+                _expect(expr, "in procedure call", "an expression");
+                _linked_list_append(args, expr);
+                _expect(arg_count != 255, "in procedure call", "too many inputs to procedure");
+                arg_count += 1;
+                _next_token(); // skip expr
+                if current.id == #char ")" break;
+                if current.id == #char "," _next_token(); // skip ','
+                else ret _unexpected("in procedure call", "',' or ')' expected here");
+            }
+
+            left = _parser_create_procedure_call(parser, left, args.head, arg_count);
+        }
+        }
+    }
+}
+
+parse_type_expression :: (parser: *Parser) -> *Expr
+{
+    current: *Token = *parser.tokenizer.current_token;
+
+	if current.id != #char "("
+		ret parse_expression(parser, TOP_PRECEDENCE);
+
+	_next_token(); // skip '('
+
+	in_count: u8;
+	out_count: u8;
+    in_out: Expr_List;
+
+	// Parse Procedure input types
+	if current.id != #char ")"
+    while true
+    {
+		name: string;
+		if current.id == KAI_TOKEN_IDENTIFIER {
+			peeked: *Token = _peek_token();			
+			if peeked.id == #char ":" {
+				name = current.string;
+				_next_token(); // get ':'
+				_next_token(); // get what is after
+			}
+		}
+
+		type: *Expr = parse_type_expression(parser);
+        _expect(type, "in procedure type", "should be a type here");
+
+		type.name = name;
+        _linked_list_append(in_out, type);
+
+		_expect(in_count != 255, "in procedure type", "too many inputs to procedure");
+		in_count += 1;
+
+		_next_token();  // get ',' token or ')'
+
+		if current.id == #char ")" break;
+		if current.id == #char "," _next_token();
+		else ret _unexpected("in procedure type", "',' or ')' expected here");
+	}
+
+	peek: *Token = _peek_token();  // see if we have any returns
+
+	if peek.id == #multi "->" {
+		_next_token(); // eat '->'
+		_next_token(); // get token after
+
+		enclosed_return: bool = false;
+		if current.id == #char "(" {
+			enclosed_return = true;
+			_next_token();
+		}
+
+		while true {
+			type: *Expr = parse_type_expression(parser);
+            if !type ret null;
+
+            _linked_list_append(in_out, type);
+			_expect(out_count != 255, "in procedure type", "too many inputs to procedure");
+			out_count += 1;
+
+			_peek_token();  // get ',' token or something else
+			if peek.id == #char "," {
+				_next_token();  // get ','
+				_next_token();  // skip ','
+			}
+			else break;
+		}
+
+		if enclosed_return {
+			if peek.id != #char ")" {
+				_next_token();
+				ret _unexpected("in procedure type", "should be ')' after return types");
+			}
+			else _next_token();
+		}
+	}
+    ret _parser_create_procedure_type(parser, in_out.head, in_count, out_count);
+}
+
+parse_procedure :: (parser: *Parser) -> *Expr
+{
+    current: *Token = *parser.tokenizer.current_token;
+    token: Token = /current;
+
+    // sanity check
+    _expect(current.id == #char "(", "", "this is likely a compiler bug, sorry :c");
+    _next_token(); // skip '('
+
+    in_count: u8;
+    out_count: u8;
+    in_out: Expr_List;
+
+    // TODO: this should be a loop, what is this goto??
+    if current.id != #char ")" while true
+    {
+        flags: u8;
+        if current.id == KAI_TOKEN_using {
+            flags |= KAI_FLAG_PROC_USING;
+            _next_token();
+        }
+        _expect(current.id == KAI_TOKEN_IDENTIFIER, "in procedure input", "should be an identifier");
+        name: string = current.string;
+        _next_token();
+        _expect(current.id == #char ":", "in procedure input", "wanted a ':' here");
+        _next_token();
+        type: *Expr = parse_type_expression(parser);
+        _expect(type, "in procedure input", "should be type");
+
+        type.name = name;
+        type.flags = flags;
+
+        _linked_list_append(in_out, type);
+        _expect(in_count != 255, "in procedure call", "too many inputs to procedure");
+        in_count += 1;
+
+        _next_token();
+        if current.id == {
+        case #char ")"; break;
+        case #char ","; _next_token(); continue;
+        case; ret _unexpected("in procedure input", "wanted ')' or ',' here");
+        }
+        break;
+    }
+    _next_token();
+
+    // return value
+    if current.id == #multi "->" {
+        _next_token();
+        type: *Expr = parse_type_expression(parser);
+        _expect(type, "in procedure return type", "should be type");
+
+        _linked_list_append(in_out, type);
+        _expect(out_count != 255, "in procedure call", "too many inputs to procedure");
+        out_count += 1;
+
+        _next_token();
+    }
+
+    body: *Stmt;
+    if current.id == KAI_TOKEN_DIRECTIVE && string_equals(STRING("native"), current.string) {
+        _next_token();
+        _expect(current.id == #char ";", "???", "???");
+    }
+    else {
+        body = parse_statement(parser);
+        if !body ret _unexpected("[todo: remove this]", "");
+    }
+
+    ret _parser_create_procedure(parser, token, in_out.head, body, in_count, out_count);
+}
+
+parse_declaration :: (parser: *Parser) -> *Stmt
+{
+    current: *Token = *parser.tokenizer.current_token;
+
+    if current.id == KAI_TOKEN_DIRECTIVE
+        ret parse_statement(parser);
+
+    if current.id != KAI_TOKEN_IDENTIFIER
+        ret _unexpected("in declaration", "expected an identifier");
+
+    name: string = current.string;
+    line_number: u32 = current.line_number;
+
+    _next_token(); // skip identifier
+
+    if current.id != #char ":"
+        ret _unexpected("in declaration", "expected ':' here");
+
+    _next_token(); // skip ':'
+
+    flags: u8 = 0;
+    type: *Expr = parse_type_expression(parser);
+
+    if type _next_token(); // skip type if there was one
+
+    expr: *Expr = null;
+
+    if current.id == {
+    case #char ":"; flags |= KAI_FLAG_DECL_CONST;
+    case #char "=";
+    case #char ";"; ret _parser_create_declaration(parser, name, type, expr, flags, line_number);
+    case; ret _unexpected("in declaration", "should be '=', ':', or ';'");
+    }
+    _next_token(); // skip '=', ':', or ';'
+
+    // structs and procedures do not require semicolon
+    require_semicolon: bool = false;
+
+    if current.id == #char "(" && _is_procedure_next(parser) {
+        expr = parse_procedure(parser);
+        if !expr ret _unexpected("[todo]", "[todo]");
+    }
+    else {
+        require_semicolon = true;
+        if (current.id == KAI_TOKEN_struct || current.id == KAI_TOKEN_union || current.id == KAI_TOKEN_enum)
+            require_semicolon = false;
+        expr = parse_expression(parser, TOP_PRECEDENCE);
+        _expect(expr, "in declaration", "should be an expression here");
+    }
+    
+    if require_semicolon {
+        _next_token();
+        _expect(current.id == #char ";", "after declaration", "there should be a ';' before this");
+    }
+    else {
+        peeked: *Token = _peek_token();
+        if peeked.id == #char ";" _next_token(); // go to semicolon
+    }
+
+    ret _parser_create_declaration(parser, name, type, expr, flags, line_number);
+}
+
+parse_statement :: (parser: *Parser) -> *Stmt
+{
+    current: *Token = *parser.tokenizer.current_token;
+    if current.id == {
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Compound Statements
+    case #char "{"; {
+        token: Token = /current;
+        _next_token();
+        body: Stmt_List;
+
+        while current.id != #char "}" {
+            statement: *Stmt = parse_statement(parser);
+            if !statement ret null;
+            _linked_list_append(body, statement);
+            _next_token();  // eat ';' (get token after)
+        }
+
+        // TODO: is this OK?
+        // No need for compound if there is only one statement
+        // if (statement_array.count == 1) {
+        //    p_tarray_destroy(statement_array);
+        //    return *(Kai_Stmt*)((Kai_u8*)parser->memory.temperary +
+        //    statement_array.offset);
+        //}
+
+        ret _parser_create_compound(parser, token, body.head);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Control Statements
+    case KAI_TOKEN_case; #through;
+    case KAI_TOKEN_break; #through;
+    case KAI_TOKEN_continue; #through;
+    case KAI_TOKEN_defer; {
+        token: Token = /current;
+        _next_token(); // skip token
+
+        expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+        if expr != null _next_token();
+        _expect(current.id == #char ";", "after control statement", "there should be a ';' before this");
+        kind: u8 = KAI_CONTROL_CASE;
+        if token.id == KAI_TOKEN_break    kind = KAI_CONTROL_BREAK;
+        if token.id == KAI_TOKEN_continue kind = KAI_CONTROL_CONTINUE;
+        if token.id == KAI_TOKEN_defer    kind = KAI_CONTROL_DEFER;
+        ret _parser_create_control(parser, token, kind, expr);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Using Statements
+    case KAI_TOKEN_using; {
+        _next_token(); // skip 'using'
+        expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+        _expect(expr, "in using statement", "should be an expression");
+        _next_token();
+        _expect(current.id == #char ";", "after statement", "there should be a ';' before this");
+		expr.flags = KAI_FLAG_EXPR_USING;
+        ret expr;
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Return Statements
+    case KAI_TOKEN_ret; {
+        ret_token: Token = /current;
+        _next_token(); // skip 'ret'
+
+        if current.id == #char ";"
+            ret _parser_create_return(parser, ret_token, null);
+
+        expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+        _expect(expr, "in return statement", "should be an expression");
+        _next_token();
+        _expect(current.id == #char ";", "after statement", "there should be a ';' before this");
+
+        ret _parser_create_return(parser, ret_token, expr);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // If Statements
+    case KAI_TOKEN_if; {
+        if_token: Token = /current;
+        _next_token(); // skip 'if'
+        expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+        _expect(expr, "in if statement", "should be an expression here");
+        _next_token();
+        flags: u8 = 0;
+        if current.id == #multi "==" {
+            _next_token();
+            flags |= KAI_FLAG_IF_CASE;
+        }
+        then_body: *Stmt = parse_statement(parser);
+        if !then_body ret null;
+        peeked: *Token = _peek_token();
+        else_body: *Stmt;
+        if peeked.id == KAI_TOKEN_else {
+            _next_token();
+            _next_token();
+            else_body = parse_statement(parser);
+            if !else_body ret null;
+        }
+        ret _parser_create_if(parser, if_token, flags, expr, then_body, else_body);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // While Statements
+    case KAI_TOKEN_while; {
+        while_token: Token = /current;
+        _next_token(); // skip 'while'
+        expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+        _next_token();
+        body: *Stmt = parse_statement(parser);
+        ret _parser_create_while(parser, while_token, expr, body);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // For Statements
+    case KAI_TOKEN_for; {
+        for_token: Token = /current;
+        _next_token(); // skip 'for'
+        _expect(current.id == KAI_TOKEN_IDENTIFIER, "in for statement", "should be the name of the iterator");
+        iterator_name: string = current.string;
+        _next_token();
+        _expect(current.id == #char ":", "in for statement", "should be ':' here");
+        _next_token();
+        from: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+        _expect(from, "in for statement", "should be an expression here");
+        to: *Expr;
+        _next_token();
+        if current.id == #multi ".." {
+            _next_token();
+            to = parse_expression(parser, TOP_PRECEDENCE);
+            _expect(to, "in for statement", "should be an expression here");
+            _next_token();
+        }
+        body: *Stmt = parse_statement(parser);
+        if !body ret null;
+        ret _parser_create_for(parser, for_token, iterator_name, from, to, body, 0);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Handle Possible Declarations
+    case KAI_TOKEN_IDENTIFIER; {
+        peeked: *Token = _peek_token();
+        if peeked.id == #char ":" ret parse_declaration(parser);
+    } #through;
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Expression/Assignment Statements
+    case; {
+        requires_semicolon: bool = true; // TODO: should ever not require?
+        expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+        _expect(expr, "in statement", "should be an expression or statement");
+        peeked: *Token = _peek_token();
+
+        if peeked.id == {
+        case #char "=";  #through;
+        case #multi "|="; #through;
+        case #multi "&="; #through;
+        case #multi "+="; #through;
+        case #multi "-="; #through;
+        case #multi "*="; #through;
+        case #multi "/="; {
+            _next_token(); // skip expr
+            op: u32 = current.id;
+            _next_token();
+            right: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+            _expect(right, "in assignment statement", "should be an expression");
+            expr = _parser_create_assignment(parser, op, expr, right);
+            _next_token();
+            _expect(current.id == #char ";", "in assignment statement", "should be ';' after expression");
+        }
+        case; {
+            if requires_semicolon {
+                _next_token(); // skip expr
+                _expect(current.id == #char ";", "in expression statement", "should be ';' after expression");
+            }
+        }
+        }
+        ret expr;
+    }
+    }
+}
+
+create_syntax_tree :: (info: *Syntax_Tree_Create_Info, out_tree: *Syntax_Tree) -> Result
+{
+    parser: Parser;
+    parser.tokenizer.source = info.source_code;
+    parser.tokenizer.line_number = 1;
+    parser.error = info.error;
+    parser.tokenizer.string_arena = Fixed_Allocator.{
+        // TODO: free this sometime?
+        data = info.allocator.heap_allocate(info.allocator.user, null, info.source_code.count, 0),
+        size = info.source_code.count,
+    };
+    arena_create(*parser.arena, *info.allocator);
+
+    statements: Stmt_List;
+    token: *Token = tokenizer_next(*parser.tokenizer);
+    while token.id != KAI_TOKEN_END {
+        statement: *Stmt = parse_declaration(*parser);
+        if statement == null break;
+        _linked_list_append(statements, statement);
+        tokenizer_next(*parser.tokenizer);
+    }
+
+    out_tree.allocator = parser.arena;
+    out_tree.root.id = KAI_STMT_COMPOUND;
+    out_tree.root.head = statements.head;
+
+    // TODO: find actual solution for this
+    info.error.location.file_name = out_tree.source_filename;
+    info.error.location.source = info.source_code.data;
+    ret parser.error.result;
+}
+
+destroy_syntax_tree :: (tree: *Syntax_Tree)
+{
+	tree->void;
+}

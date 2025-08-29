@@ -1,0 +1,117 @@
+#import "stdio.h";
+#import "locale.h";
+
+_term_debug_colors: [5] cstring = .{
+    "\e[0;37m", // KAI_COLOR_PRIMARY     
+    "\e[1;97m", // KAI_COLOR_SECONDARY   
+    "\e[1;91m", // KAI_COLOR_IMPORTANT   
+    "\e[1;94m", // KAI_COLOR_IMPORTANT_2 
+    "\e[0;90m", // KAI_COLOR_DECORATION  
+};
+
+_file_writer_write_value :: (user: *void, type: u32, value: Value, format: Write_Format)
+{
+    if (user == null) ret;
+
+    f: *FILE = user;
+    if (type == FILL)
+    {
+        if (format.min_count == 0) ret;
+        for i: 0..format.min_count-1 {
+            fputc(format.fill_character, f);
+        }
+    }
+    else if (type == KAI_F64)
+    {
+        fprintf(f, "%f", value.f64);
+    }
+    else if (type == KAI_S32)
+    {
+        fprintf(f, "%i", value.s32);
+    }
+    else if (type == KAI_U32)
+    {
+        fprintf(f, "%u", value.u32);
+    }
+    else if (type == KAI_U64)
+    {
+        base: u8 = #char "u";
+
+        if format.flags & KAI_WRITE_FLAGS_HEXIDECIMAL
+            base = #char "X";
+
+        if format.min_count != 0 {
+            if format.fill_character != 0 {
+                fmt: [6] char = "%.*ll.";
+                fmt[1] = format.fill_character;
+                fmt[5] = base;
+                fprintf(f, fmt, format.min_count, value.u64);
+            }
+            else {
+                fmt: [6] char = "%*ll.";
+                fmt[4] = base;
+                fprintf(f, fmt, format.min_count, value.u64);
+            }
+        }
+        else {
+            fmt: [5] char = "%ll.";
+            fmt[3] = base;
+            fprintf(f, fmt, value.u64);
+        }
+    }
+    else
+    {
+        fprintf(f, "[Writer] -- Case not defined for type %i\n", type);
+    }
+}
+
+_file_writer_write_string :: (user: *void, s: string)
+{
+    if (user == null) ret;
+    fwrite(s.data, 1, s.count, user);
+}
+
+_stdout_writer_write_value :: (user: *void, type: u32, value: Value, format: Write_Format)
+{
+    user->void;
+    _file_writer_write_value(stdout, type, value, format);
+}
+
+_stdout_writer_write_string :: (user: *void, s: string)
+{
+    user->void;
+    fwrite(s.data, 1, s.count, stdout);
+}
+
+_stdout_writer_set_color :: (user: *void, color: Write_Color)
+{
+    user->void;
+    printf("%s", _term_debug_colors[color]);
+}
+
+writer_stdout :: () -> Writer
+{
+    _setup_utf8_stdout();
+    ret Writer.{
+        write_string   = _stdout_writer_write_string,
+        write_value    = _stdout_writer_write_value,
+        set_color      = _stdout_writer_set_color,
+        user           = null,
+    };
+}
+
+writer_file_open :: (path: cstring) -> Writer
+{
+    ret Writer.{
+        write_string   = _file_writer_write_string,
+        write_value    = _file_writer_write_value,
+        set_color      = null,
+        user           = _stdc_file_open(path, "wb"),
+    };
+}
+
+writer_file_close :: (writer: *Writer)
+{
+    if (writer.user != null)
+        fclose(writer.user);
+}

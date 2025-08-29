@@ -1,4 +1,0 @@
-my_function :: () -> s32
-{
-	ret 0x45;
-}

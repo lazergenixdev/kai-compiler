@@ -1,16 +1,7 @@
-#ifndef TEST_H
-#define TEST_H
+#define NOB_IMPLEMENTATION
+#define NOB_STRIP_PREFIX
+#include "../3rd-party/nob.h"
+#define KAI_IMPLEMENTATION
+#include "../kai.h"
 
-extern void* error_writer(void);
-
-#define kai__debug_writer ((Kai_Writer*)error_writer())
-#include "kai.h"
-#include <stdio.h>
-
-extern void begin_test(const char* name);
-
-#define PASS   (printf("\x1b[92mPASS\x1b[0m\n"), 1)
-#define FAIL   (printf("\x1b[91mFAIL\x1b[0m (Line %i)\n", __LINE__), 0)
-#define TEST() begin_test(__FUNCTION__)
-
-#endif
+#define assert_true(EXPR) if (!(EXPR)) printf("\e[91mTest Failed\e[0m: %s (\e[92m%s:%i\e[0m)\n", #EXPR, __FILE__, __LINE__), exit(1)
