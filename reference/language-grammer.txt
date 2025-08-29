@@ -1,0 +1,12 @@
+# Note: language is NOT context-free, so this grammer is just an approximation
+# Note: also this is incomplete, don't feel like writing this out right now :/
+
+expression_list : expression ',' expression_list
+
+expression : '(' expression ')'
+           | unary_op expression
+           | expression binary_op expression
+           | expression '(' expression_list ')'
+           | '#import' string
+
+
