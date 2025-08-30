@@ -10,7 +10,11 @@
 #define tab(N) for (int i = 0; i < N; ++i) sb_append(builder, "    ")
 
 #define KAI_IMPLEMENTATION
+#ifdef USE_GENERATED
+#include "kai.h"
+#else
 #include "3rd-party/kai.h"
+#endif
 
 #pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
 
@@ -40,9 +44,10 @@ Macro macros[] = {
 	{"VERSION_STRING", "", "\"" MACRO_EXPSTR(VERSION_MAJOR) "." MACRO_EXPSTR(VERSION_MINOR) "." MACRO_EXPSTR(VERSION_PATCH) VERSION_EXTRA "\""},
 	{"$", "", ""},
 	{"BOOL", "(EXPR)", "((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))"},
-	{"STRING", "(LITERAL)", "KAI_STRUCT(Kai_string){.count = sizeof(LITERAL)-1, .data = (Kai_u8*)(LITERAL)}"},
+	{"STRING", "(LITERAL)", "KAI_STRUCT(Kai_string){.count = (Kai_u32)(sizeof(LITERAL)-1), .data = (Kai_u8*)(LITERAL)}"},
 	{"SLICE", "(TYPE)", "struct { Kai_u32 count; TYPE* data; }"},
 	{"DYNAMIC_ARRAY", "(T)", "struct { Kai_u32 count; Kai_u32 capacity; T* data; }"},
+	{"HASH_TABLE", "(T)", "struct { Kai_u32 count; Kai_u32 capacity; Kai_u64* occupied; Kai_u64* hashes; Kai_string* keys; T* values; }"},
 	{"LINKED_LIST", "(T)", "struct { T *head, *last; }"},
 	{"FILL", "", "0x800"},
 };
@@ -59,17 +64,22 @@ Macro function_macros[] = {
 	{"_set_color", "(Color)",  "if (writer->set_color != NULL) writer->set_color(writer->user, Color)"},
 	{"_write_fill", "(Char,Count)", "writer->write_value(writer->user, KAI_FILL, (Kai_Value){0}, (Kai_Write_Format){.fill_character = (Kai_u8)Char, .min_count = Count})"},
 	{"_next_character_equals", "(C)", "( (context->cursor+1) < context->source.count && C == context->source.data[context->cursor+1] )"},
+	{"_allocate", "(Old,New_Size,Old_Size)", "allocator->heap_allocate(allocator->user, Old, New_Size, Old_Size)"},
+	{"_free", "(Ptr,Size)", "allocator->heap_allocate(allocator->user, Ptr, 0, Size)"},
 	{"array_destroy", "(ARRAY)", "(allocator->heap_allocate(allocator->user, (ARRAY)->data, 0, (ARRAY)->capacity * sizeof((ARRAY)->data[0])), (ARRAY)->count = 0, (ARRAY)->capacity = 0, (ARRAY)->data = NULL)"},
 	{"array_reserve", "(ARRAY,NEW_CAPACITY)", "kai_raw_array_reserve((Kai_Raw_Dynamic_Array*)(ARRAY), NEW_CAPACITY, allocator, sizeof((ARRAY)->data[0]))"},
 	{"array_resize", "(ARRAY,NEW_SIZE)", "kai_raw_array_resize((Kai_Raw_Dynamic_Array*)(ARRAY), NEW_SIZE, allocator, sizeof((ARRAY)->data[0]))"},
 	{"array_grow", "(ARRAY,COUNT)", "kai_raw_array_grow((Kai_Raw_Dynamic_Array*)(ARRAY), COUNT, allocator, sizeof((ARRAY)->data[0]))"},
 	{"array_push", "(ARRAY,...)", "(kai_raw_array_grow((Kai_Raw_Dynamic_Array*)(ARRAY), 1, allocator, sizeof((ARRAY)->data[0])), (ARRAY)->data[(ARRAY)->count++] = (__VA_ARGS__))"},
 	{"array_pop", "(ARRAY)", "(ARRAY)->data[--(ARRAY)->count]"},
+	{"array_last", "(ARRAY)", "(ARRAY)->data[(ARRAY)->count - 1]"},
 	{"array_insert", "(ARRAY)", "TODO"},
 	{"array_insert_n", "(ARRAY)", "TODO"},
 	{"array_remove", "(ARRAY)", "TODO"},
 	{"array_remove_n", "(ARRAY)", "TODO"},
 	{"array_remove_swap", "(ARRAY)", "TODO"},
+	{"table_set", "(T,KEY,...)", "do{ Kai_u32 _; kai_raw_hash_table_emplace_key((Kai_Raw_Hash_Table*)(T), KEY, &_, allocator, sizeof (T)->values[0]); (T)->values[_] = (__VA_ARGS__); }while(0)"},
+	{"table_find", "(T,KEY)", "kai_raw_hash_table_find((Kai_Raw_Hash_Table*)(T), KEY)"},
 };
 
 Macro internal_macros[] = {
@@ -120,9 +130,17 @@ typedef struct {
 	Kai_Expr_Struct* value;
 } Struct_Map;
 
+typedef struct {
+	char* key;
+	bool value;
+} Bool_Map;
+
 Identifier_Map* g_identifier_map = NULL;
 Function_Decl_Map* g_function_cache = NULL;
 Struct_Map* g_struct_map = NULL;
+Bool_Map* g_generated_slice_types = NULL;
+Bool_Map* g_generated_dynarray_types = NULL;
+Bool_Map* g_generated_hashtable_types = NULL;
 
 typedef struct {
 	Kai_Expr* expr;
@@ -616,22 +634,27 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 
 	case KAI_EXPR_ARRAY: {
 		Kai_Expr_Array* arr = (void*)expr;
-		if (arr->cols == 0 && arr->rows == 0)
+		if (arr->rows != NULL)
 		{
+			ASSERT(arr->rows->id == KAI_EXPR_IDENTIFIER);
 			generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
-			sb_append(builder, "_Slice");
-			return Identifier_Type_Struct;
-		}
-		else if (arr->cols == 1 && arr->rows == 0)
-		{
-			generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
-			sb_append(builder, "_DynArray");
+			sb_append(builder, "_HashTable");
 			return Identifier_Type_Struct;
 		}
 		else
 		{
-			//int* arr = (int[]){98, 23, 4};
-			sb_append(builder, "array_literal");
+			if (arr->flags & KAI_FLAG_ARRAY_DYNAMIC)
+			{
+				generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+				sb_append(builder, "_DynArray");
+				return Identifier_Type_Struct;
+			}
+			else
+			{
+				generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+				sb_append(builder, "_Slice");
+				return Identifier_Type_Struct;
+			}
 		}
 	} break;
 	
@@ -690,7 +713,9 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 				
 				if (bin->left->id == KAI_EXPR_IDENTIFIER)
 				{
-					Variable_Type type = lookup(temp_cstr_from_string(bin->left->source_code));
+					const char* name = temp_cstr_from_string(bin->left->source_code);
+					Variable_Type type = lookup(name);
+					//printf("%s => %p\n", name, type.expr);
 					if (type.expr != NULL && type.expr->id == KAI_EXPR_ARRAY)
 					{
 						Kai_Expr_Array* arr = (void*)(type.expr);
@@ -855,6 +880,7 @@ void generate_all_non_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound
 			case KAI_EXPR_STRUCT: break;
 			case KAI_EXPR_ENUM: break;
 			case KAI_EXPR_PROCEDURE: break;
+			case KAI_EXPR_ARRAY:
 			case KAI_EXPR_PROCEDURE_CALL: {
 				sb_append(builder, "typedef ");
 				generate_expression(builder, decl->expr, TOP_PRECEDENCE, KEEP_ALL_PARENTHESIS);
@@ -955,22 +981,40 @@ void generate_all_data_structure_types(String_Builder* builder, Kai_Stmt* stmt)
 
 	case KAI_EXPR_ARRAY: {
 		Kai_Expr_Array* arr = (void*)stmt;
-		if (arr->rows != 0) return; // skip fixed array types
 		ASSERT(arr->expr->id == KAI_EXPR_IDENTIFIER);
 		Kai_string name = arr->expr->source_code;
 
 		const char* t = temp_cstr_from_string(name);
-		if (arr->cols == 0) {
-			sb_append(builder, "typedef KAI_SLICE(");
-			generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
-			sb_appendf(builder, ") Kai_%s_Slice;\n", t);
-			shput(g_identifier_map, t, Identifier_Type_Struct);
+		if (arr->rows == NULL)
+		{
+			if (arr->flags & KAI_FLAG_ARRAY_DYNAMIC) {
+				if (!shget(g_generated_dynarray_types, t)) {
+					sb_append(builder, "typedef KAI_DYNAMIC_ARRAY(");
+					generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+					sb_appendf(builder, ") Kai_%s_DynArray;\n", t);
+					shput(g_identifier_map, t, Identifier_Type_Struct);
+					shput(g_generated_dynarray_types, t, true);
+				}
+			}
+			else {
+				if (!shget(g_generated_slice_types, t)) {
+					sb_append(builder, "typedef KAI_SLICE(");
+					generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+					sb_appendf(builder, ") Kai_%s_Slice;\n", t);
+					shput(g_identifier_map, t, Identifier_Type_Struct);
+					shput(g_generated_slice_types, t, true);
+				}
+			}
 		}
-		else if (arr->cols == 1) {
-			sb_append(builder, "typedef KAI_DYNAMIC_ARRAY(");
-			generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
-			sb_appendf(builder, ") Kai_%s_DynArray;\n", t);
-			shput(g_identifier_map, t, Identifier_Type_Struct);
+		else if (arr->rows->id == KAI_EXPR_IDENTIFIER)
+		{
+			if (!shget(g_generated_hashtable_types, t)) {
+				sb_append(builder, "typedef KAI_HASH_TABLE(");
+				generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+				sb_appendf(builder, ") Kai_%s_HashTable;\n", t);
+				shput(g_identifier_map, t, Identifier_Type_Struct);
+				shput(g_generated_hashtable_types, t, true);
+			}
 		}
 	} break;
 	
@@ -1065,12 +1109,18 @@ void generate_all_struct_members(String_Builder* builder, Kai_Expr_Struct* _stru
 			ASSERT(decl->type != NULL);
 			tab(1);
 			Kai_Expr_Array* arr = (void*)decl->type;
-			if (decl->type->id == KAI_EXPR_ARRAY && arr->rows != 0)
-				generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+			if (decl->type->id == KAI_EXPR_ARRAY && arr->rows != NULL)
+			{
+				if (arr->rows->id == KAI_EXPR_IDENTIFIER)
+					generate_expression(builder, decl->type, TOP_PRECEDENCE, NONE);
+				else generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+			}
 			else generate_expression(builder, decl->type, TOP_PRECEDENCE, NONE);
 			
-			if (decl->type->id == KAI_EXPR_ARRAY && arr->rows != 0)
-				sb_appendf(builder, " %s[%i];\n", temp_cstr_from_string(decl->name), arr->rows);
+			if (decl->type->id == KAI_EXPR_ARRAY && arr->rows != NULL && arr->rows->id == KAI_EXPR_NUMBER) {
+				Kai_Expr_Number* num = (void*)arr->rows;
+				sb_appendf(builder, " %s[%llu];\n", temp_cstr_from_string(decl->name), kai_number_to_u64(num->value));
+			}
 			else sb_appendf(builder, " %s;\n", temp_cstr_from_string(decl->name));
 		}
 		else if (field->flags == KAI_FLAG_EXPR_USING)
@@ -1087,6 +1137,8 @@ Kai_bool enum_excludes_name(Kai_string name)
 	if (kai_string_equals(name, KAI_STRING("Expr_Id"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Expr_Flags"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Control_Kind"))) return true;
+	if (kai_string_equals(name, KAI_STRING("Compile_Flags"))) return true;
+	if (kai_string_equals(name, KAI_STRING("Node_Flags"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Token_Id"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Result"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Primitive_Type"))) return true;
@@ -1248,12 +1300,19 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 		Kai_Stmt_Declaration* decl = (void*)stmt;
 		Identifier_Type type = Identifier_Type_Invalid;
 		tab(depth);
-		int is_array = 0;
+		bool is_array = false;
 		Kai_Expr_Array* arr = (void*)decl->type;
-		if (decl->type->id == KAI_EXPR_ARRAY && arr->cols != 0 && arr->rows != 0)
+		if (decl->type->id == KAI_EXPR_ARRAY)
 		{
-			is_array = arr->rows;
-			generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+			is_array = arr->rows != NULL && arr->rows->id == KAI_EXPR_NUMBER;
+			if (!is_array)
+			{
+				type = generate_expression(builder, decl->type, TOP_PRECEDENCE, NONE);
+			}
+			else
+			{
+				generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+			}
 		}
 		else
 		{
@@ -1261,7 +1320,11 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 		}
 		const char* name = temp_cstr_from_string(decl->name);
 		sb_appendf(builder, " %s", name);
-		if (is_array) sb_appendf(builder, "[%i]", is_array);
+		if (is_array) {
+			ASSERT(arr->rows->id == KAI_EXPR_NUMBER);
+			Kai_Expr_Number* num = (void*)arr->rows;
+			sb_appendf(builder, "[%llu]", kai_number_to_u64(num->value));
+		}
 		sb_append(builder, " = ");
 		define(name, (Variable_Type){.expr = decl->type});
 		if (decl->expr == NULL)
@@ -1344,7 +1407,9 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 		generate_expression(builder, _for->from, TOP_PRECEDENCE, NONE);
 		sb_append(builder, "; ");
 		sb_append_buf(builder, _for->iterator_name.data, _for->iterator_name.count);
-		sb_append(builder, " <= ");
+		if (_for->flags & KAI_FLAG_FOR_LESS_THAN)
+			sb_append(builder, " < ");
+		else sb_append(builder, " <= ");
 		generate_expression(builder, _for->to, TOP_PRECEDENCE, NONE);
 		sb_append(builder, "; ++");
 		sb_append_buf(builder, _for->iterator_name.data, _for->iterator_name.count);
@@ -1388,7 +1453,9 @@ void generate_constant(String_Builder* builder, Kai_Stmt_Declaration* decl)
 		sb_append(builder, "static ");
 		generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
 		const char* id = temp_cstr_from_string(decl->name);
-		sb_appendf(builder, " kai_%s[%i] = {\n", id, arr->rows);
+		ASSERT(arr->rows != NULL && arr->rows->id == KAI_EXPR_NUMBER);
+		Kai_Expr_Number* num = (void*)arr->rows;
+		sb_appendf(builder, " kai_%s[%llu] = {\n", id, kai_number_to_u64(num->value));
 		shput(g_identifier_map, id, Identifier_Type_Function);
 		tab(1);
 		Kai_u32 last = builder->count;
@@ -1464,7 +1531,6 @@ void generate_all_function_implementations(String_Builder* builder, Kai_Stmt_Com
 
 Kai_Syntax_Tree create_tree_from_file(const char* path)
 {
-	uint64_t start = nanos_since_unspecified_epoch();
 	String_Builder builder = {0};
 	exit_on_fail(read_entire_file(path, &builder));
 
@@ -1472,35 +1538,22 @@ Kai_Syntax_Tree create_tree_from_file(const char* path)
 	Kai_Syntax_Tree_Create_Info info = {
 		.allocator = g_allocator,
 		.error = &error,
-		.source_code = {
-			.data = (Kai_u8*)builder.items,
-			.count = builder.count,
-		}
+		.source = {
+			.name = kai_string_from_c(path),
+			.contents = {
+				.data = (Kai_u8*)builder.items,
+				.count = builder.count,
+			},
+		},
 	};
 
+	uint64_t start = nanos_since_unspecified_epoch();
 	Kai_Syntax_Tree tree = {0};
 	if (kai_create_syntax_tree(&info, &tree) != KAI_SUCCESS)
 	{
-		error.location.file_name = kai_string_from_c(path);
 		kai_write_error(&g_writer, &error);
-#if 0
-		Kai__Tokenizer tokenizer = {
-			.line_number = 1,
-			.source = info.source_code,
-		};
-		Kai__Token t = kai__tokenizer_generate(&tokenizer);
-		while (t.type != KAI__TOKEN_END) {
-			const char* s = temp_cstr_from_string(t.string);
-			printf("\"%s\":%i  ", s, t.line_number);
-			t = kai__tokenizer_generate(&tokenizer);
-		}
-#endif
 		exit(1);
 	}
-#if 0
-	if (strcmp(path, "src/core.kai") == 0)
-		kai_write_syntax_tree(kai_writer_stdout(), &tree);
-#endif
 	uint64_t end = nanos_since_unspecified_epoch();
 	String_Builder msg = {0};
 	sb_appendf(&msg, "Parsed file \"\e[92m%s\e[0m\"", path);
@@ -1514,9 +1567,72 @@ Kai_Syntax_Tree create_tree_from_file(const char* path)
 	return tree;
 }
 
+int test_index(const char* name)
+{
+	ASSERT('0' <= name[0] && name[0] <= '9');
+	ASSERT('0' <= name[1] && name[1] <= '9');
+	return (name[0] - '0') * 10 + (name[1] - '0');
+}
+
+void run_tests(void)
+{
+	set_current_dir("tests");
+	{
+		printf("------ Tests ----------------------------------------------------------------\n");
+
+		Cmd cmd = {0};
+
+		const char* *test_names = NULL;
+		arrsetlen(test_names, 100);
+		memset(test_names, 0, 100 * sizeof(test_names[0]));
+
+		File_Paths files = {0};
+		exit_on_fail(read_entire_dir(".", &files));
+		forn (files.count)
+		{
+			const char* path = files.items[i];
+			String_View path_sv = sv_from_cstr(path);
+			if (!sv_end_with(path_sv, ".c")) continue;
+			const char* name = clone_string((Kai_string){.data = (Kai_u8*)path, .count = path_sv.count-2});
+			test_names[test_index(name)] = name;
+		}
+
+		forn (arrlen(test_names))
+		{
+			const char* name = test_names[i];
+			if (name == NULL) continue;
+			nob_cc(&cmd);
+			nob_cc_flags(&cmd);
+			nob_cc_inputs(&cmd, format("%s.c", name));
+			nob_cc_output(&cmd, name);
+			exit_on_fail(cmd_run_sync_and_reset(&cmd));
+			cmd_append(&cmd, format("./%s", name));
+			exit_on_fail(cmd_run_sync_and_reset(&cmd));
+		}
+		
+		printf("-----------------------------------------------------------------------------\n");
+	}
+	set_current_dir("..");
+}
+
+void compile_command_line_tool(void)
+{
+	set_current_dir("kai");
+	{
+		Cmd cmd = {0};
+		nob_cc(&cmd);
+		nob_cc_flags(&cmd);
+		nob_cc_inputs(&cmd, "main.c");
+		nob_cc_output(&cmd, "kai");
+		exit_on_fail(cmd_run_sync_and_reset(&cmd));
+	}
+	set_current_dir("..");
+}
+
 const char* source_files[] = {
 	"src/core.kai",
 	"src/parser.kai",
+	"src/compiler.kai",
 };
 
 typedef struct {
@@ -1627,7 +1743,11 @@ Module modules[] = {
 int main(int argc, char** argv)
 {
 #ifndef DEBUG // Debugger does not like this
+#ifdef USE_GENERATED
+	NOB_GO_REBUILD_URSELF_PLUS(argc, argv, "kai.h");
+#else
 	NOB_GO_REBUILD_URSELF_PLUS(argc, argv, "3rd-party/kai.h");
+#endif
 #endif
 	kai_memory_create(&g_allocator);
 	g_writer = kai_writer_stdout();
@@ -1675,9 +1795,9 @@ int main(int argc, char** argv)
 		arrput(trees, tree);
 	}
 	for (int i = 0; i < arrlen(trees); ++i)
-		generate_all_non_struct_typedefs(&builder, &trees[i].root);
-	for (int i = 0; i < arrlen(trees); ++i)
 		generate_all_data_structure_types(&builder, (Kai_Stmt*)&trees[i].root);
+	for (int i = 0; i < arrlen(trees); ++i)
+		generate_all_non_struct_typedefs(&builder, &trees[i].root);
 	sb_append(&builder, "\n");
 	for (int i = 0; i < arrlen(trees); ++i)
 		generate_all_function_definitions(&builder, &trees[i].root, KAI_TRUE);
@@ -1686,8 +1806,8 @@ int main(int argc, char** argv)
 		const char* upper_name = temp_cstr_upper(modules[i].name);
 		sb_appendf(&builder, "#ifndef KAI_DONT_USE_%s_API\n", upper_name);
 		generate_all_struct_typedefs(&builder, &modules[i].tree.root);
-		generate_all_non_struct_typedefs(&builder, &modules[i].tree.root);
 		generate_all_data_structure_types(&builder, (Kai_Stmt*)&modules[i].tree.root);
+		generate_all_non_struct_typedefs(&builder, &modules[i].tree.root);
 		generate_all_struct_definitions(&builder, &modules[i].tree.root);
 		generate_all_function_definitions(&builder, &modules[i].tree.root, KAI_FALSE);
 		sb_append(&builder, "#endif\n\n");
@@ -1713,17 +1833,7 @@ int main(int argc, char** argv)
 	write_entire_file("kai.h", builder.items, builder.count);
 	nob_log(INFO, "Generated \"kai.h\"");
 
-	set_current_dir("tests");
-
-	Cmd cmd = {0};
-	nob_cc(&cmd);
-	nob_cc_flags(&cmd);
-	nob_cc_inputs(&cmd, "able-to-compile.c");
-	nob_cc_output(&cmd, "able-to-compile");
-	exit_on_fail(cmd_run_sync_and_reset(&cmd));
-	
-	cmd_append(&cmd, "./able-to-compile");
-	exit_on_fail(cmd_run_sync_and_reset(&cmd));
-
+	run_tests();
+	compile_command_line_tool();
 	return 0;
 }

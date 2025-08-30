@@ -17,7 +17,7 @@ _file_writer_write_value :: (user: *void, type: u32, value: Value, format: Write
     if (type == FILL)
     {
         if (format.min_count == 0) ret;
-        for i: 0..format.min_count-1 {
+        for i: 0..<format.min_count {
             fputc(format.fill_character, f);
         }
     }

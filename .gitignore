@@ -18,5 +18,6 @@
 # Build Binaries
 build
 build.old
+/kai/kai
 /tests/*
 !/tests/*.*

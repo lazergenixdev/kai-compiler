@@ -70,11 +70,11 @@ example :: ()
     table: [string] int;
 
     table.count; // get number of elements
-    table_set(&table, "this", 123) // sets value of element, overwriting previous value
-    table_find(&table, "this") // get index of element, or -1 if not found
-    table_get(&table, "this") // get element, or -1 if not found
-    table_remove(&table, "this"); // deletes entry
-    table_destroy(&table); // free memory
+    table_set(*table, "this", 123); // sets value of element, overwriting previous value
+    table_find(*table, "this"); // get index of element, or -1 if not found
+    table_get(*table, "this"); // get element, or -1 if not found
+    table_remove(*table, "this"); // deletes entry
+    table_destroy(*table); // free memory
 }
 
 // Idea: Distinct directive or keyword?
@@ -82,6 +82,13 @@ example :: ()
 {
     //BigInt :: distinct int;
     BigInt :: #distinct int;
+}
+
+// Idea: ternary op
+example :: ()
+{
+    x := 2;
+    y := 4 if x < 3 else 2;
 }
 
 // COMPILER SPECIFIC

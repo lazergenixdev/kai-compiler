@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE "2025-08-29 13:06:23 PDT"
+#define KAI_BUILD_DATE "2025-08-29 20:02:20 PDT"
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -97,9 +97,10 @@
 #endif
 
 #define KAI_BOOL(EXPR) ((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))
-#define KAI_STRING(LITERAL) KAI_STRUCT(Kai_string){.count = sizeof(LITERAL)-1, .data = (Kai_u8*)(LITERAL)}
+#define KAI_STRING(LITERAL) KAI_STRUCT(Kai_string){.count = (Kai_u32)(sizeof(LITERAL)-1), .data = (Kai_u8*)(LITERAL)}
 #define KAI_SLICE(TYPE) struct { Kai_u32 count; TYPE* data; }
 #define KAI_DYNAMIC_ARRAY(T) struct { Kai_u32 count; Kai_u32 capacity; T* data; }
+#define KAI_HASH_TABLE(T) struct { Kai_u32 count; Kai_u32 capacity; Kai_u64* occupied; Kai_u64* hashes; Kai_string* keys; T* values; }
 #define KAI_LINKED_LIST(T) struct { T *head, *last; }
 #define KAI_FILL 0x800
 
@@ -114,17 +115,22 @@
 #define kai__set_color(Color) if (writer->set_color != NULL) writer->set_color(writer->user, Color)
 #define kai__write_fill(Char,Count) writer->write_value(writer->user, KAI_FILL, (Kai_Value){0}, (Kai_Write_Format){.fill_character = (Kai_u8)Char, .min_count = Count})
 #define kai__next_character_equals(C) ( (context->cursor+1) < context->source.count && C == context->source.data[context->cursor+1] )
+#define kai__allocate(Old,New_Size,Old_Size) allocator->heap_allocate(allocator->user, Old, New_Size, Old_Size)
+#define kai__free(Ptr,Size) allocator->heap_allocate(allocator->user, Ptr, 0, Size)
 #define kai_array_destroy(ARRAY) (allocator->heap_allocate(allocator->user, (ARRAY)->data, 0, (ARRAY)->capacity * sizeof((ARRAY)->data[0])), (ARRAY)->count = 0, (ARRAY)->capacity = 0, (ARRAY)->data = NULL)
 #define kai_array_reserve(ARRAY,NEW_CAPACITY) kai_raw_array_reserve((Kai_Raw_Dynamic_Array*)(ARRAY), NEW_CAPACITY, allocator, sizeof((ARRAY)->data[0]))
 #define kai_array_resize(ARRAY,NEW_SIZE) kai_raw_array_resize((Kai_Raw_Dynamic_Array*)(ARRAY), NEW_SIZE, allocator, sizeof((ARRAY)->data[0]))
 #define kai_array_grow(ARRAY,COUNT) kai_raw_array_grow((Kai_Raw_Dynamic_Array*)(ARRAY), COUNT, allocator, sizeof((ARRAY)->data[0]))
 #define kai_array_push(ARRAY,...) (kai_raw_array_grow((Kai_Raw_Dynamic_Array*)(ARRAY), 1, allocator, sizeof((ARRAY)->data[0])), (ARRAY)->data[(ARRAY)->count++] = (__VA_ARGS__))
 #define kai_array_pop(ARRAY) (ARRAY)->data[--(ARRAY)->count]
+#define kai_array_last(ARRAY) (ARRAY)->data[(ARRAY)->count - 1]
 #define kai_array_insert(ARRAY) TODO
 #define kai_array_insert_n(ARRAY) TODO
 #define kai_array_remove(ARRAY) TODO
 #define kai_array_remove_n(ARRAY) TODO
 #define kai_array_remove_swap(ARRAY) TODO
+#define kai_table_set(T,KEY,...) do{ Kai_u32 _; kai_raw_hash_table_emplace_key((Kai_Raw_Hash_Table*)(T), KEY, &_, allocator, sizeof (T)->values[0]); (T)->values[_] = (__VA_ARGS__); }while(0)
+#define kai_table_find(T,KEY) kai_raw_hash_table_find((Kai_Raw_Hash_Table*)(T), KEY)
 
 #ifndef KAI_API
 #define KAI_API(RETURN) extern RETURN
@@ -187,12 +193,14 @@ typedef Kai_u32 Kai_Primitive_Type;
 typedef struct Kai_Range Kai_Range;
 typedef struct Kai_Memory Kai_Memory;
 typedef Kai_u32 Kai_Result;
+typedef struct Kai_Source Kai_Source;
 typedef struct Kai_Location Kai_Location;
 typedef struct Kai_Error Kai_Error;
 typedef Kai_u32 Kai_Memory_Command;
 typedef struct Kai_Allocator Kai_Allocator;
 typedef struct Kai_Raw_Dynamic_Array Kai_Raw_Dynamic_Array;
 typedef struct Kai_Raw_Hash_Table Kai_Raw_Hash_Table;
+typedef struct Kai_Hash_Table_Size Kai_Hash_Table_Size;
 typedef Kai_u8 Kai_Type_Id;
 typedef struct Kai_Type_Info Kai_Type_Info;
 typedef struct Kai_Type_Info_Integer Kai_Type_Info_Integer;
@@ -245,6 +253,27 @@ typedef struct Kai_Parser Kai_Parser;
 typedef struct Kai__Operator Kai__Operator;
 typedef Kai_u32 Kai__Operator_Type;
 
+typedef Kai_u32 Kai_Compile_Flags;
+typedef struct Kai_Compile_Options Kai_Compile_Options;
+typedef struct Kai_Native_Procedure Kai_Native_Procedure;
+typedef struct Kai_Program_Create_Info Kai_Program_Create_Info;
+typedef struct Kai_Program Kai_Program;
+typedef Kai_u32 Kai_Node_Flags;
+typedef struct Kai_Node_Reference Kai_Node_Reference;
+typedef struct Kai_Node Kai_Node;
+typedef struct Kai_Scope Kai_Scope;
+typedef struct Kai_Compiler_Context Kai_Compiler_Context;
+
+typedef KAI_DYNAMIC_ARRAY(Kai_u8) Kai_u8_DynArray;
+typedef KAI_SLICE(Kai_Source) Kai_Source_Slice;
+typedef KAI_SLICE(Kai_Native_Procedure) Kai_Native_Procedure_Slice;
+typedef KAI_SLICE(Kai_u8) Kai_u8_Slice;
+typedef KAI_DYNAMIC_ARRAY(Kai_Node_Reference) Kai_Node_Reference_DynArray;
+typedef KAI_HASH_TABLE(Kai_Node_Reference) Kai_Node_Reference_HashTable;
+typedef KAI_SLICE(Kai_Syntax_Tree) Kai_Syntax_Tree_Slice;
+typedef KAI_DYNAMIC_ARRAY(Kai_Scope) Kai_Scope_DynArray;
+typedef KAI_DYNAMIC_ARRAY(Kai_Node) Kai_Node_DynArray;
+typedef KAI_SLICE(Kai_u32) Kai_u32_Slice;
 typedef void* Kai_P_Memory_Heap_Allocate(void* user, void* ptr, Kai_u32 new_size, Kai_u32 old_size);
 typedef void* Kai_P_Memory_Platform_Allocate(void* user, void* ptr, Kai_u32 size, Kai_Memory_Command op);
 typedef Kai_Type_Info* Kai_Type;
@@ -258,7 +287,6 @@ typedef KAI_LINKED_LIST(Kai_Stmt) Kai_Stmt_List;
 #define KAI_TOP_PRECEDENCE 1
 #define KAI_PRECEDENCE_MASK 65535
 
-typedef KAI_DYNAMIC_ARRAY(Kai_u8) Kai_u8_DynArray;
 
 KAI_API(Kai_string) kai_version_string(void);
 KAI_API(Kai_vector3_u32) kai_version(void);
@@ -266,9 +294,14 @@ KAI_API(Kai_bool) kai_string_equals(Kai_string left, Kai_string right);
 KAI_API(Kai_string) kai_string_from_c(Kai_cstring s);
 KAI_API(Kai_string) kai_string_copy_from_c(Kai_string dst, Kai_cstring src);
 KAI_API(Kai_string) kai_merge_strings(Kai_string a, Kai_string b);
+KAI_API(Kai_u64) kai_string_hash(Kai_string s);
 KAI_API(void) kai_raw_array_reserve(Kai_Raw_Dynamic_Array* array, Kai_u32 new_capacity, Kai_Allocator* allocator, Kai_u32 elem_size);
 KAI_API(void) kai_raw_array_resize(Kai_Raw_Dynamic_Array* array, Kai_u32 new_size, Kai_Allocator* allocator, Kai_u32 elem_size);
 KAI_API(void) kai_raw_array_grow(Kai_Raw_Dynamic_Array* array, Kai_u32 count, Kai_Allocator* allocator, Kai_u32 elem_size);
+KAI_API(Kai_Hash_Table_Size) kai_raw_hash_table_size(Kai_u32 capacity, Kai_u32 elem_size);
+KAI_API(void) kai_raw_hash_table_grow(Kai_Raw_Hash_Table* table, Kai_Allocator* allocator, Kai_u32 elem_size);
+KAI_API(Kai_bool) kai_raw_hash_table_emplace_key(Kai_Raw_Hash_Table* table, Kai_string key, Kai_u32* out_index, Kai_Allocator* allocator, Kai_u32 elem_size);
+KAI_API(Kai_int) kai_raw_hash_table_find(Kai_Raw_Hash_Table* table, Kai_string key);
 KAI_API(Kai_u64) kai_number_to_u64(Kai_Number number);
 KAI_API(Kai_f64) kai_number_to_f64(Kai_Number number);
 KAI_API(Kai_Number) kai_number_normalize(Kai_Number number);
@@ -295,6 +328,7 @@ KAI_API(void) kai_write_type(Kai_Writer* writer, Kai_Type type);
 KAI_API(void) kai_write_expression(Kai_Writer* writer, Kai_Expr* expr);
 KAI_API(void) kai_write_syntax_tree(Kai_Writer* writer, Kai_Syntax_Tree* tree);
 KAI_API(void) kai_write_number(Kai_Writer* writer, Kai_Number number);
+KAI_API(void) kai_destroy_error(Kai_Error* error, Kai_Allocator* allocator);
 
 KAI_API(void) kai_write_token(Kai_Writer* writer, Kai_Token token);
 KAI_API(Kai_string) kai_token_string(Kai_Token_Id id, Kai_string dst);
@@ -308,6 +342,10 @@ KAI_API(Kai_Stmt*) kai_parse_declaration(Kai_Parser* parser);
 KAI_API(Kai_Stmt*) kai_parse_statement(Kai_Parser* parser);
 KAI_API(Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_Tree* out_tree);
 KAI_API(void) kai_destroy_syntax_tree(Kai_Syntax_Tree* tree);
+
+KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Program* out_program);
+KAI_API(void) kai_destroy_program(Kai_Program* program);
+KAI_API(void) kai_find_procedure(Kai_Program* program, Kai_string name, Kai_Type opt_type);
 
 #ifndef KAI_DONT_USE_WRITER_API
 KAI_API(Kai_Writer) kai_writer_stdout(void);
@@ -368,10 +406,14 @@ enum {
     KAI_RESULT_COUNT = 7,
 };
 
+struct Kai_Source {
+    Kai_string name;
+    Kai_string contents;
+};
+
 struct Kai_Location {
-    Kai_string file_name;
+    Kai_Source source;
     Kai_string string;
-    Kai_u8* source;
     Kai_u32 line;
 };
 
@@ -410,6 +452,14 @@ struct Kai_Raw_Hash_Table {
     Kai_u64* hashes;
     Kai_string* keys;
     void* values;
+};
+
+struct Kai_Hash_Table_Size {
+    Kai_u32 occupied;
+    Kai_u32 hashes;
+    Kai_u32 keys;
+    Kai_u32 values;
+    Kai_u32 total;
 };
 
 enum {
@@ -581,6 +631,8 @@ enum {
     KAI_FLAG_PROC_USING = 1<<1,
     KAI_FLAG_STRUCT_UNION = 1<<2,
     KAI_FLAG_IF_CASE = 1<<2,
+    KAI_FLAG_FOR_LESS_THAN = 1<<2,
+    KAI_FLAG_ARRAY_DYNAMIC = 1<<2,
 };
 
 struct Kai_Expr {
@@ -713,8 +765,8 @@ struct Kai_Expr_Array {
     Kai_string name;
     Kai_Expr* next;
     Kai_u32 line_number;
-    Kai_u32 rows;
-    Kai_u32 cols;
+    Kai_Expr* rows;
+    Kai_Expr* cols;
     Kai_Expr* expr;
 };
 
@@ -810,12 +862,12 @@ struct Kai_Stmt_Control {
 
 struct Kai_Syntax_Tree {
     Kai_Stmt_Compound root;
-    Kai_string source_filename;
+    Kai_Source source;
     Kai_Arena_Allocator allocator;
 };
 
 struct Kai_Syntax_Tree_Create_Info {
-    Kai_string source_code;
+    Kai_Source source;
     Kai_Allocator allocator;
     Kai_Error* error;
 };
@@ -875,6 +927,75 @@ enum {
     KAI__OPERATOR_TYPE_BINARY = 0,
     KAI__OPERATOR_TYPE_INDEX = 1,
     KAI__OPERATOR_TYPE_PROCEDURE_CALL = 2,
+};
+
+enum {
+    KAI_COMPILE_NO_CODE_GEN = 1,
+};
+
+struct Kai_Compile_Options {
+    Kai_u32 Interpreter_Max_Step_Count;
+    Kai_u32 Interpreter_Max_Call_Depth;
+    Kai_Compile_Flags flags;
+};
+
+struct Kai_Native_Procedure {
+    Kai_u8* name;
+    void* address;
+    Kai_u8 input_count;
+};
+
+struct Kai_Program_Create_Info {
+    Kai_Source_Slice sources;
+    Kai_Allocator allocator;
+    Kai_Error* error;
+    Kai_Native_Procedure_Slice native_procedures;
+    Kai_Compile_Options options;
+};
+
+struct Kai_Program {
+    Kai_u8_Slice code;
+    Kai_uint procedure_table;
+    Kai_Allocator allocator;
+};
+
+enum {
+    KAI_NODE_TYPE = 1,
+    KAI_NODE_EVALUATED = 2,
+};
+
+struct Kai_Node_Reference {
+    Kai_Node_Flags flags;
+    Kai_u32 index;
+};
+
+struct Kai_Node {
+    Kai_Type type;
+    Kai_Value value;
+    Kai_Location location;
+    Kai_Expr* expr;
+    Kai_Node_Reference_DynArray value_dependencies;
+    Kai_Node_Reference_DynArray type_dependencies;
+    Kai_Node_Flags value_flags;
+    Kai_Node_Flags type_flags;
+};
+
+struct Kai_Scope {
+    Kai_Node_Reference_HashTable identifiers;
+    Kai_bool is_proc_scope;
+};
+
+struct Kai_Compiler_Context {
+    Kai_Error* error;
+    Kai_Allocator allocator;
+    Kai_Program* program;
+    Kai_Syntax_Tree_Slice trees;
+    Kai_Scope_DynArray scopes;
+    Kai_Node_DynArray nodes;
+    Kai_u32_Slice compilation_order;
+    Kai_Arena_Allocator type_allocator;
+    Kai_Source current_source;
+    Kai_u32 current_node;
 };
 
 #ifdef KAI_IMPLEMENTATION
@@ -1094,7 +1215,7 @@ KAI_INTERNAL Kai_u64 kai__add_with_shift(Kai_u64 a, Kai_u64 b, Kai_s32* exp, Kai
 
 KAI_INTERNAL void kai__memory_copy(void* dst, void* src, Kai_u32 size)
 {
-    for (Kai_u32 i = 0; i <= size-1; ++i)
+    for (Kai_u32 i = 0; i < size; ++i)
     {
         ((Kai_u8*)(dst))[i] = ((Kai_u8*)(src))[i];
     }
@@ -1102,7 +1223,7 @@ KAI_INTERNAL void kai__memory_copy(void* dst, void* src, Kai_u32 size)
 
 KAI_INTERNAL void kai__memory_zero(void* dst, Kai_u32 size)
 {
-    for (Kai_u32 i = 0; i <= size-1; ++i)
+    for (Kai_u32 i = 0; i < size; ++i)
     {
         ((Kai_u8*)(dst))[i] = 0;
     }
@@ -1110,7 +1231,7 @@ KAI_INTERNAL void kai__memory_zero(void* dst, Kai_u32 size)
 
 KAI_INTERNAL void kai__memory_fill(void* dst, Kai_u8 byte, Kai_u32 size)
 {
-    for (Kai_u32 i = 0; i <= size-1; ++i)
+    for (Kai_u32 i = 0; i < size; ++i)
     {
         ((Kai_u8*)(dst))[i] = byte;
     }
@@ -1120,7 +1241,7 @@ KAI_API(Kai_bool) kai_string_equals(Kai_string left, Kai_string right)
 {
     if (left.count!=right.count)
         return KAI_FALSE;
-    for (Kai_u32 i = 0; i <= left.count-1; ++i)
+    for (Kai_u32 i = 0; i < left.count; ++i)
     {
         if ((left.data)[i]!=(right.data)[i])
             return KAI_FALSE;
@@ -1130,7 +1251,7 @@ KAI_API(Kai_bool) kai_string_equals(Kai_string left, Kai_string right)
 
 KAI_API(Kai_string) kai_string_from_c(Kai_cstring s)
 {
-    Kai_u32 count = 0;
+    Kai_u32 count = {0};
     while (s[count]!=0)
         count += 1;
     return ((Kai_string){.data = (Kai_u8*)(s), .count = count});
@@ -1138,7 +1259,7 @@ KAI_API(Kai_string) kai_string_from_c(Kai_cstring s)
 
 KAI_API(Kai_string) kai_string_copy_from_c(Kai_string dst, Kai_cstring src)
 {
-    Kai_u32 i = 0;
+    Kai_u32 i = {0};
     while (i<dst.count&&src[i]!=0)
     {
         (dst.data)[i] = src[i];
@@ -1164,11 +1285,19 @@ KAI_API(Kai_string) kai_merge_strings(Kai_string a, Kai_string b)
     return ((Kai_string){.data = left.data, .count = (Kai_u32)((right.data+(Kai_uint)(right.count))-left.data)});
 }
 
+KAI_API(Kai_u64) kai_string_hash(Kai_string s)
+{
+    Kai_u64 hash = 5381;
+    for (Kai_u32 i = 0; i < s.count; ++i)
+        hash = ((hash<<5)+hash)+(s.data)[i];
+    return hash;
+}
+
 KAI_API(void) kai_raw_array_reserve(Kai_Raw_Dynamic_Array* array, Kai_u32 new_capacity, Kai_Allocator* allocator, Kai_u32 elem_size)
 {
     if (new_capacity<=array->capacity)
         return;
-    array->data = allocator->heap_allocate(allocator->user, array->data, new_capacity*elem_size, array->capacity*elem_size);
+    array->data = kai__allocate(array->data, new_capacity*elem_size, array->capacity*elem_size);
     array->capacity = new_capacity;
 }
 
@@ -1185,6 +1314,116 @@ KAI_API(void) kai_raw_array_grow(Kai_Raw_Dynamic_Array* array, Kai_u32 count, Ka
     Kai_u32 n = array->count+count;
     Kai_u32 new_capacity = kai__max_u32(n+(n>>1), 8);
     kai_raw_array_reserve(array, new_capacity, allocator, elem_size);
+}
+
+KAI_API(Kai_Hash_Table_Size) kai_raw_hash_table_size(Kai_u32 capacity, Kai_u32 elem_size)
+{
+    Kai_Hash_Table_Size r = {0};
+    r.occupied = kai__ceil_div_fast(capacity, 6)*sizeof(Kai_u64);
+    r.hashes = capacity*sizeof(Kai_u64);
+    r.keys = capacity*sizeof(Kai_string);
+    r.values = (capacity+1)*elem_size;
+    r.total = ((r.occupied+r.hashes)+r.keys)+r.values;
+    return r;
+}
+
+KAI_API(void) kai_raw_hash_table_grow(Kai_Raw_Hash_Table* table, Kai_Allocator* allocator, Kai_u32 elem_size)
+{
+    Kai_u32 new_capacity = kai__max_u32(8, table->capacity*2);
+    Kai_Hash_Table_Size new_size = kai_raw_hash_table_size(new_capacity, elem_size);
+    void* new_ptr = kai__allocate(NULL, new_size.total, 0);
+    Kai_u64* occupied = (Kai_u64*)(new_ptr);
+    Kai_u64* hashes = (Kai_u64*)((Kai_u8*)(occupied)+new_size.occupied);
+    Kai_string* keys = (Kai_string*)((Kai_u8*)(hashes)+new_size.hashes);
+    Kai_u8* values = (Kai_u8*)((Kai_u8*)(keys)+new_size.keys)+elem_size;
+    Kai_u32 count = 0;
+    for (Kai_u32 i = 0; i < table->capacity; ++i)
+        if ((table->occupied)[i/64]&((Kai_u64)(1))<<(i%64))
+        {
+            Kai_u64 hash = kai_string_hash((table->keys)[i]);
+            Kai_u32 mask = new_capacity-1;
+            Kai_u32 index = (Kai_u32)(hash)&mask;
+            for (Kai_u32 j = 0; j < new_capacity; ++j)
+            {
+                Kai_u64 block = occupied[index/64];
+                Kai_u32 bit = ((Kai_u64)(1))<<(index%64);
+                if ((block&bit)==0)
+                {
+                    occupied[index/64] |= bit;
+                    hashes[index] = hash;
+                    keys[index] = (table->keys)[i];
+                    Kai_u8* src = (Kai_u8*)(table->values)+i*elem_size;
+                    kai__memory_copy(values+index*elem_size, src, elem_size);
+                    count += 1;
+                    break;
+                }
+                index = index+1&mask;
+            }
+        }
+    kai_assert(count==table->count);
+    if (table->capacity!=0)
+    {
+        kai__free(table->occupied, kai_raw_hash_table_size(table->capacity, elem_size).total);
+    }
+    table->capacity = new_capacity;
+    table->occupied = occupied;
+    table->hashes = hashes;
+    table->keys = keys;
+    table->values = values;
+}
+
+KAI_API(Kai_bool) kai_raw_hash_table_emplace_key(Kai_Raw_Hash_Table* table, Kai_string key, Kai_u32* out_index, Kai_Allocator* allocator, Kai_u32 elem_size)
+{
+    if (4*table->count>=3*table->capacity)
+        kai_raw_hash_table_grow(table, allocator, elem_size);
+    Kai_u64 hash = kai_string_hash(key);
+    Kai_u32 mask = table->capacity-1;
+    Kai_u32 index = (Kai_u32)(hash)&mask;
+    for (Kai_u32 i = 0; i < table->capacity; ++i)
+    {
+        Kai_u64 byte = (table->occupied)[index/64];
+        Kai_u64 bit = ((Kai_u64)(1))<<(index%64);
+        if ((byte&bit)==0)
+        {
+            (table->occupied)[index/64] |= bit;
+            (table->hashes)[index] = hash;
+            (table->keys)[index] = key;
+            table->count += 1;
+            *out_index = index;
+            return KAI_TRUE;
+        }
+        if ((table->hashes)[index]==hash&&kai_string_equals((table->keys)[index], key))
+        {
+            *out_index = index;
+            return KAI_FALSE;
+        }
+        index = index+1&mask;
+    }
+    *out_index = 4294967295;
+    return KAI_FALSE;
+}
+
+KAI_API(Kai_int) kai_raw_hash_table_find(Kai_Raw_Hash_Table* table, Kai_string key)
+{
+    Kai_u64 hash = kai_string_hash(key);
+    Kai_u32 mask = table->capacity-1;
+    Kai_u32 index = (Kai_u32)(hash)&mask;
+    for (Kai_u32 i = 0; i < table->capacity; ++i)
+    {
+        Kai_u64 block = (table->occupied)[index/64];
+        Kai_u64 bit = ((Kai_u64)(1))<<(index%64);
+        if ((block&bit)==0)
+        {
+            return -1;
+        }
+        else
+        if ((table->hashes)[index]==hash&&kai_string_equals((table->keys)[index], key))
+        {
+            return (Kai_int)(index);
+        }
+        index = index+1&mask;
+    }
+    return -1;
 }
 
 KAI_API(Kai_u64) kai_number_to_u64(Kai_Number number)
@@ -1525,10 +1764,18 @@ KAI_INTERNAL Kai_Range kai__buffer_end(Kai_Buffer* buffer)
     return out;
 }
 
+KAI_INTERNAL Kai_Range kai__buffer_push(Kai_Buffer* buffer, Kai_u32 size)
+{
+    Kai_Allocator* allocator = &buffer->allocator;
+    kai_array_grow(&buffer->array, size);
+    (buffer->array).count += size;
+    return kai__buffer_end(buffer);
+}
+
 KAI_INTERNAL Kai_Memory kai__buffer_done(Kai_Buffer* buffer)
 {
     Kai_Memory memory = ((Kai_Memory){.data = (buffer->array).data, .size = (buffer->array).capacity});
-    *buffer = ((Kai_Buffer){0});
+    *buffer = ((Kai_Buffer){.allocator = buffer->allocator});
     return memory;
 }
 
@@ -1662,17 +1909,22 @@ KAI_API(void) kai_write_error(Kai_Writer* writer, Kai_Error* error)
             return;
         }
         kai__set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-        kai__write_string((error->location).file_name);
+        kai__write_string(((error->location).source).name);
         kai__set_color(KAI_WRITE_COLOR_PRIMARY);
         kai__write(" --> ");
         if (error->result!=KAI_ERROR_INFO)
+        {
             kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
+        }
+        else
+        {
+            kai__set_color(KAI_WRITE_COLOR_SECONDARY);
+        }
         kai__write_string(kai_result_string_map[error->result]);
-        if (error->result!=KAI_ERROR_INFO)
-            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
         kai__write(": ");
-        kai__set_color(KAI_WRITE_COLOR_SECONDARY);
         kai__write_string(error->message);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
         kai__write("\n");
         if (error->result==KAI_ERROR_FATAL||error->result==KAI_ERROR_INTERNAL)
         {
@@ -1686,7 +1938,7 @@ KAI_API(void) kai_write_error(Kai_Writer* writer, Kai_Error* error)
         kai__write(" ");
         kai__write_u32((error->location).line);
         kai__write(" | ");
-        Kai_u8* begin = kai__advance_to_line((error->location).source, (error->location).line);
+        Kai_u8* begin = kai__advance_to_line((((error->location).source).contents).data, (error->location).line);
         kai__set_color(KAI_WRITE_COLOR_PRIMARY);
         kai__write_source_code(writer, begin);
         kai__write("\n");
@@ -1816,7 +2068,7 @@ KAI_INTERNAL void kai__write_tree(Kai__Tree_Traversal_Context* context, Kai_Expr
     Kai_Writer* writer = context->writer;
     kai__set_color(KAI_WRITE_COLOR_DECORATION);
     Kai_u32 last = context->stack_count-1;
-    for (Kai_u32 i = 0; i <= context->stack_count-1; ++i)
+    for (Kai_u32 i = 0; i < context->stack_count; ++i)
     {
         Kai_u64 bit = ((context->stack)[i/64])>>(i%64);
         Kai_u32 a = bit&1;
@@ -1906,12 +2158,18 @@ KAI_INTERNAL void kai__write_tree(Kai__Tree_Traversal_Context* context, Kai_Expr
         break; case KAI_EXPR_ARRAY:
         {
             Kai_Expr_Array* a = (void*)(expr);
-            kai__write_expr_id_with_name(writer, KAI_STRING("array type"), expr->name);
-            kai__write(" [");
-            kai__write_u32(a->rows);
-            kai__write("x");
-            kai__write_u32(a->cols);
-            kai__write("]\n");
+            kai__write_expr_id_with_name(writer, KAI_STRING("array"), expr->name);
+            kai__write("\n");
+            if (a->rows!=NULL)
+            {
+                context->prefix = KAI_STRING("rows");
+                kai__explore(a->rows, KAI_FALSE);
+                if (a->cols!=NULL)
+                {
+                    context->prefix = KAI_STRING("cols");
+                    kai__explore(a->cols, KAI_FALSE);
+                }
+            }
             kai__explore(a->expr, KAI_TRUE);
         }
         break; case KAI_EXPR_PROCEDURE_TYPE:
@@ -1926,14 +2184,14 @@ KAI_INTERNAL void kai__write_tree(Kai__Tree_Traversal_Context* context, Kai_Expr
             Kai_u32 end = (p->in_count+p->out_count)-1;
             Kai_Expr* current = p->in_out_expr;
             if (p->in_count)
-                for (Kai_u32 i = 0; i <= p->in_count-1; ++i)
+                for (Kai_u32 i = 0; i < p->in_count; ++i)
                 {
                     context->prefix = KAI_STRING("in ");
                     kai__explore(current, i==end);
                     current = current->next;
                 }
             if (p->out_count)
-                for (Kai_u32 i = 0; i <= p->out_count-1; ++i)
+                for (Kai_u32 i = 0; i < p->out_count; ++i)
                 {
                     context->prefix = KAI_STRING("out");
                     Kai_int idx = i+p->in_count;
@@ -1966,14 +2224,14 @@ KAI_INTERNAL void kai__write_tree(Kai__Tree_Traversal_Context* context, Kai_Expr
             kai__write(" out)\n");
             Kai_Expr* current = p->in_out_expr;
             if (p->in_count)
-                for (Kai_u32 i = 0; i <= p->in_count-1; ++i)
+                for (Kai_u32 i = 0; i < p->in_count; ++i)
                 {
                     context->prefix = KAI_STRING("in ");
                     kai__explore(current, KAI_FALSE);
                     current = current->next;
                 }
             if (p->out_count)
-                for (Kai_u32 i = 0; i <= p->out_count-1; ++i)
+                for (Kai_u32 i = 0; i < p->out_count; ++i)
                 {
                     context->prefix = KAI_STRING("out");
                     kai__explore(current, KAI_FALSE);
@@ -2137,6 +2395,17 @@ KAI_API(void) kai_write_number(Kai_Writer* writer, Kai_Number number)
     kai__write_u64(number.n);
     kai__write(" * 2^");
     kai__write_s32(number.e);
+}
+
+KAI_API(void) kai_destroy_error(Kai_Error* error, Kai_Allocator* allocator)
+{
+    while (error)
+    {
+        Kai_Error* next = error->next;
+        if ((error->memory).size>0)
+            kai__free((error->memory).data, (error->memory).size);
+        error = next;
+    }
 }
 
 static Kai_u8 kai__keyword_map[32] = {
@@ -2424,7 +2693,7 @@ KAI_API(Kai_Token) kai_tokenizer_generate(Kai_Tokenizer* context)
     {
         (token.string).data = (context->source).data+context->cursor;
         Kai_u8 ch = ((token.string).data)[0];
-        Kai_u32 where = 0;
+        Kai_u32 where = {0};
         if (!(ch&128))
             where = kai__token_lookup_table[ch];
         switch (where)
@@ -2823,12 +3092,13 @@ KAI_INTERNAL Kai_Expr* kai__parser_create_binary(Kai_Parser* parser, Kai_Expr* l
     return (Kai_Expr*)(node);
 }
 
-KAI_INTERNAL Kai_Expr* kai__parser_create_array(Kai_Parser* parser, Kai_Token op_token, Kai_Expr* expr, Kai_u32 rows, Kai_u32 cols)
+KAI_INTERNAL Kai_Expr* kai__parser_create_array(Kai_Parser* parser, Kai_Token op_token, Kai_Expr* expr, Kai_Expr* rows, Kai_Expr* cols, Kai_u8 flags)
 {
     Kai_Expr_Array* node = kai_arena_allocate(&parser->arena, sizeof(Kai_Expr_Array));
     node->id = KAI_EXPR_ARRAY;
     node->source_code = kai_merge_strings(op_token.string, expr->source_code);
     node->line_number = kai__min_u32(op_token.line_number, expr->line_number);
+    node->flags = flags;
     node->rows = rows;
     node->cols = cols;
     node->expr = expr;
@@ -3044,28 +3314,24 @@ KAI_API(Kai_Expr*) kai_parse_expression(Kai_Parser* parser, Kai_u32 flags)
         {
             Kai_Token op_token = *current;
             kai__next_token();
-            Kai_u32 rows = 0;
-            Kai_u32 cols = 0;
+            Kai_Expr* rows = 0;
+            Kai_Expr* cols = 0;
             if (current->id==11822)
             {
                 kai__next_token();
-                rows = 0;
-                cols = 1;
+                flags |= KAI_FLAG_ARRAY_DYNAMIC;
             }
             else
             if (current->id!=93)
             {
-                kai__expect(current->id==KAI_TOKEN_NUMBER, "in array type", "should be a number here");
-                kai__expect(kai_number_is_integer((current->value).number), "in array type", "should be an integer");
-                rows = kai_number_to_u64((current->value).number);
-                cols = 1;
+                rows = kai_parse_expression(parser, KAI_TOP_PRECEDENCE);
+                kai__expect(rows, "in array type", "[todo]");
                 kai__next_token();
                 if (current->id==44)
                 {
                     kai__next_token();
-                    kai__expect(current->id==KAI_TOKEN_NUMBER, "in array type", "should be a number here");
-                    kai__expect(kai_number_is_integer((current->value).number), "in array type", "should be an integer");
-                    cols = kai_number_to_u64((current->value).number);
+                    cols = kai_parse_expression(parser, KAI_TOP_PRECEDENCE);
+                    kai__expect(cols, "in array type", "[todo]");
                     kai__next_token();
                 }
             }
@@ -3073,13 +3339,13 @@ KAI_API(Kai_Expr*) kai_parse_expression(Kai_Parser* parser, Kai_u32 flags)
             kai__next_token();
             Kai_Expr* type = kai_parse_type_expression(parser);
             kai__expect(type, "in array type", "expected type here");
-            return kai__parser_create_array(parser, op_token, type, rows, cols);
+            return kai__parser_create_array(parser, op_token, type, rows, cols, flags);
         }
         break; case 123:
         {
             Kai_Token token = *current;
             Kai_Expr_List body = {0};
-            Kai_u32 count = 0;
+            Kai_u32 count = {0};
             kai__next_token();
             while (current->id!=125)
             {
@@ -3173,7 +3439,7 @@ KAI_API(Kai_Expr*) kai_parse_expression(Kai_Parser* parser, Kai_u32 flags)
                 kai__expect(((current->value).string).count>0, "multi", "string cannot be empty");
                 Kai_Number value = ((Kai_Number){0});
                 Kai_Number base = ((Kai_Number){.n = 1, .d = 1, .e = 8});
-                for (Kai_u32 i = 0; i <= ((current->value).string).count-1; ++i)
+                for (Kai_u32 i = 0; i < ((current->value).string).count; ++i)
                 {
                     Kai_u32 idx = (((current->value).string).count-1)-i;
                     Kai_Number dg = kai_number_normalize(((Kai_Number){.n = (((current->value).string).data)[idx], .d = 1}));
@@ -3197,7 +3463,7 @@ KAI_API(Kai_Expr*) kai_parse_expression(Kai_Parser* parser, Kai_u32 flags)
         {
             Kai_Token struct_token = *current;
             Kai_Stmt_List body = {0};
-            Kai_u32 count = 0;
+            Kai_u32 count = {0};
             kai__next_token();
             kai__next_token();
             while (current->id!=125)
@@ -3216,7 +3482,7 @@ KAI_API(Kai_Expr*) kai_parse_expression(Kai_Parser* parser, Kai_u32 flags)
         {
             Kai_Token struct_token = *current;
             Kai_Stmt_List body = {0};
-            Kai_u32 count = 0;
+            Kai_u32 count = {0};
             kai__next_token();
             Kai_Expr* type = kai_parse_type_expression(parser);
             kai__expect(type, "[todo]", "[todo]");
@@ -3619,9 +3885,15 @@ KAI_API(Kai_Stmt*) kai_parse_statement(Kai_Parser* parser)
             kai__expect(from, "in for statement", "should be an expression here");
             Kai_Expr* to = 0;
             kai__next_token();
+            Kai_u8 flags = {0};
             if (current->id==11822)
             {
                 kai__next_token();
+                if (current->id==60)
+                {
+                    flags |= KAI_FLAG_FOR_LESS_THAN;
+                    kai__next_token();
+                }
                 to = kai_parse_expression(parser, KAI_TOP_PRECEDENCE);
                 kai__expect(to, "in for statement", "should be an expression here");
                 kai__next_token();
@@ -3629,7 +3901,7 @@ KAI_API(Kai_Stmt*) kai_parse_statement(Kai_Parser* parser)
             Kai_Stmt* body = kai_parse_statement(parser);
             if (!body)
                 return NULL;
-            return kai__parser_create_for(parser, for_token, iterator_name, from, to, body, 0);
+            return kai__parser_create_for(parser, for_token, iterator_name, from, to, body, flags);
         }
         break; case KAI_TOKEN_IDENTIFIER:
         {
@@ -3679,10 +3951,10 @@ KAI_API(Kai_Stmt*) kai_parse_statement(Kai_Parser* parser)
 KAI_API(Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_Tree* out_tree)
 {
     Kai_Parser parser = {0};
-    (parser.tokenizer).source = info->source_code;
+    (parser.tokenizer).source = (info->source).contents;
     (parser.tokenizer).line_number = 1;
     parser.error = info->error;
-    (parser.tokenizer).string_arena = ((Kai_Fixed_Allocator){.data = (info->allocator).heap_allocate((info->allocator).user, NULL, (info->source_code).count, 0), .size = (info->source_code).count});
+    (parser.tokenizer).string_arena = ((Kai_Fixed_Allocator){.data = (info->allocator).heap_allocate((info->allocator).user, NULL, ((info->source).contents).count, 0), .size = ((info->source).contents).count});
     kai_arena_create(&parser.arena, &info->allocator);
     Kai_Stmt_List statements = {0};
     Kai_Token* token = kai_tokenizer_next(&parser.tokenizer);
@@ -3694,17 +3966,200 @@ KAI_API(Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Ka
         kai__linked_list_append(statements, statement);
         kai_tokenizer_next(&parser.tokenizer);
     }
-    out_tree->allocator = parser.arena;
     (out_tree->root).id = KAI_STMT_COMPOUND;
     (out_tree->root).head = statements.head;
-    ((info->error)->location).file_name = out_tree->source_filename;
-    ((info->error)->location).source = (info->source_code).data;
+    out_tree->source = info->source;
+    out_tree->allocator = parser.arena;
+    if ((parser.error)->result!=KAI_SUCCESS)
+        ((parser.error)->location).source = info->source;
     return (parser.error)->result;
 }
 
 KAI_API(void) kai_destroy_syntax_tree(Kai_Syntax_Tree* tree)
 {
     (void)(tree);
+}
+
+KAI_INTERNAL Kai_bool kai__create_syntax_trees(Kai_Compiler_Context* context, Kai_Source_Slice sources)
+{
+    Kai_Allocator* allocator = &context->allocator;
+    for (Kai_u32 i = 0; i < sources.count; ++i)
+    {
+        kai_array_push(&context->trees, ((Kai_Syntax_Tree){0}));
+        Kai_Syntax_Tree_Create_Info info = ((Kai_Syntax_Tree_Create_Info){.source = sources.data[i], .allocator = context->allocator, .error = context->error});
+        if (kai_create_syntax_tree(&info, &kai_array_last(&context->trees))!=KAI_SUCCESS)
+            return KAI_TRUE;
+    }
+    return KAI_FALSE;
+}
+
+KAI_INTERNAL Kai_bool kai__inside_procedure_scope(Kai_Compiler_Context* context)
+{
+    for (Kai_u32 i = 0; i < (context->scopes).count; ++i)
+    {
+        Kai_u32 ri = ((context->scopes).count-1)-i;
+        Kai_Scope* scope = &((context->scopes).data)[ri];
+        if (scope->is_proc_scope)
+            return KAI_TRUE;
+    }
+    return KAI_FALSE;
+}
+
+KAI_INTERNAL Kai_bool kai__error_redefinition(Kai_Compiler_Context* context, Kai_Location location, Kai_u32 original)
+{
+    *context->error = ((Kai_Error){.result = KAI_ERROR_SEMANTIC, .location = location});
+    Kai_Buffer buffer = ((Kai_Buffer){.allocator = context->allocator});
+    {
+        kai__buffer_append_string(&buffer, KAI_STRING("indentifier \""));
+        kai__buffer_append_string(&buffer, location.string);
+        kai__buffer_append_string(&buffer, KAI_STRING("\" has already been declared"));
+        Kai_Range range = kai__buffer_end(&buffer);
+        (context->error)->memory = kai__buffer_done(&buffer);
+        (context->error)->message = kai__range_to_string(range, (context->error)->memory);
+    }
+    {
+        Kai_Range info_range = kai__buffer_push(&buffer, sizeof(Kai_Error));
+        kai__buffer_append_string(&buffer, KAI_STRING("see original definition of \""));
+        kai__buffer_append_string(&buffer, location.string);
+        kai__buffer_append_string(&buffer, KAI_STRING("\""));
+        Kai_Range message_range = kai__buffer_end(&buffer);
+        Kai_Memory memory = kai__buffer_done(&buffer);
+        Kai_Node* existing = &((context->nodes).data)[original];
+        Kai_Error* info = (Kai_Error*)(memory.data+info_range.start);
+        *info = ((Kai_Error){.result = KAI_ERROR_INFO, .location = existing->location, .message = kai__range_to_string(message_range, memory), .memory = memory});
+        (context->error)->next = info;
+    }
+    return KAI_TRUE;
+}
+
+KAI_INTERNAL Kai_bool kai__create_nodes(Kai_Compiler_Context* context, Kai_Expr* expr)
+{
+    Kai_Allocator* allocator = &context->allocator;
+    (void)(allocator);
+    switch (expr->id)
+    {
+        break; case KAI_EXPR_PROCEDURE:
+        {
+        }
+        break; case KAI_STMT_IF:
+        {
+        }
+        break; case KAI_STMT_FOR:
+        {
+        }
+        break; case KAI_STMT_DECLARATION:
+        {
+            Kai_Stmt_Declaration* d = (void*)(expr);
+            if (!(d->flags&KAI_FLAG_DECL_CONST)&&kai__inside_procedure_scope(context))
+                return KAI_FALSE;
+            Kai_Location location = ((Kai_Location){.source = context->current_source, .line = d->line_number, .string = d->name});
+            Kai_Scope* scope = &kai_array_last(&context->scopes);
+            {
+                Kai_int index = kai_table_find(&scope->identifiers, d->name);
+                if (index!=-1)
+                {
+                    Kai_Node_Reference reference = ((scope->identifiers).values)[index];
+                    (context->error)->result = KAI_ERROR_FATAL;
+                    return kai__error_redefinition(context, location, reference.index);
+                }
+            }
+            {
+                Kai_Node_Reference reference = ((Kai_Node_Reference){.index = (context->nodes).count});
+                Kai_Node node = ((Kai_Node){.location = location});
+                kai_array_push(&node.value_dependencies, ((Kai_Node_Reference){.flags = KAI_NODE_TYPE, .index = reference.index}));
+                kai_array_push(&context->nodes, node);
+                kai_table_set(&scope->identifiers, d->name, reference);
+            }
+            if (d->expr!=NULL)
+            {
+                return kai__create_nodes(context, d->expr);
+            }
+            return KAI_FALSE;
+        }
+        break; case KAI_STMT_COMPOUND:
+        {
+            Kai_Stmt_Compound* c = (void*)(expr);
+            kai_array_push(&context->scopes, ((Kai_Scope){0}));
+            Kai_Stmt* current = c->head;
+            while (current)
+            {
+                if (kai__create_nodes(context, current))
+                    return KAI_TRUE;
+                current = current->next;
+            }
+            kai_array_pop(&context->scopes);
+            return KAI_FALSE;
+        }
+    }
+    return KAI_FALSE;
+}
+
+KAI_INTERNAL Kai_bool kai__insert_value_dependencies(Kai_Compiler_Context* context, Kai_Expr* expr)
+{
+    (void)(context);
+    (void)(expr);
+    return KAI_FALSE;
+}
+
+KAI_INTERNAL Kai_bool kai__insert_type_dependencies(Kai_Compiler_Context* context, Kai_Expr* expr)
+{
+    (void)(context);
+    (void)(expr);
+    return KAI_FALSE;
+}
+
+KAI_INTERNAL Kai_bool kai__generate_dependency_graph(Kai_Compiler_Context* context)
+{
+    Kai_Allocator* allocator = &context->allocator;
+    (void)(allocator);
+    kai_array_push(&context->scopes, ((Kai_Scope){.is_proc_scope = KAI_FALSE}));
+    for (Kai_u32 i = 0; i < (context->trees).count; ++i)
+    {
+        Kai_Syntax_Tree* tree = &((context->trees).data)[i];
+        context->current_source = tree->source;
+        Kai_Stmt* current = (tree->root).head;
+        while (current)
+        {
+            if (kai__create_nodes(context, current))
+                return KAI_TRUE;
+            current = current->next;
+        }
+    }
+    for (Kai_u32 i = 0; i < (context->nodes).count; ++i)
+    {
+        Kai_Node* node = &((context->nodes).data)[i];
+        if (kai__insert_value_dependencies(context, node->expr))
+            return KAI_TRUE;
+        if (kai__insert_type_dependencies(context, node->expr))
+            return KAI_TRUE;
+    }
+    return KAI_TRUE;
+}
+
+KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Program* out_program)
+{
+    Kai_Compiler_Context context = ((Kai_Compiler_Context){.error = info->error, .allocator = info->allocator, .program = out_program});
+    while (KAI_TRUE)
+    {
+        if (kai__create_syntax_trees(&context, info->sources))
+            break;
+        if (kai__generate_dependency_graph(&context))
+            break;
+        break;
+    }
+    return (context.error)->result;
+}
+
+KAI_API(void) kai_destroy_program(Kai_Program* program)
+{
+    (void)(program);
+}
+
+KAI_API(void) kai_find_procedure(Kai_Program* program, Kai_string name, Kai_Type opt_type)
+{
+    (void)(program);
+    (void)(name);
+    (void)(opt_type);
 }
 
 #ifndef KAI_DONT_USE_WRITER_API
@@ -3743,7 +4198,7 @@ KAI_INTERNAL void kai__file_writer_write_value(void* user, Kai_u32 type, Kai_Val
     {
         if (format.min_count==0)
             return;
-        for (Kai_u32 i = 0; i <= format.min_count-1; ++i)
+        for (Kai_u32 i = 0; i < format.min_count; ++i)
         {
             fputc(format.fill_character, f);
         }

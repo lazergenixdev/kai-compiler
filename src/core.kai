@@ -56,11 +56,15 @@ Result :: enum u32 {
     RESULT_COUNT   = 7;
 }
 
+Source :: struct {
+    name:     string;
+    contents: string;
+}
+
 Location :: struct {
-    file_name : string;
+    source : Source; // source code for this file // TODO: *u8 -> string
     string : string;
-    source : *u8; // source code for this file // TODO: *u8 -> string
-    line : u32;
+    line   : u32;
 }
 
 Error :: struct {
@@ -197,19 +201,19 @@ Allocator :: struct {
 
 _memory_copy :: (dst: *void, src: *void, size: u32)
 {
-    for i: 0..size-1 {
+    for i: 0..<size {
         (dst->*u8)[i] = (src->*u8)[i];
     }
 }
 _memory_zero :: (dst: *void, size: u32)
 {
-    for i: 0..size-1 {
+    for i: 0..<size {
         (dst->*u8)[i] = 0;
     }
 }
 _memory_fill :: (dst: *void, byte: u8, size: u32)
 {
-    for i: 0..size-1 {
+    for i: 0..<size {
         (dst->*u8)[i] = byte;
     }
 }
@@ -220,7 +224,7 @@ _memory_fill :: (dst: *void, byte: u8, size: u32)
 string_equals :: (left: string, right: string) -> bool
 {
     if left.count != right.count ret false;
-    for i: 0..left.count-1 {
+    for i: 0..<left.count {
         if left.data[i] != right.data[i] ret false;
     }
     ret true;
@@ -257,6 +261,18 @@ merge_strings :: (a: string, b: string) -> string
         count = (right.data + right.count->uint - left.data)->u32,
     };
 }
+string_hash :: (s: string) -> u64
+{
+    // http://www.cse.yorku.ca/~oz/hash.html (djb2)
+    // " this algorithm (k=33) was first reported by dan bernstein many years ago in comp.lang.c.
+    // " another version of this algorithm (now favored by bernstein) uses xor:
+    // " hash(i) = hash(i - 1) * 33 ^ str[i]; the magic of number 33
+    // " (why it works better than many other constants, prime or not) has never been adequately explained. 
+    hash: u64 = 5381;
+    for i: 0..<s.count
+        hash = ((hash << 5) + hash) + s.data[i]; /* hash * 33 + c */
+    ret hash;
+}
 
 // Dynamic Array
 
@@ -269,7 +285,7 @@ Raw_Dynamic_Array :: struct {
 raw_array_reserve :: (array: *Raw_Dynamic_Array, new_capacity: u32, allocator: *Allocator, elem_size: u32)
 {    
     if new_capacity <= array.capacity ret;
-    array.data = allocator.heap_allocate(allocator.user, array.data, new_capacity * elem_size, array.capacity * elem_size);
+    array.data = _allocate(array.data, new_capacity * elem_size, array.capacity * elem_size);
     array.capacity = new_capacity;
 }
 
@@ -297,6 +313,147 @@ Raw_Hash_Table :: struct {
     hashes   : *u64;
     keys     : *string;
     values   : *void;
+}
+
+Hash_Table_Size :: struct {
+    occupied : u32;
+    hashes   : u32;
+    keys     : u32;
+    values   : u32;
+    total    : u32;
+}
+
+raw_hash_table_size :: (capacity: u32, elem_size: u32) -> Hash_Table_Size
+{
+    r: Hash_Table_Size;
+    r.occupied = _ceil_div_fast(capacity, 6) * sizeof(u64);
+    r.hashes   = capacity * sizeof(u64);
+    r.keys     = capacity * sizeof(string);
+    r.values   = (capacity + 1) * elem_size;
+    r.total    = r.occupied + r.hashes + r.keys + r.values;
+    ret r;
+}
+
+raw_hash_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, elem_size: u32)
+{
+    new_capacity: u32 = _max_u32(8, table.capacity * 2);
+    new_size: Hash_Table_Size = raw_hash_table_size(new_capacity, elem_size);
+    new_ptr: *void = _allocate(null, new_size.total, 0);
+
+    // Distribute allocated memory
+    occupied: *u64    = new_ptr -> *u64;
+    hashes:   *u64    = (occupied->*u8 + new_size.occupied) -> *u64;
+    keys:     *string = (hashes->*u8 + new_size.hashes) -> *string;
+    values:   *u8     = (keys->*u8 + new_size.keys) -> *u8 + elem_size;
+
+    // Rehash all elements
+    count: u32 = 0;
+    for i: 0..<table.capacity
+    if table.occupied[i / 64] & (1->u64 << (i % 64))
+    {
+        hash: u64 = string_hash(table.keys[i]);
+        mask: u32 = new_capacity - 1;
+        index: u32 = hash->u32 & mask;
+    
+        for j: 0..<new_capacity
+        {
+            block: u64 = occupied[index / 64];
+            bit: u32 = 1->u64 << (index % 64);
+    
+            // Do an insertion
+            if (block & bit) == 0
+            {
+                occupied[index / 64] |= bit;
+                hashes[index] = hash;
+                keys[index] = table.keys[i];
+                src: *u8 = table.values->*u8 + i * elem_size;
+                _memory_copy(values + index * elem_size, src, elem_size);
+                count += 1;
+                break;
+            }
+    
+            index = (index + 1) & mask;
+        }
+    }
+
+    assert(count == table.count);
+
+    // Free old memory
+    if table.capacity != 0 {
+        _free(table.occupied, raw_hash_table_size(table.capacity, elem_size).total);
+    }
+
+    table.capacity = new_capacity;
+    table.occupied = occupied;
+    table.hashes   = hashes;
+    table.keys     = keys;
+    table.values   = values;
+}
+
+raw_hash_table_emplace_key :: (table: *Raw_Hash_Table, key: string, out_index: *u32, allocator: *Allocator, elem_size: u32) -> bool
+{
+    // Check load factor and grow hash table
+    if 4 * table.count >= 3 * table.capacity
+        raw_hash_table_grow(table, allocator, elem_size);
+
+    hash: u64 = string_hash(key);
+    mask: u32 = table.capacity - 1;
+    index: u32 = hash->u32 & mask;
+
+    for i: 0..<table.capacity
+    {
+        byte : u64 = table.occupied[index / 64];
+        bit  : u64 = 1->u64 << (index % 64);
+
+        // Do an insertion
+        if (byte & bit) == 0
+        {
+            table.occupied[index / 64] |= bit;
+            table.hashes[index] = hash;
+            table.keys[index] = key;
+            table.count += 1;
+            /out_index = index;
+            ret true;
+        }
+
+        // Emplace an existing item
+        if table.hashes[index] == hash && string_equals(table.keys[index], key)
+        {
+            /out_index = index;
+            ret false;
+        }
+
+        index = (index + 1) & mask;
+    }
+    /out_index = 0xFFFFFFFF;
+    ret false;
+}
+
+raw_hash_table_find :: (table: *Raw_Hash_Table, key: string) -> int
+{
+    hash: u64 = string_hash(key);
+    mask: u32 = table.capacity - 1;
+    index: u32 = hash->u32 & mask;
+
+    for i: 0..<table.capacity
+    {
+        block: u64 = table.occupied[index / 64];
+        bit: u64 = 1->u64 << (index % 64);
+
+        if (block & bit) == 0
+        {
+            ret -1; // Slot was empty
+        }
+        else if table.hashes[index] == hash
+             && string_equals(table.keys[index], key)
+        {
+            ret index->int;
+        }
+
+        index = (index + 1) & mask;
+    }
+
+    ret -1;
 }
 
 
@@ -790,13 +947,21 @@ _buffer_end :: (buffer: *Buffer) -> Range
     ret out;
 }
 
+_buffer_push :: (buffer: *Buffer, size: u32) -> Range
+{
+    allocator: *Allocator = *buffer.allocator;
+    array_grow(*buffer.array, size);
+    buffer.array.count += size;
+    ret _buffer_end(buffer);
+}
+
 _buffer_done :: (buffer: *Buffer) -> Memory
 {
     memory: Memory = Memory.{
         data = buffer.array.data,
         size = buffer.array.capacity,
     };
-    /buffer = Buffer.{0};
+    /buffer = Buffer.{allocator = buffer.allocator};
     ret memory;
 }
 
@@ -948,7 +1113,7 @@ write_error :: (writer: *Writer, error: *Error)
         // ------------------------- Write Error Message --------------------------
 
         _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-        _write_string(error.location.file_name);
+        _write_string(error.location.source.name);
         _set_color(KAI_WRITE_COLOR_PRIMARY);
     //#if KAI_SHOW_LINE_NUMBER_WITH_FILE {
     //    _write(":");
@@ -957,12 +1122,13 @@ write_error :: (writer: *Writer, error: *Error)
     //    _set_color(KAI_WRITE_COLOR_PRIMARY);
     //}
         _write(" --> ");
-        if error.result != KAI_ERROR_INFO _set_color(KAI_WRITE_COLOR_IMPORTANT);
+        if error.result != KAI_ERROR_INFO { _set_color(KAI_WRITE_COLOR_IMPORTANT); }
+        else                              { _set_color(KAI_WRITE_COLOR_SECONDARY); }
         _write_string(result_string_map[error.result]);
-        if error.result != KAI_ERROR_INFO _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
         _write(": ");
-        _set_color(KAI_WRITE_COLOR_SECONDARY);
         _write_string(error.message);
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
         _write("\n");
 
         // -------------------------- Write Source Code ---------------------------
@@ -982,7 +1148,7 @@ write_error :: (writer: *Writer, error: *Error)
         _write(" | ");
 
         // TODO: Should start from location.string.data and go back
-        begin: *u8 = _advance_to_line(error.location.source, error.location.line);
+        begin: *u8 = _advance_to_line(error.location.source.contents.data, error.location.line);
 
         _set_color(KAI_WRITE_COLOR_PRIMARY);
         _write_source_code(writer, begin);
@@ -1099,7 +1265,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
 
     _set_color(KAI_WRITE_COLOR_DECORATION);
     last: u32 = context.stack_count - 1;
-    for i: 0..context.stack_count-1 {
+    for i: 0..<context.stack_count {
 		bit: u64 = context.stack[i/64] >> (i%64);
         a: u32 = bit & 1;
         b: u32 = i == last;
@@ -1181,12 +1347,16 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_ARRAY; {
             a: *Expr_Array = expr->*void;
-            _write_expr_id_with_name(writer, STRING("array type"), expr.name);
-            _write(" [");
-            _write_u32(a.rows);
-            _write("x");
-            _write_u32(a.cols);
-            _write("]\n");
+            _write_expr_id_with_name(writer, STRING("array"), expr.name);
+            _write("\n");
+            if a.rows != null {
+                context.prefix = STRING("rows");
+                _explore(a.rows, false);
+                if a.cols != null {
+                    context.prefix = STRING("cols");
+                    _explore(a.cols, false);
+                }
+            }
             _explore(a.expr, true);
         }
         case KAI_EXPR_PROCEDURE_TYPE; {
@@ -1201,13 +1371,13 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             end: u32 = p.in_count + p.out_count - 1;
             current: *Expr = p.in_out_expr;
 
-            if p.in_count for i: 0..p.in_count-1 {
+            if p.in_count for i: 0..<p.in_count {
                 context.prefix = STRING("in ");
                 _explore(current, i == end);
                 current = current.next;
             }
 
-            if p.out_count for i: 0..p.out_count-1 {
+            if p.out_count for i: 0..<p.out_count {
                 context.prefix = STRING("out");
                 idx: int = i + p.in_count;
                 _explore(current, idx == end);
@@ -1239,13 +1409,13 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
 
             current: *Expr = p.in_out_expr;
 
-            if p.in_count for i: 0..p.in_count-1 {
+            if p.in_count for i: 0..<p.in_count {
                 context.prefix = STRING("in ");
                 _explore(current, false);
                 current = current.next;
             }
 
-            if p.out_count for i: 0..p.out_count-1 {
+            if p.out_count for i: 0..<p.out_count {
                 context.prefix = STRING("out");
                 _explore(current, false);
                 current = current.next;
@@ -1403,4 +1573,14 @@ write_number :: (writer: *Writer, number: Number)
     _write_u64(number.n);
     _write(" * 2^");
     _write_s32(number.e);
+}
+
+destroy_error :: (error: *Error, allocator: *Allocator)
+{
+    while error {
+        next: *Error = error.next;
+        if error.memory.size > 0
+            _free(error.memory.data, error.memory.size);
+        error = next;
+    }
 }

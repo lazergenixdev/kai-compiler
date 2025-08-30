@@ -33,12 +33,14 @@ Control_Kind :: enum u8 {
 }
 
 Expr_Flags :: enum u8 {
-    FLAG_DECL_CONST   = 1 << 0;
-    FLAG_DECL_USING   = 1 << 1;
-    FLAG_EXPR_USING   = 1 << 1;
-    FLAG_PROC_USING   = 1 << 1;
-	FLAG_STRUCT_UNION = 1 << 2;
-    FLAG_IF_CASE      = 1 << 2;
+    FLAG_DECL_CONST    = 1 << 0;
+    FLAG_DECL_USING    = 1 << 1;
+    FLAG_EXPR_USING    = 1 << 1;
+    FLAG_PROC_USING    = 1 << 1;
+	FLAG_STRUCT_UNION  = 1 << 2;
+    FLAG_IF_CASE       = 1 << 2;
+    FLAG_FOR_LESS_THAN = 1 << 2;
+    FLAG_ARRAY_DYNAMIC = 1 << 2;
 }
 
 Expr :: struct {
@@ -118,8 +120,8 @@ Expr_Enum :: struct {
 
 Expr_Array :: struct {
     using Expr;
-    rows : u32;
-    cols : u32;
+    rows : *Expr;
+    cols : *Expr;
     expr : *Expr;
 }
 
@@ -175,14 +177,14 @@ Stmt_Control :: struct {
 
 Syntax_Tree :: struct {
     root            : Stmt_Compound;
-    source_filename : string; // TODO: rename
-    allocator       : Arena_Allocator; // TODO: arena for each syntax tree? ok or no?
+    source          : Source;
+    allocator       : Arena_Allocator; // TODO: arena for each syntax tree? or each group of syntax trees?
 }
 
 Syntax_Tree_Create_Info :: struct {
-	source_code : string;    // input
-	allocator   : Allocator; // input
-	error       : *Error;    // [output]
+	source     : Source;    // input
+	allocator  : Allocator; // input
+	error      : *Error;    // [output]
 }
 
 Expr_List :: LINKED_LIST(Expr);
@@ -927,12 +929,13 @@ _parser_create_binary :: (parser: *Parser, left: *Expr, right: *Expr, op: u32) -
     node.right = right;
     ret node -> *Expr;
 }
-_parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: u32, cols: u32) -> *Expr
+_parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: *Expr, cols: *Expr, flags: u8) -> *Expr
 {
     node: *Expr_Array = arena_allocate(*parser.arena, sizeof(Expr_Array));
     node.id = KAI_EXPR_ARRAY;
     node.source_code = merge_strings(op_token.string, expr.source_code);
     node.line_number = _min_u32(op_token.line_number, expr.line_number);
+    node.flags = flags;
     node.rows = rows;
     node.cols = cols;
     node.expr = expr;
@@ -1137,27 +1140,23 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         op_token: Token = /current;
 		_next_token(); // skip '['
 
-		rows: u32 = 0;
-        cols: u32 = 0;
+		rows: *Expr;
+        cols: *Expr;
 
         if current.id == #multi ".." {
             _next_token();
-            rows = 0;
-            cols = 1;
+            flags |= KAI_FLAG_ARRAY_DYNAMIC;
         }
 		else if current.id != #multi "]" {
-			_expect(current.id == KAI_TOKEN_NUMBER, "in array type", "should be a number here");
-			_expect(number_is_integer(current.value.number), "in array type", "should be an integer");
-            rows = number_to_u64(current.value.number);
-            cols = 1;
+            rows = parse_expression(parser, TOP_PRECEDENCE);
+			_expect(rows, "in array type", "[todo]");
 		
-			_next_token(); // skip number
+			_next_token(); // skip expr
 			if current.id == #char "," {
 				_next_token(); // skip ','
-			    _expect(current.id == KAI_TOKEN_NUMBER, "in array type", "should be a number here");
-                _expect(number_is_integer(current.value.number), "in array type", "should be an integer");
-                cols = number_to_u64(current.value.number);
-				_next_token(); // skip number
+                cols = parse_expression(parser, TOP_PRECEDENCE);
+                _expect(cols, "in array type", "[todo]");
+				_next_token(); // skip expr
 			}
 		}
 
@@ -1166,7 +1165,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         type: *Expr = parse_type_expression(parser);
 		_expect(type, "in array type", "expected type here");
         // Types do not have binary operators, so return early
-        ret _parser_create_array(parser, op_token, type, rows, cols);
+        ret _parser_create_array(parser, op_token, type, rows, cols, flags);
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Literal Types
@@ -1264,7 +1263,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             _expect(current.value.string.count > 0, "multi", "string cannot be empty");
             value: Number = Number.{0};
             base: Number = Number.{n = 1, d = 1, e = 8}; 
-            for i: 0..current.value.string.count-1 {
+            for i: 0..<current.value.string.count {
                 idx: u32 = current.value.string.count - 1 - i;
                 dg: Number = number_normalize(Number.{n = current.value.string.data[idx], d = 1});
                 value = number_add(number_mul(value, base), dg);
@@ -1730,15 +1729,20 @@ parse_statement :: (parser: *Parser) -> *Stmt
         _expect(from, "in for statement", "should be an expression here");
         to: *Expr;
         _next_token();
+        flags: u8;
         if current.id == #multi ".." {
             _next_token();
+            if current.id == #char "<" {
+                flags |= KAI_FLAG_FOR_LESS_THAN;
+                _next_token(); // skip '<'
+            }
             to = parse_expression(parser, TOP_PRECEDENCE);
             _expect(to, "in for statement", "should be an expression here");
             _next_token();
         }
         body: *Stmt = parse_statement(parser);
         if !body ret null;
-        ret _parser_create_for(parser, for_token, iterator_name, from, to, body, 0);
+        ret _parser_create_for(parser, for_token, iterator_name, from, to, body, flags);
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Possible Declarations
@@ -1786,13 +1790,12 @@ parse_statement :: (parser: *Parser) -> *Stmt
 create_syntax_tree :: (info: *Syntax_Tree_Create_Info, out_tree: *Syntax_Tree) -> Result
 {
     parser: Parser;
-    parser.tokenizer.source = info.source_code;
+    parser.tokenizer.source = info.source.contents;
     parser.tokenizer.line_number = 1;
     parser.error = info.error;
     parser.tokenizer.string_arena = Fixed_Allocator.{
-        // TODO: free this sometime?
-        data = info.allocator.heap_allocate(info.allocator.user, null, info.source_code.count, 0),
-        size = info.source_code.count,
+        data = info.allocator.heap_allocate(info.allocator.user, null, info.source.contents.count, 0),
+        size = info.source.contents.count,
     };
     arena_create(*parser.arena, *info.allocator);
 
@@ -1805,17 +1808,18 @@ create_syntax_tree :: (info: *Syntax_Tree_Create_Info, out_tree: *Syntax_Tree) -
         tokenizer_next(*parser.tokenizer);
     }
 
-    out_tree.allocator = parser.arena;
     out_tree.root.id = KAI_STMT_COMPOUND;
     out_tree.root.head = statements.head;
+    out_tree.source = info.source;
+    out_tree.allocator = parser.arena;
 
-    // TODO: find actual solution for this
-    info.error.location.file_name = out_tree.source_filename;
-    info.error.location.source = info.source_code.data;
+    if parser.error.result != KAI_SUCCESS
+        parser.error.location.source = info.source;
     ret parser.error.result;
 }
 
 destroy_syntax_tree :: (tree: *Syntax_Tree)
 {
 	tree->void;
+    // TODO: free sometime?
 }

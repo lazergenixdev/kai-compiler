@@ -1,0 +1,321 @@
+
+Compile_Flags :: enum u32 {
+    COMPILE_NO_CODE_GEN  =  0x0001; // "type-check" only
+}
+
+Compile_Options :: struct {
+    Interpreter_Max_Step_Count : u32; // default = 1000000
+    Interpreter_Max_Call_Depth : u32; // default = 1024
+    flags : Compile_Flags;
+}
+
+Native_Procedure :: struct {
+    name        : *u8;
+    address     : *void;
+    input_count : u8; // TODO: more than this for typechecking
+}
+
+Program_Create_Info :: struct {
+    sources           : [] Source;
+    allocator         : Allocator;
+    error             : *Error;
+    native_procedures : [] Native_Procedure;
+	options           : Compile_Options;
+}
+
+Program :: struct {
+    code            : [] u8;
+    procedure_table : uint;
+    allocator       : Allocator;
+}
+
+Node_Flags :: enum u32 {
+    NODE_TYPE      = 0x1;
+    NODE_EVALUATED = 0x2;
+}
+
+Node_Reference :: struct {
+    flags: Node_Flags;
+    index: u32;
+}
+
+Node :: struct {
+    type:                    Type;   // evaluated type
+    value:                   Value; // evaluated value
+    location:                Location;
+    expr:                   *Expr;
+    value_dependencies: [..] Node_Reference;
+    type_dependencies:  [..] Node_Reference;
+    value_flags:             Node_Flags;
+    type_flags:              Node_Flags;
+}
+
+Scope :: struct {
+    identifiers: [string] Node_Reference;
+    is_proc_scope: bool;
+}
+
+Compiler_Context :: struct {
+    error:              *Error;
+    allocator:           Allocator;
+    program:            *Program;
+    trees:               [] Syntax_Tree;
+    scopes:              [..] Scope;
+    nodes:               [..] Node;
+    compilation_order:   [] u32;
+    type_allocator:      Arena_Allocator;
+    current_source:      Source;
+    current_node:        u32;
+}
+
+_create_syntax_trees :: (context: *Compiler_Context, sources: [] Source) -> bool
+{
+    allocator: *Allocator = *context.allocator;
+    for i: 0..<sources.count {
+        array_push(*context.trees, Syntax_Tree.{0});
+        info: Syntax_Tree_Create_Info = Syntax_Tree_Create_Info.{
+            source = sources[i],
+            allocator = context.allocator,
+            error = context.error,
+        };
+        if create_syntax_tree(*info, *array_last(*context.trees)) != KAI_SUCCESS
+            ret true;
+    }
+    ret false;
+}
+
+_inside_procedure_scope :: (context: *Compiler_Context) -> bool
+{
+    for i: 0..<context.scopes.count {
+        ri: u32 = context.scopes.count - 1 - i;
+        scope: *Scope = *context.scopes.data[ri];
+        if scope.is_proc_scope ret true;
+    }
+    ret false;
+}
+
+_error_redefinition :: (context: *Compiler_Context, location: Location, original: u32) -> bool
+{
+    /context.error = Error.{
+        result = KAI_ERROR_SEMANTIC,
+        location = location,
+    };
+
+    buffer: Buffer = Buffer.{allocator = context.allocator};
+
+    // First error message	
+    {
+        _buffer_append_string(*buffer, STRING("indentifier \""));
+        _buffer_append_string(*buffer, location.string); // 24
+        _buffer_append_string(*buffer, STRING("\" has already been declared"));
+        range: Range = _buffer_end(*buffer);
+        context.error.memory = _buffer_done(*buffer);
+        context.error.message = _range_to_string(range, context.error.memory);
+    }
+
+    // Extra info
+    {
+        // Append to memory
+        info_range: Range = _buffer_push(*buffer, sizeof(Error));
+        _buffer_append_string(*buffer, STRING("see original definition of \""));
+        _buffer_append_string(*buffer, location.string); // 24
+        _buffer_append_string(*buffer, STRING("\""));
+        message_range: Range = _buffer_end(*buffer);
+        memory: Memory = _buffer_done(*buffer);
+
+        existing: *Node = *context.nodes.data[original];
+
+        // Put everything together
+        info: *Error = (memory.data + info_range.start) -> *Error;
+        /info = Error.{
+            result = KAI_ERROR_INFO,
+            location = existing.location,
+            message = _range_to_string(message_range, memory),
+            memory = memory,
+        };
+        context.error.next = info;
+    }
+
+    ret true;
+}
+
+_create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
+{
+    allocator: *Allocator = *context.allocator;
+    allocator->void;
+
+    if expr.id == {
+    case KAI_EXPR_PROCEDURE; {
+        /*
+        Kai_Expr_Procedure* node = base;
+
+        Kai_u32 new_scope_index = Context->scopes.count;
+        kai__array_append(&Context->scopes, (Kai__DG_Scope) {
+            .parent = Scope_Index,
+            .is_proc_scope = KAI_TRUE,
+        });
+        //kai__hash_table_create(&Context->scopes.elements[new_scope_index].identifiers);
+
+        node->_scope = new_scope_index;
+        if (node->body) {
+            return kai__dg_create_nodes_from_statement(Context, node->body, new_scope_index, KAI_TRUE, KAI_TRUE);
+        }
+        else {
+            kai__todo("Native Functions not implemented!");
+        }
+        */
+    }
+    case KAI_STMT_IF; {
+        /*
+        Kai_Stmt_If* node = base;
+
+        result = kai__dg_create_nodes_from_statement(Context, node->then_body, Scope_Index, In_Procedure, KAI_FALSE);
+        if (result != KAI_SUCCESS)
+            return result;
+
+        if (node->else_body) {
+            result = kai__dg_create_nodes_from_statement(Context, node->else_body, Scope_Index, In_Procedure, KAI_FALSE);
+            if (result != KAI_SUCCESS)
+                return result;
+        }
+        */
+    }
+    case KAI_STMT_FOR; {
+        /*
+        Kai_Stmt_For* node = base;
+        return kai__dg_create_nodes_from_statement(Context, node->body, Scope_Index, In_Procedure, KAI_FALSE);
+        */
+    }
+    case KAI_STMT_DECLARATION; {
+        d: *Stmt_Declaration = expr->*void;
+
+        // Skip non-constants
+        if (!(d.flags & KAI_FLAG_DECL_CONST) && _inside_procedure_scope(context))
+            ret false;
+
+        location: Location = Location.{
+            source = context.current_source,
+            line = d.line_number,
+            string = d.name,
+        };
+
+        scope: *Scope = *array_last(*context.scopes);
+
+        // Does this declaration already exist for this Scope?
+        {
+            index: int = table_find(*scope.identifiers, d.name);
+            if index != -1 {
+                reference: Node_Reference = scope.identifiers.values[index];
+                context.error.result = KAI_ERROR_FATAL;
+                ret _error_redefinition(context, location, reference.index);
+            }
+        }
+
+        {
+            reference: Node_Reference = Node_Reference.{index = context.nodes.count};
+            node: Node = Node.{location = location};
+
+            array_push(*node.value_dependencies, Node_Reference.{flags = KAI_NODE_TYPE, index = reference.index});
+            array_push(*context.nodes, node);
+            table_set(*scope.identifiers, d.name, reference);
+        }
+
+        if d.expr != null {
+            ret _create_nodes(context, d.expr);
+        }
+        ret false;
+    }
+    case KAI_STMT_COMPOUND; {
+        c: *Stmt_Compound = expr->*void;
+        array_push(*context.scopes, Scope.{0});
+        current: *Stmt = c.head;
+        while current {
+            if _create_nodes(context, current)
+                ret true;
+            current = current.next;
+        }
+        array_pop(*context.scopes);
+        ret false;
+    }
+    }
+    ret false;
+}
+
+_insert_value_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
+{
+    context->void;
+    expr->void;
+    ret false;
+}
+_insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
+{
+    context->void;
+    expr->void;
+    ret false;
+}
+
+_generate_dependency_graph :: (context: *Compiler_Context) -> bool
+{
+    allocator: *Allocator = *context.allocator;
+    allocator->void;
+    
+    // Initialize Global Scope
+    array_push(*context.scopes, Scope.{ is_proc_scope = false });
+
+    // Insert nodes from syntax tree
+    for i: 0..<context.trees.count {
+        tree: *Syntax_Tree = *context.trees.data[i];
+        context.current_source = tree.source;
+
+        current: *Stmt = tree.root.head;
+        while current {
+            if _create_nodes(context, current)
+                ret true;
+            current = current.next;
+        }
+    }
+
+    // Insert dependencies for each node
+    for i: 0..<context.nodes.count
+    {
+        node: *Node = *context.nodes.data[i];
+
+        if _insert_value_dependencies(context, node.expr)
+            ret true;
+
+        if _insert_type_dependencies(context, node.expr)
+            ret true;
+    }
+
+    ret true;
+}
+
+create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
+{
+    context: Compiler_Context = Compiler_Context.{
+        error = info.error,
+        allocator = info.allocator,
+        program = out_program,
+    };
+
+    while true {
+        if _create_syntax_trees(*context, info.sources) break;
+        if _generate_dependency_graph(*context) break;
+        break;
+    }
+
+    ret context.error.result;
+}
+
+destroy_program :: (program: *Program)
+{
+    program->void;
+}
+
+find_procedure :: (program: *Program, name: string, opt_type: Type)
+{
+    program->void;
+    name->void;
+    opt_type->void;
+}
+
