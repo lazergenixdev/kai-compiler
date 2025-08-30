@@ -62,7 +62,7 @@ Macro function_macros[] = {
 	{"_write", "(C_String)",  "writer->write_string(writer->user, KAI_STRING(C_String))"},
 	{"_write_string", "(...)", "writer->write_string(writer->user, __VA_ARGS__)"},
 	{"_set_color", "(Color)",  "if (writer->set_color != NULL) writer->set_color(writer->user, Color)"},
-	{"_write_fill", "(Char,Count)", "writer->write_value(writer->user, KAI_FILL, (Kai_Value){0}, (Kai_Write_Format){.fill_character = (Kai_u8)Char, .min_count = Count})"},
+	{"_write_fill", "(Char,Count)", "writer->write_value(writer->user, KAI_FILL, (Kai_Value){0}, (Kai_Write_Format){.min_count = Count, .fill_character = (Kai_u8)Char})"},
 	{"_next_character_equals", "(C)", "( (context->cursor+1) < context->source.count && C == context->source.data[context->cursor+1] )"},
 	{"_allocate", "(Old,New_Size,Old_Size)", "allocator->heap_allocate(allocator->user, Old, New_Size, Old_Size)"},
 	{"_free", "(Ptr,Size)", "allocator->heap_allocate(allocator->user, Ptr, 0, Size)"},
@@ -156,7 +156,7 @@ typedef struct {
 } Scope;
 
 Scope* g_scopes = NULL;
-Variable_Type g_current_return_type = {0};
+Kai_Expr* g_current_decl_type = NULL;
 
 const char* prim_types[] = {
 	"u8", "s8", "u16", "s16", "u32", "s32", "u64", "s64", "f32", "f64",
@@ -582,6 +582,7 @@ bool try_generate_builtin_array_procedure(String_Builder* builder, Kai_Expr_Proc
 
 Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, int flags)
 {
+	ASSERT(expr != NULL);
 	switch (expr->id)
 	{
 	case KAI_EXPR_IDENTIFIER: {
@@ -662,16 +663,22 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		Kai_Expr_Unary* una = (void*)expr;
 
 		int new_prec = binary_operator_precedence(una->op);
+		bool parenthesis = flags & KEEP_ALL_PARENTHESIS || una->op == '~' || una->op == KAI_MULTI2("->");
 
-		if (una->op != '*' || (flags & NOT_TYPE)) {
+		if (una->op == KAI_MULTI2("->")) {
+			da_append(builder, '(');
+			generate_expression(builder, g_current_decl_type, TOP_PRECEDENCE, NONE);
+			da_append(builder, ')');
+		}
+		else if (una->op != '*' || (flags & NOT_TYPE)) {
 			if (una->op == '/')
 				da_append(builder, '*');
 			else
 				da_append(builder, una->op == '*'? '&' : una->op);
 		}
-		if (flags & KEEP_ALL_PARENTHESIS || una->op == '~') da_append(builder, '(');
+		if (parenthesis) da_append(builder, '(');
 		generate_expression(builder, una->expr, new_prec, flags);
-		if (flags & KEEP_ALL_PARENTHESIS || una->op == '~') da_append(builder, ')');
+		if (parenthesis) da_append(builder, ')');
 		if (una->op == '*' && !(flags & NOT_TYPE)) da_append(builder, una->op);
 	} break;
 	
@@ -679,7 +686,7 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		Kai_Expr_Binary* bin = (void*)expr;
 		int op = bin->op;
 		const char* op_str = map_binary_operator(op);
-		int new_flags = NONE | (flags & KEEP_ALL_PARENTHESIS);
+		int new_flags = flags;
 		if (op == '.')
 		{
 			new_flags |= NO_RENAME;
@@ -745,7 +752,7 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		}
 		else
 		{
-			generate_expression(builder, bin->left, new_prec == 5 ? 1:new_prec, NONE);
+			generate_expression(builder, bin->left, new_prec == 5 ? 1:new_prec, flags);
 			sb_append(builder, op_str);
 			generate_expression(builder, bin->right, new_prec == 5 ? 1:new_prec, new_flags);
 		}
@@ -1333,7 +1340,9 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 		}
 		else
 		{
+			g_current_decl_type = decl->type;
 			generate_expression(builder, decl->expr, TOP_PRECEDENCE, NOT_TYPE);
+			g_current_decl_type = NULL;
 		}
 		sb_append(builder, ";\n");
 	} break;
@@ -1354,7 +1363,7 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 			case KAI_MULTI2("/="): op = "/=" ;break;
 		}
 		sb_appendf(builder, " %s ", op);
-		generate_expression(builder, ass->expr, TOP_PRECEDENCE, NONE);
+		generate_expression(builder, ass->expr, TOP_PRECEDENCE, NOT_TYPE);
 		sb_append(builder, ";\n");
 	} break;
 	
@@ -1434,7 +1443,6 @@ void generate_procedure(String_Builder* builder, Kai_Expr_Procedure* proc)
 		Variable_Type type = {.expr = in};
 		shput(scope.variable_map, name, type);
 	}
-	g_current_return_type.expr = in;
 	arrpush(g_scopes, scope);
 	generate_statement(builder, proc->body, 0, false);
 	arrpop(g_scopes);
@@ -1671,7 +1679,7 @@ Module modules[] = {
 "#include <unistd.h>   // -> getpagesize\n"
 "KAI_INTERNAL void* kai__memory_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)\n"
 "{\n"
-"	Kai_Memory_Metadata* metadata = user;\n"
+"	Kai_Memory_Metadata* metadata = (Kai_Memory_Metadata*)(user);\n"
 "	switch (op) {\n"
 "	case KAI_MEMORY_COMMAND_ALLOCATE_WRITE_ONLY: {\n"
 "        void* new_ptr = mmap(NULL, size, PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);\n"
@@ -1704,7 +1712,7 @@ Module modules[] = {
 "__declspec(dllimport) void __stdcall GetSystemInfo(SYSTEM_INFO* lpSystemInfo);\n"
 "KAI_INTERNAL void* kai__memory_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)\n"
 "{\n"
-"	Kai__Memory_Internal* metadata = user;\n"
+"	Kai__Memory_Internal* metadata = (Kai__Memory_Internal*)(user);\n"
 "	switch (op) {\n"
 "	case KAI_MEMORY_ALLOCATE_WRITE_ONLY: {\n"
 "		void* result = VirtualAlloc(NULL, size, 0x1000|0x2000, 0x04);\n"
@@ -1774,6 +1782,7 @@ int main(int argc, char** argv)
 	String_Builder builder = {0};
 	exit_on_fail(read_entire_file("src/comments/header.h", &builder));
 	sb_append(&builder, "#ifndef KAI__H\n#define KAI__H\n\n");
+	sb_append(&builder, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n");
 	sb_append(&builder,
 		"#include <stdint.h> // --> uint32, uint64, ...\n"
 		"#include <stddef.h> // --> NULL\n");
@@ -1795,10 +1804,12 @@ int main(int argc, char** argv)
 		arrput(trees, tree);
 	}
 	for (int i = 0; i < arrlen(trees); ++i)
-		generate_all_data_structure_types(&builder, (Kai_Stmt*)&trees[i].root);
-	for (int i = 0; i < arrlen(trees); ++i)
 		generate_all_non_struct_typedefs(&builder, &trees[i].root);
+	for (int i = 0; i < arrlen(trees); ++i)
+		generate_all_data_structure_types(&builder, (Kai_Stmt*)&trees[i].root);
 	sb_append(&builder, "\n");
+	for (int i = 0; i < arrlen(trees); ++i)
+		generate_all_struct_definitions(&builder, &trees[i].root);
 	for (int i = 0; i < arrlen(trees); ++i)
 		generate_all_function_definitions(&builder, &trees[i].root, KAI_TRUE);
 	for (int i = 0; i < len(modules); ++i)
@@ -1812,8 +1823,6 @@ int main(int argc, char** argv)
 		generate_all_function_definitions(&builder, &modules[i].tree.root, KAI_FALSE);
 		sb_append(&builder, "#endif\n\n");
 	}
-	for (int i = 0; i < arrlen(trees); ++i)
-		generate_all_struct_definitions(&builder, &trees[i].root);
 	sb_append(&builder, "#ifdef KAI_IMPLEMENTATION\n\n");
 	generate_all_internal_macros(&builder);
 	exit_on_fail(read_entire_file("src/intrinsics.h", &builder));
@@ -1827,7 +1836,8 @@ int main(int argc, char** argv)
 		generate_all_function_implementations(&builder, &modules[i].tree.root);
 		sb_append(&builder, "#endif\n");
 	}
-	sb_append(&builder, "#endif // KAI_IMPLEMENTATION\n");
+	sb_append(&builder, "#endif // KAI_IMPLEMENTATION\n\n");
+	sb_append(&builder, "#ifdef __cplusplus\n}\n#endif\n\n");
 	sb_append(&builder, "#endif // KAI__H\n");
 	exit_on_fail(read_entire_file("src/comments/footer.h", &builder));
 	write_entire_file("kai.h", builder.items, builder.count);

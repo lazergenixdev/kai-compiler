@@ -70,3 +70,11 @@
 #ifndef kai_unreachable
 #define kai_unreachable() kai_fatal_error("Assertion Failed", "Unreachable was reached! D:")
 #endif
+
+#ifndef kai__todo
+#define kai__todo(...)                                       \
+do { char __message__[1024] = {0};                           \
+    snprintf(__message__, sizeof(__message__), __VA_ARGS__); \
+    kai_fatal_error("TODO", __message__);                    \
+} while (0)
+#endif

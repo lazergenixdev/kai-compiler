@@ -31,9 +31,9 @@ static inline Kai_Writer* default_writer()
   Kai_Source example_##NAME = {.name = KAI_STRING("example_" #NAME),.contents = KAI_STRING(SOURCE)}
 
 EXAMPLE(simple,
-    "A :: 123;\n"
-    "B :: A + 1;\n"
-    "C :: A - B;\n"
-    "D :: B + C;\n"
+    "A := 123;\n"
+    "B := A + 1;\n"
+    "C := A - B;\n"
+    "D := B + C;\n"
     "\n"
 );

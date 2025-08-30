@@ -295,20 +295,19 @@ write_token :: (writer: *Writer, token: Token)
     symbol: bool = false;
     if token.id == {
         case KAI_TOKEN_IDENTIFIER;
-        _write("Identifier");
+        _write("Ident");
         case KAI_TOKEN_STRING;
         _write("String");
         case KAI_TOKEN_NUMBER;
         _write("Number");
         case KAI_TOKEN_DIRECTIVE;
-        _write("Directive");
+        _write("Dir");
         case;
         symbol = true;
     }
     if !symbol _write("(");
     if token.id > 256
         // TODO: fix for different byte-orders (need to shift out characters manually)
-        //_write_string(string.{data = *token.id -> *u8, count = 2});
         _write_u32(token.id);
     else
         _write_string(token.string);
@@ -350,7 +349,7 @@ token_string :: (id: Token_Id, dst: string) -> string
             i += 1;
         }
         dst.data[i+1] = #char "'";
-        ret string.{data = dst.data, count = i+2};
+        ret string.{count = i+2, data = dst.data};
     }
 }
 
@@ -655,7 +654,7 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
                         //printf("!!! warning: could not escape '%c'\n", ch);
                     }
                 }
-                data: *u8 = fixed_allocate(*context.string_arena, 1);
+                data: *u8 = cast fixed_allocate(*context.string_arena, 1);
                 /data = ch;
                 if (token.value.string.data == null)
                     token.value.string.data = data;
@@ -797,7 +796,7 @@ Parser :: struct {
     error     : *Error;
 }
 
-_error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: string) -> *void
+_error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: string) -> *Expr
 {
     // Report only the first Syntax Error
     if parser.error.result != KAI_SUCCESS
@@ -805,7 +804,7 @@ _error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: str
 
     buffer: Buffer = Buffer.{allocator = parser.arena.base};
     temp: [32] u8;
-    temp_string: string = string.{data = temp, count = sizeof(temp)};
+    temp_string: string = string.{count = sizeof(temp), data = temp};
 
     _buffer_append_string(*buffer, STRING("unexpected "));
     _buffer_append_string(*buffer, token_string(token.id, temp_string));
@@ -829,10 +828,9 @@ _error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: str
 }
 
 TOP_PRECEDENCE  :: 1;
-PRECEDENCE_MASK :: 0xFFFF;
+PRECEDENCE_MASK :: 0x0FFFF;
 _PREC_CAST      :: 0x00900;
 _PREC_UNARY     :: 0x01000;
-_PREC_MASK      :: 0x0FFFF;
 
 _Operator :: struct {
     prec : u32;
@@ -843,9 +841,9 @@ _Operator_Type :: enum u32 {
     BINARY = 0; INDEX = 1; PROCEDURE_CALL = 2;
 }
 
-_operator_info :: (operator: u32) -> _Operator
+_operator_info :: (op: u32) -> _Operator
 {
-    if operator == {
+    if op == {
     case #multi "||"; ret _Operator.{0x0010, KAI__OPERATOR_TYPE_BINARY};
     case #multi "&&"; ret _Operator.{0x0011, KAI__OPERATOR_TYPE_BINARY};
     case #char  "|";  ret _Operator.{0x0020, KAI__OPERATOR_TYPE_BINARY};
@@ -874,7 +872,7 @@ _operator_info :: (operator: u32) -> _Operator
 
 _parser_create_identifier :: (parser: *Parser, token: Token) -> *Expr
 {
-    node: *Expr = arena_allocate(*parser.arena, sizeof(Expr));
+    node: *Expr = cast arena_allocate(*parser.arena, sizeof(Expr));
     node.id = KAI_EXPR_IDENTIFIER;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -882,7 +880,7 @@ _parser_create_identifier :: (parser: *Parser, token: Token) -> *Expr
 }
 _parser_create_string :: (parser: *Parser, token: Token) -> *Expr
 {
-    node: *Expr_String = arena_allocate(*parser.arena, sizeof(Expr_String));
+    node: *Expr_String = cast arena_allocate(*parser.arena, sizeof(Expr_String));
     node.id = KAI_EXPR_STRING;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -891,7 +889,7 @@ _parser_create_string :: (parser: *Parser, token: Token) -> *Expr
 }
 _parser_create_number :: (parser: *Parser, token: Token) -> *Expr
 {
-    node: *Expr_Number = arena_allocate(*parser.arena, sizeof(Expr_Number));
+    node: *Expr_Number = cast arena_allocate(*parser.arena, sizeof(Expr_Number));
     node.id = KAI_EXPR_NUMBER;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -900,7 +898,7 @@ _parser_create_number :: (parser: *Parser, token: Token) -> *Expr
 }
 _parser_create_literal :: (parser: *Parser, token: Token, head: *Expr, count: u32) -> *Expr
 {
-    node: *Expr_Literal = arena_allocate(*parser.arena, sizeof(Expr_Literal));
+    node: *Expr_Literal = cast arena_allocate(*parser.arena, sizeof(Expr_Literal));
     node.id = KAI_EXPR_LITERAL;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -910,7 +908,7 @@ _parser_create_literal :: (parser: *Parser, token: Token, head: *Expr, count: u3
 }
 _parser_create_unary :: (parser: *Parser, op_token: Token, expr: *Expr) -> *Expr
 {
-    node: *Expr_Unary = arena_allocate(*parser.arena, sizeof(Expr_Unary));
+    node: *Expr_Unary = cast arena_allocate(*parser.arena, sizeof(Expr_Unary));
     node.id = KAI_EXPR_UNARY;
     node.source_code = merge_strings(op_token.string, expr.source_code);
     node.line_number = _min_u32(op_token.line_number, expr.line_number);
@@ -920,7 +918,7 @@ _parser_create_unary :: (parser: *Parser, op_token: Token, expr: *Expr) -> *Expr
 }
 _parser_create_binary :: (parser: *Parser, left: *Expr, right: *Expr, op: u32) -> *Expr
 {
-    node: *Expr_Binary = arena_allocate(*parser.arena, sizeof(Expr_Binary));
+    node: *Expr_Binary = cast arena_allocate(*parser.arena, sizeof(Expr_Binary));
     node.id = KAI_EXPR_BINARY;
     node.source_code = merge_strings(left.source_code, right.source_code);
     node.line_number = _min_u32(left.line_number, right.line_number);
@@ -931,7 +929,7 @@ _parser_create_binary :: (parser: *Parser, left: *Expr, right: *Expr, op: u32) -
 }
 _parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: *Expr, cols: *Expr, flags: u8) -> *Expr
 {
-    node: *Expr_Array = arena_allocate(*parser.arena, sizeof(Expr_Array));
+    node: *Expr_Array = cast arena_allocate(*parser.arena, sizeof(Expr_Array));
     node.id = KAI_EXPR_ARRAY;
     node.source_code = merge_strings(op_token.string, expr.source_code);
     node.line_number = _min_u32(op_token.line_number, expr.line_number);
@@ -943,7 +941,7 @@ _parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: *E
 }
 _parser_create_procedure_type :: (parser: *Parser, in_out: *Expr, in_count: u8, out_count: u8) -> *Expr
 {
-    node: *Expr_Procedure_Type = arena_allocate(*parser.arena, sizeof(Expr_Procedure_Type));
+    node: *Expr_Procedure_Type = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure_Type));
     node.id = KAI_EXPR_PROCEDURE_TYPE;
     node.source_code = in_out.source_code;
     node.line_number = in_out.line_number;
@@ -954,7 +952,7 @@ _parser_create_procedure_type :: (parser: *Parser, in_out: *Expr, in_count: u8, 
 }
 _parser_create_procedure_call :: (parser: *Parser, proc: *Expr, args: *Expr, arg_count: u8) -> *Expr
 {
-    node: *Expr_Procedure_Call = arena_allocate(*parser.arena, sizeof(Expr_Procedure_Call));
+    node: *Expr_Procedure_Call = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure_Call));
     node.id = KAI_EXPR_PROCEDURE_CALL;
     node.source_code = proc.source_code;
     node.line_number = proc.line_number;
@@ -965,7 +963,7 @@ _parser_create_procedure_call :: (parser: *Parser, proc: *Expr, args: *Expr, arg
 }
 _parser_create_procedure :: (parser: *Parser, token: Token, in_out: *Expr, body: *Stmt, in_count: u8, out_count: u8) -> *Expr
 {
-    node: *Expr_Procedure = arena_allocate(*parser.arena, sizeof(Expr_Procedure));
+    node: *Expr_Procedure = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure));
     node.id = KAI_EXPR_PROCEDURE;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -977,7 +975,7 @@ _parser_create_procedure :: (parser: *Parser, token: Token, in_out: *Expr, body:
 }
 _parser_create_import :: (parser: *Parser, token: Token, import: Token) -> *Expr
 {
-    node: *Expr = arena_allocate(*parser.arena, sizeof(Expr));
+    node: *Expr = cast arena_allocate(*parser.arena, sizeof(Expr));
     node.id = KAI_EXPR_IMPORT;
     node.source_code = merge_strings(token.string, import.string);
     node.line_number = token.line_number;
@@ -986,7 +984,7 @@ _parser_create_import :: (parser: *Parser, token: Token, import: Token) -> *Expr
 }
 _parser_create_struct :: (parser: *Parser, token: Token, field_count: u32, body: *Stmt) -> *Expr
 {
-    node: *Expr_Struct = arena_allocate(*parser.arena, sizeof(Expr_Struct));
+    node: *Expr_Struct = cast arena_allocate(*parser.arena, sizeof(Expr_Struct));
     node.id = KAI_EXPR_STRUCT;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -996,7 +994,7 @@ _parser_create_struct :: (parser: *Parser, token: Token, field_count: u32, body:
 }
 _parser_create_enum :: (parser: *Parser, token: Token, type: *Expr, field_count: u32, body: *Stmt) -> *Expr
 {
-    node: *Expr_Enum = arena_allocate(*parser.arena, sizeof(Expr_Enum));
+    node: *Expr_Enum = cast arena_allocate(*parser.arena, sizeof(Expr_Enum));
     node.id = KAI_EXPR_ENUM;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -1007,7 +1005,7 @@ _parser_create_enum :: (parser: *Parser, token: Token, type: *Expr, field_count:
 }
 _parser_create_return :: (parser: *Parser, ret_token: Token, expr: *Expr) -> *Expr
 {
-    node: *Stmt_Return = arena_allocate(*parser.arena, sizeof(Stmt_Return));
+    node: *Stmt_Return = cast arena_allocate(*parser.arena, sizeof(Stmt_Return));
     node.id = KAI_STMT_RETURN;
     node.source_code = ret_token.string;
     node.line_number = ret_token.line_number;
@@ -1016,7 +1014,7 @@ _parser_create_return :: (parser: *Parser, ret_token: Token, expr: *Expr) -> *Ex
 }
 _parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, expr: *Expr, flags: u8, line_number: u32) -> *Expr
 {
-    node: *Stmt_Declaration = arena_allocate(*parser.arena, sizeof(Stmt_Declaration));
+    node: *Stmt_Declaration = cast arena_allocate(*parser.arena, sizeof(Stmt_Declaration));
     node.id = KAI_STMT_DECLARATION;
     node.source_code = name;
     node.line_number = line_number;
@@ -1028,7 +1026,7 @@ _parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, expr:
 }
 _parser_create_assignment :: (parser: *Parser, op: u32, left: *Expr, expr: *Expr) -> *Expr
 {
-    node: *Stmt_Assignment = arena_allocate(*parser.arena, sizeof(Stmt_Assignment));
+    node: *Stmt_Assignment = cast arena_allocate(*parser.arena, sizeof(Stmt_Assignment));
     node.id = KAI_STMT_ASSIGNMENT;
     node.source_code = left.source_code;
     node.line_number = left.line_number;
@@ -1039,7 +1037,7 @@ _parser_create_assignment :: (parser: *Parser, op: u32, left: *Expr, expr: *Expr
 }
 _parser_create_if :: (parser: *Parser, if_token: Token, flags: u8, expr: *Expr, then_body: *Stmt, else_body: *Stmt) -> *Expr
 {
-    node: *Stmt_If = arena_allocate(*parser.arena, sizeof(Stmt_If));
+    node: *Stmt_If = cast arena_allocate(*parser.arena, sizeof(Stmt_If));
     node.id = KAI_STMT_IF;
     node.source_code = if_token.string;
     node.line_number = if_token.line_number;
@@ -1051,7 +1049,7 @@ _parser_create_if :: (parser: *Parser, if_token: Token, flags: u8, expr: *Expr, 
 }
 _parser_create_while :: (parser: *Parser, while_token: Token, expr: *Expr, body: *Stmt) -> *Expr
 {
-    node: *Stmt_While = arena_allocate(*parser.arena, sizeof(Stmt_While));
+    node: *Stmt_While = cast arena_allocate(*parser.arena, sizeof(Stmt_While));
     node.id = KAI_STMT_WHILE;
     node.source_code = while_token.string;
     node.line_number = while_token.line_number;
@@ -1061,7 +1059,7 @@ _parser_create_while :: (parser: *Parser, while_token: Token, expr: *Expr, body:
 }
 _parser_create_for :: (parser: *Parser, for_token: Token, name: string, from: *Expr, to: *Expr, body: *Stmt, flags: u8) -> *Expr
 {
-    node: *Stmt_For = arena_allocate(*parser.arena, sizeof(Stmt_For));
+    node: *Stmt_For = cast arena_allocate(*parser.arena, sizeof(Stmt_For));
     node.id = KAI_STMT_FOR;
     node.source_code = for_token.string;
     node.line_number = for_token.line_number;
@@ -1074,7 +1072,7 @@ _parser_create_for :: (parser: *Parser, for_token: Token, name: string, from: *E
 }
 _parser_create_control :: (parser: *Parser, token: Token, kind: u8, expr: *Expr) -> *Expr
 {
-    node: *Stmt_Control = arena_allocate(*parser.arena, sizeof(Stmt_Control));
+    node: *Stmt_Control = cast arena_allocate(*parser.arena, sizeof(Stmt_Control));
     node.id = KAI_STMT_CONTROL;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -1084,7 +1082,7 @@ _parser_create_control :: (parser: *Parser, token: Token, kind: u8, expr: *Expr)
 }
 _parser_create_compound :: (parser: *Parser, token: Token, body: *Stmt) -> *Expr
 {
-    node: *Stmt_Compound = arena_allocate(*parser.arena, sizeof(Stmt_Compound));
+    node: *Stmt_Compound = cast arena_allocate(*parser.arena, sizeof(Stmt_Compound));
     node.id = KAI_STMT_COMPOUND;
     node.source_code = token.string;
     node.line_number = token.line_number;
@@ -1215,17 +1213,25 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Explicit Casting "cast(int) x"
     case KAI_TOKEN_cast; {
+        token: Token = /current;
+        token.id = #multi "->";
         _next_token();
-        _expect(current.id == #char "(", "in expression", "'(' after cast keyword");
-        _next_token();
-        type: *Expr = parse_type_expression(parser);
-        _expect(type, "in expression", "type");
-        _next_token();
-        _expect(current.id == #char ")", "in expression", "')' after Type in cast expression");
-        _next_token();
+        type: *Expr;
+        if current.id == #char "(" {
+            _expect(current.id == #char "(", "in expression", "'(' after cast keyword");
+            _next_token();
+            type = parse_type_expression(parser);
+            _expect(type, "in expression", "type");
+            _next_token();
+            _expect(current.id == #char ")", "in expression", "')' after Type in cast expression");
+            _next_token();
+        }
         expr: *Expr = parse_expression(parser, KAI__PREC_CAST);
-        _expect(expr, "in expression", "expression after cast");
-        left = _parser_create_binary(parser, expr, type, #multi "->");
+        _expect(expr, "in expression", "should be expression or '(' here");
+        if type == null
+            left = _parser_create_unary(parser, token, expr);
+        else 
+            left = _parser_create_binary(parser, expr, type, token.id);
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Directives
@@ -1333,15 +1339,15 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
     while true
     {
         peeked: *Token = tokenizer_peek(*parser.tokenizer);
-        operator: u32 = peeked.id;
-        op_info: _Operator = _operator_info(operator);
+        op: u32 = peeked.id;
+        op_info: _Operator = _operator_info(op);
         prec: u32 = flags & PRECEDENCE_MASK;
 
         // handle precedence by returning early
         if op_info.prec == 0 || op_info.prec <= prec
 			ret left;
 
-        if operator == #multi "==" {
+        if op == #multi "==" {
             prev_state: Tokenizer = parser.tokenizer;
             tokenizer_next(*parser.tokenizer);
             tokenizer_next(*parser.tokenizer);
@@ -1359,14 +1365,14 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         case KAI__OPERATOR_TYPE_BINARY; {
             right: *Expr = parse_expression(parser, op_info.prec);
             _expect(right != null, "in binary expression", "should be an expression after binary operator");
-            left = _parser_create_binary(parser, left, right, operator);
+            left = _parser_create_binary(parser, left, right, op);
         }
         case KAI__OPERATOR_TYPE_INDEX; {
             right: *Expr = parse_expression(parser, TOP_PRECEDENCE);
             _expect(right, "in index operation", "should be an expression here");
             _next_token();
             _expect(current.id == #char "]", "in index operation", "expected ']' here");
-            left = _parser_create_binary(parser, left, right, operator);
+            left = _parser_create_binary(parser, left, right, op);
         }
         case KAI__OPERATOR_TYPE_PROCEDURE_CALL; {
             args: Expr_List;
@@ -1759,7 +1765,7 @@ parse_statement :: (parser: *Parser) -> *Stmt
         peeked: *Token = _peek_token();
 
         if peeked.id == {
-        case #char "=";  #through;
+        case #char "="; #through;
         case #multi "|="; #through;
         case #multi "&="; #through;
         case #multi "+="; #through;

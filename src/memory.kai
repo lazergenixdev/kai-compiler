@@ -21,7 +21,7 @@ _memory_heap_allocate :: (user: *void, old_ptr: *void, new_size: u32, old_size: 
         if ptr != null
             _memory_zero(ptr->*u8 + old_size, new_size - old_size);
     }
-    metadata: *Memory_Metadata = user;
+    metadata: *Memory_Metadata = cast user;
     metadata.total_allocated += new_size;
     metadata.total_allocated -= old_size;
     ret ptr;
@@ -37,7 +37,7 @@ memory_create :: (out_allocator: *Allocator) -> Result
 	if !out_allocator.user {
         ret KAI_MEMORY_ERROR_OUT_OF_MEMORY;
     }
-    metadata: *Memory_Metadata = out_allocator.user;
+    metadata: *Memory_Metadata = cast out_allocator.user;
     metadata.total_allocated = 0;
     ret KAI_SUCCESS;
 }
@@ -47,7 +47,7 @@ memory_destroy :: (allocator: *Allocator) -> Result
     assert(allocator != null);
     if (allocator.user == null)
         ret KAI_ERROR_FATAL;
-    metadata: *Memory_Metadata = allocator.user;
+    metadata: *Memory_Metadata = cast allocator.user;
     if metadata.total_allocated != 0
         ret KAI_MEMORY_ERROR_MEMORY_LEAK;
     free(allocator.user);
@@ -57,6 +57,6 @@ memory_destroy :: (allocator: *Allocator) -> Result
 
 memory_usage :: (allocator: *Allocator) -> u64
 {
-    metadata: *Memory_Metadata = allocator.user;
+    metadata: *Memory_Metadata = cast allocator.user;
     ret metadata.total_allocated;
 }

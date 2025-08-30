@@ -11,6 +11,10 @@ typedef struct {
     int (*cmd)(int argc, char** argv);
 } Command;
 
+Kai_Writer stdout_writer = {0};
+Kai_Writer* writer = &stdout_writer;
+Kai_Allocator allocator = {0};
+
 Kai_string load_file_to_string(const char* path)
 {
 	String_Builder builder = {0};
@@ -24,14 +28,31 @@ int help(int argc, char** argv)
     return 0;
 }
 
+int token(int argc, char** argv)
+{
+    if (argc == 0) return help(argc, argv);
+    Kai_string source = load_file_to_string(argv[0]);
+    Kai_Tokenizer tokenizer = {
+        .source = source,
+        .line_number = 1,
+        .string_arena = {
+            .data = allocator.heap_allocate(allocator.user, NULL, source.count, 0),
+            .size = source.count,
+        },
+    };
+    Kai_Token* token = kai_tokenizer_next(&tokenizer);
+    while (token->id != KAI_TOKEN_END)
+    {
+        kai_write_token(writer, *token);
+        kai_tokenizer_next(&tokenizer);
+        kai__write(" ");
+    }
+    return 0;
+}
+
 int parse(int argc, char** argv)
 {
     if (argc == 0) return help(argc, argv);
-
-	Kai_Writer writer = kai_writer_stdout();
-    Kai_Allocator allocator;
-	kai_memory_create(&allocator);
-
     Kai_Error error = {0};
 	Kai_Syntax_Tree tree = {0};
 	Kai_Syntax_Tree_Create_Info info = {
@@ -43,9 +64,9 @@ int parse(int argc, char** argv)
         },
 	};
 	if (kai_create_syntax_tree(&info, &tree) != KAI_SUCCESS) {
-        kai_write_error(&writer, &error);
+        kai_write_error(writer, &error);
     }
-	kai_write_expression(&writer, (Kai_Expr*)&tree.root);
+	kai_write_expression(writer, (Kai_Expr*)&tree.root);
 	return error.result != KAI_SUCCESS;
 }
 
@@ -54,6 +75,10 @@ int main(int argc, char** argv)
     if (argc <= 1) return help(argc, argv);
     argc -= 2;
     argv += 2;
+    stdout_writer = kai_writer_stdout();
+    kai_memory_create(&allocator);
+    if (strcmp(argv[-1], "token") == 0)
+        return token(argc, argv);
     if (strcmp(argv[-1], "parse") == 0)
         return parse(argc, argv);
     return help(argc, argv);

@@ -78,7 +78,7 @@ Error :: struct {
 
 _range_to_string :: (range: Range, memory: Memory) -> string
 {
-    ret string.{data = memory.data->*u8 + range.start, count = range.count};
+    ret string.{count = range.count, data = memory.data->*u8 + range.start};
 }
 
 
@@ -233,7 +233,7 @@ string_from_c :: (s: cstring) -> string
 {
     count: u32;
     while (s[count] != 0) count += 1;
-    ret string.{data = s->*u8, count = count};
+    ret string.{count = count, data = s->*u8};
 }
 string_copy_from_c :: (dst: string, src: cstring) -> string
 {
@@ -242,7 +242,7 @@ string_copy_from_c :: (dst: string, src: cstring) -> string
         dst.data[i] = src[i];
         i += 1;
     }
-    ret string.{data = dst.data, count = i};
+    ret string.{count = i, data = dst.data};
 }
 merge_strings :: (a: string, b: string) -> string
 {
@@ -257,8 +257,8 @@ merge_strings :: (a: string, b: string) -> string
         right = a;
     }
     ret string.{
-        data = left.data,
         count = (right.data + right.count->uint - left.data)->u32,
+        data = left.data,
     };
 }
 string_hash :: (s: string) -> u64
@@ -457,16 +457,23 @@ raw_hash_table_find :: (table: *Raw_Hash_Table, key: string) -> int
 }
 
 
+Context :: struct {
+    allocator: Allocator;
+    user: *void;
+}
+
+
 // Type Info Structs
 
 Type_Id :: enum u8 {
     TYPE      = 0;
-    INTEGER   = 1;
-    FLOAT     = 2;
-    POINTER   = 3;
-    PROCEDURE = 4;
-    ARRAY     = 5;
-    STRUCT    = 6;
+    VOID      = 1;
+    INTEGER   = 2;
+    FLOAT     = 3;
+    POINTER   = 4;
+    PROCEDURE = 5;
+    ARRAY     = 6;
+    STRUCT    = 7;
 }
 
 Type :: *Type_Info;
@@ -476,40 +483,43 @@ Type_Info :: struct {
 }
 
 Type_Info_Integer :: struct {
-    id : u8;
-    bits : u8;
+    using Type_Info;
     is_signed : bool;
+    bits : u8; // 8, 16, 32, 64
 }
 
 Type_Info_Float :: struct {
-    id : u8;
+    using Type_Info;
     bits : u8; // 32, 64
 }
 
 Type_Info_Pointer :: struct {
-    id : u8;
+    using Type_Info;
     sub_type : Type;
 }
 
 Type_Info_Procedure :: struct {
-    id : u8;
-    in_count : u8;
-    out_count : u8;
-    sub_types : Type; // list of parameters types, then return types
+    using Type_Info;
+    inputs  : [] Type;
+    outputs : [] Type;
 }
 
 Type_Info_Array :: struct {
-    id : u8;
+    using Type_Info;
     rows : u32;
     cols : u32;
     sub_type : Type;
 }
 
+Struct_Field :: struct {
+    name:   string;
+    offset: u32;
+    type:   Type;
+}
+
 Type_Info_Struct :: struct {
-    id : u8;
-    field_count : u32;
-    field_types : *Type;
-    field_names : *string;
+    using Type_Info;
+    fields: [] Struct_Field;
 }
 
 
@@ -521,8 +531,8 @@ Type_Info_Struct :: struct {
 Number :: struct {
     n : u64;
     d : u64; // never 0 (except when n == 0)
-    is_neg : u32;
     e : s32;
+    is_neg : u32;
 }
 
 number_to_u64 :: (number: Number) -> u64
@@ -554,8 +564,8 @@ number_normalize :: (number: Number) -> Number
     ret Number.{
         n = nu / cd,
         d = de / cd,
-        is_neg = number.is_neg,
         e = ex,
+        is_neg = number.is_neg,
     };
 }
 
@@ -594,7 +604,7 @@ number_sub :: (a: Number, b: Number) -> Number
 number_mul :: (a: Number, b: Number) -> Number
 {
     if a.n == 0 || b.n == 0
-        ret Number.{};
+        ret Number.{0};
 
     ex: s32 = a.e + b.e;
     d0: u64 = _gcd(a.n, b.d);
@@ -603,8 +613,8 @@ number_mul :: (a: Number, b: Number) -> Number
     de: u64 = _mul_with_shift(a.d / d1, b.d / d0, *ex, 1);
 
     ret number_normalize(Number.{
-        is_neg = a.is_neg ^ b.is_neg,
         n = nu, d = de, e = ex,
+        is_neg = a.is_neg ^ b.is_neg,
     });
 }
 
@@ -746,7 +756,7 @@ number_parse_whole :: (source: string, offset: *u32, base: u32) -> Number
 number_parse_decimal :: (source: string, offset: *u32) -> Number
 {
     result: Number;
-    power: Number = Number.{1, 5, 0, -1}; // 1 / 10
+    power: Number = Number.{1, 5, -1, 0}; // 1 / 10
     i: u32 = /offset;
     
     while i < source.count
@@ -756,7 +766,7 @@ number_parse_decimal :: (source: string, offset: *u32) -> Number
         
         h: Number = kai_number_mul(power, Number.{d, 1, 0, 0});
         result = kai_number_add(result, h);
-        power = kai_number_mul(power, Number.{1, 5, 0, -1}); // 1 / 10
+        power = kai_number_mul(power, Number.{1, 5, -1, 0}); // 1 / 10
         i += 1;
     }
     
@@ -775,11 +785,11 @@ number_parse_exponent :: (source: string, offset: *u32) -> Number
     
     while i < source.count
     {
-        d: u32 = source.data[i] - #char "0";
+        d: s32 = source.data[i] - #char "0";
         if (d > 9) break;
         
         result = kai_number_pow_int(result, 10);
-        result = kai_number_mul(result, Number.{_powers_of_five[d], 1, 0, d}); // 10^d
+        result = kai_number_mul(result, Number.{_powers_of_five[d], 1, d, 0}); // 10^d
         i += 1;
     }
     
@@ -876,7 +886,7 @@ arena_create :: (arena: *Arena_Allocator, base: *Allocator)
     arena.base = /base;
     arena.bucket_size = _ceil_div(0x10000, base.page_size) * base.page_size;
     arena.current_allocated = sizeof(*Arena_Bucket);
-    arena.current_bucket = base.heap_allocate(base.user, null, arena.bucket_size, 0);
+    arena.current_bucket = base.heap_allocate(base.user, null, arena.bucket_size, 0) -> *Arena_Bucket;
 }
 arena_destroy :: (arena: *Arena_Allocator)
 {
@@ -906,7 +916,7 @@ arena_allocate :: (arena: *Arena_Allocator, size: u32) -> *void
     
     if (arena.current_allocated + size > arena.bucket_size)
     {
-        new_bucket: *Arena_Bucket = arena.base.heap_allocate(arena.base.user, null, arena.bucket_size, 0);
+        new_bucket: *Arena_Bucket = cast arena.base.heap_allocate(arena.base.user, null, arena.bucket_size, 0);
 
         // Bubble failure to caller
         if new_bucket == null ret null;
@@ -958,8 +968,8 @@ _buffer_push :: (buffer: *Buffer, size: u32) -> Range
 _buffer_done :: (buffer: *Buffer) -> Memory
 {
     memory: Memory = Memory.{
-        data = buffer.array.data,
         size = buffer.array.capacity,
+        data = buffer.array.data,
     };
     /buffer = Buffer.{allocator = buffer.allocator};
     ret memory;
@@ -1001,7 +1011,7 @@ _write_source_code :: (writer: *Writer, src: *u8)
         if (/src == #char "\t")
             _write(" ");
         else
-            _write_string(string.{data = src, count = 1});
+            _write_string(string.{count = 1, data = src});
         src += 1;
     }
 }
@@ -1220,11 +1230,12 @@ _write_expr_id_with_name :: (writer: *Writer, id: string, name: string)
 _write_unary_operator_name :: (writer: *Writer, op: u32)
 {
     if op == {
-    case #char "-"; _write("negate");
-    case #char "*"; _write("pointer to");
-    case #char "["; _write("array");
-    case #char "."; _write("inference");
-    case;           _write("[unknown]");
+    case #char  "-";  _write("negate");
+    case #char  "*";  _write("pointer to");
+    case #char  "[";  _write("array");
+    case #char  ".";  _write("inference");
+    case #multi "->"; _write("auto cast");
+    case;             _write("[unknown]");
     }
 }
 
@@ -1294,7 +1305,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write("\"\n");
         }
         case KAI_EXPR_STRING; {
-            s: *Expr_String = expr->*void;
+            s: *Expr_String = cast expr;
             _write_expr_id_with_name(writer, STRING("string"), expr.name);
             _write(" ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
@@ -1303,7 +1314,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write("\n");
         }
         case KAI_EXPR_NUMBER; {
-            n: *Expr_Number = expr->*void;
+            n: *Expr_Number = cast expr;
             _write_expr_id_with_name(writer, STRING("number"), expr.name);
             _write(" ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
@@ -1312,7 +1323,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write("\n");
         }
         case KAI_EXPR_LITERAL; {
-            l: *Expr_Literal = expr->*void;
+            l: *Expr_Literal = cast expr;
             _write_expr_id_with_name(writer, STRING("literal"), expr.name);
             _write("\n");
 
@@ -1323,7 +1334,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
         }
         case KAI_EXPR_UNARY; {
-            u: *Expr_Unary = expr->*void;
+            u: *Expr_Unary = cast expr;
             _write_expr_id_with_name(writer, STRING("unary"), expr.name);
             _write(" (op = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
@@ -1334,7 +1345,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _explore(u.expr, true);
         }
         case KAI_EXPR_BINARY; {
-            b: *Expr_Binary = expr->*void;
+            b: *Expr_Binary = cast expr;
             _write_expr_id_with_name(writer, STRING("binary"), expr.name);
             _write(" (op = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
@@ -1342,11 +1353,11 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _set_color(KAI_WRITE_COLOR_PRIMARY);
             _write(")\n");
 
-            _explore(b.left, false);
-            _explore(b.right, true);
+            _explore(b.left, b.right == null);
+            if b.right != null _explore(b.right, true);
         }
         case KAI_EXPR_ARRAY; {
-            a: *Expr_Array = expr->*void;
+            a: *Expr_Array = cast expr;
             _write_expr_id_with_name(writer, STRING("array"), expr.name);
             _write("\n");
             if a.rows != null {
@@ -1360,7 +1371,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _explore(a.expr, true);
         }
         case KAI_EXPR_PROCEDURE_TYPE; {
-            p: *Expr_Procedure_Type = expr->*void;
+            p: *Expr_Procedure_Type = cast expr;
             _write_expr_id_with_name(writer, STRING("procedure type"), expr.name);
             _write(" (");
             _write_u32(p.in_count);
@@ -1385,7 +1396,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
         }
         case KAI_EXPR_PROCEDURE_CALL; {
-            p: *Expr_Procedure_Call = expr->*void;
+            p: *Expr_Procedure_Call = cast expr;
             _write_expr_id_with_name(writer, STRING("procedure call"), expr.name);
             _write("\n");
 
@@ -1399,7 +1410,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
         }
         case KAI_EXPR_PROCEDURE; {
-            p: *Expr_Procedure = expr->*void;
+            p: *Expr_Procedure = cast expr;
             _write_expr_id_with_name(writer, STRING("procedure"), expr.name);
             _write(" (");
             _write_u32(p.in_count);
@@ -1428,7 +1439,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write("\n");
         }
         case KAI_EXPR_STRUCT; {
-            s: *Expr_Struct = expr->*void;
+            s: *Expr_Struct = cast expr;
             _write_expr_id_with_name(writer, STRING("struct"), expr.name);
             kai__write("\n");
 
@@ -1439,7 +1450,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
         }
         case KAI_EXPR_ENUM; {
-            e: *Expr_Enum = expr->*void;
+            e: *Expr_Enum = cast expr;
             _write_expr_id_with_name(writer, STRING("enum"), expr.name);
             kai__write("\n");
 
@@ -1450,13 +1461,13 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
         }
         case KAI_STMT_RETURN; {
-            r: *Stmt_Return = expr->*void;
+            r: *Stmt_Return = cast expr;
             _write_expr_id_with_name(writer, STRING("return"), expr.name);
             _write("\n");
             _explore(r.expr, true);
         }
         case KAI_STMT_DECLARATION; {
-            d: *Stmt_Declaration = expr->*void;
+            d: *Stmt_Declaration = cast expr;
             _write_expr_id_with_name(writer, STRING("declaration"), expr.name);
             if (d.flags & KAI_FLAG_DECL_CONST) _write(" CONST");
             _write("\n");
@@ -1471,7 +1482,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             if has_expr _explore(d.expr, true);
         }
         case KAI_STMT_ASSIGNMENT; {
-            a: *Stmt_Assignment = expr->*void;
+            a: *Stmt_Assignment = cast expr;
             _write_expr_id_with_name(writer, STRING("assignment"), expr.name);
             if a.op != #char "=" {
                 _write(" (op = ");
@@ -1488,7 +1499,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _explore(a.expr, true);
         }
         case KAI_STMT_COMPOUND; {
-            c: *Stmt_Compound = expr->*void;
+            c: *Stmt_Compound = cast expr;
             _write_expr_id_with_name(writer, STRING("compound statement"), expr.name);
             _write("\n");
 
@@ -1499,7 +1510,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
         }
         case KAI_STMT_IF; {
-            i: *Stmt_If = expr->*void;
+            i: *Stmt_If = cast expr;
             _write_expr_id_with_name(writer, STRING("if statement"), expr.name);
             _write("\n");
 
@@ -1511,7 +1522,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
         }
         case KAI_STMT_FOR; {
-            f: *Stmt_For = expr->*void;
+            f: *Stmt_For = cast expr;
             _write_expr_id_with_name(writer, STRING("for statement"), expr.name);
             _write(" (iterator name = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
@@ -1523,6 +1534,14 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             context.prefix = STRING("to");
             _explore(f.to, 0);
             _explore(f.body, 1);
+        }
+        case KAI_STMT_WHILE; {
+            _write_expr_id_with_name(writer, STRING("while"), expr.name);
+            _write(" TODO\n");
+        }
+        case KAI_STMT_CONTROL; {
+            _write_expr_id_with_name(writer, STRING("control"), expr.name);
+            _write(" TODO\n");
         }
         case; {
             _set_color(KAI_WRITE_COLOR_SECONDARY);
