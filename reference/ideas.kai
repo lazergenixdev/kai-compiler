@@ -91,7 +91,7 @@ example :: ()
     y := 4 if x < 3 else 2;
 }
 
-// COMPILER SPECIFIC
+// (Library)
 // Idea: Store bit mask of what is stored on each AST node
 example :: ()
 {
@@ -102,4 +102,22 @@ example :: ()
         next:   *Ast;   // only present if fields & 0x0002
         // ...
     }
+
+    // This is a serialization problem!
+
+    Declaration :: struct {
+        id:   u8;
+        mask: u16;
+        name: string;
+        type: *Expr; @opt(mask, 0)
+        expr: *Expr; @opt(mask, 1)
+    }
+
+    serial :: #import "Serialize/Binary"
+
+    data: [#size(Declaration)] u8;
+    object: Declaration;
+    bytes_wrote := serial.serialize(data, 0, object);
+
+    objcopy := serial.deserialize(data, 0, #type(object));
 }

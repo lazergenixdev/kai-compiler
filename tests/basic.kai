@@ -1,0 +1,24 @@
+
+
+// Structs that live in both host and script
+Player :: struct #host {
+    position: [2] f64; // Fixed(u64,22);
+    velocity: [2] f64;
+}
+
+// Functions that are provided by the "host"
+print          :: (args: [] Any)                #host;
+update_players :: (players: [] Player, dt: f32) #host;
+
+// Functions that the "host" expects to import
+on_update :: (env: *Environment, flags: u32) -> int #import;
+
+/* C++
+
+    KAI_HOST_STRUCT(Player, { Kai_vector2_f64 position; Kai_vector2_f64 velocity; })
+
+    KAI_HOST_EXPORT(print,          "([]Any)")
+    KAI_HOST_EXPORT(update_players, "([]Player,f32)")
+
+    KAI_HOST_IMPORT(on_update, void, (Kai_Environment* env, Kai_u32 dt))
+*/

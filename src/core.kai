@@ -626,13 +626,13 @@ number_div :: (a: Number, b: Number) -> Number
 number_pow_int :: (a: Number, exp: u32) -> Number
 {
     r: Number = a;
-    i: s32 = 30 - kai_intrinsics_clz(exp) -> s32;
+    i: s32 = 30 - intrinsics_clz(exp) -> s32;
     if i >= 0 {
         bit: u32 = 1->u32 << i;
         while bit != 0 {
-            r = kai_number_mul(r, r);
+            r = number_mul(r, r);
             if exp & bit
-                r = kai_number_mul(r, a);
+                r = number_mul(r, a);
             bit = bit >> 1;
         }
     }
@@ -764,9 +764,9 @@ number_parse_decimal :: (source: string, offset: *u32) -> Number
         d: u32 = (source.data[i] - #char "0")->u32;
         if (d > 9) break;
         
-        h: Number = kai_number_mul(power, Number.{d, 1, 0, 0});
-        result = kai_number_add(result, h);
-        power = kai_number_mul(power, Number.{1, 5, -1, 0}); // 1 / 10
+        h: Number = number_mul(power, Number.{d, 1, 0, 0});
+        result = number_add(result, h);
+        power = number_mul(power, Number.{1, 5, -1, 0}); // 1 / 10
         i += 1;
     }
     
@@ -788,8 +788,8 @@ number_parse_exponent :: (source: string, offset: *u32) -> Number
         d: s32 = source.data[i] - #char "0";
         if (d > 9) break;
         
-        result = kai_number_pow_int(result, 10);
-        result = kai_number_mul(result, Number.{_powers_of_five[d], 1, d, 0}); // 10^d
+        result = number_pow_int(result, 10);
+        result = number_mul(result, Number.{_powers_of_five[d], 1, d, 0}); // 10^d
         i += 1;
     }
     
@@ -797,6 +797,7 @@ number_parse_exponent :: (source: string, offset: *u32) -> Number
     ret result;
 }
 
+// TODO: rename -> Primitive_Value
 Value :: union {
 	u8  : u8;
 	u16 : u16;
@@ -1123,7 +1124,10 @@ write_error :: (writer: *Writer, error: *Error)
         // ------------------------- Write Error Message --------------------------
 
         _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-        _write_string(error.location.source.name);
+        if error.location.source.name.count != 0
+            _write_string(error.location.source.name);
+        else
+            _write("[...]");
         _set_color(KAI_WRITE_COLOR_PRIMARY);
     //#if KAI_SHOW_LINE_NUMBER_WITH_FILE {
     //    _write(":");

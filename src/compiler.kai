@@ -25,14 +25,16 @@ Program_Create_Info :: struct {
 
 Program :: struct {
     code            : [] u8;
-    procedure_table : uint;
+    procedure_table : [string] u32;
+    variable_table  : [string] u32;
+    type_table      : [string] Type;
     allocator       : Allocator;
 }
 
 Node_Flags :: enum u32 {
-    NODE_TYPE      = 0x1;
-    NODE_EVALUATED = 0x2;
-    NODE_LOCAL     = 0x4;
+    NODE_TYPE      = 0x01;
+    NODE_EVALUATED = 0x02;
+    NODE_LOCAL     = 0x04;
     NODE_NOT_FOUND = 0x80;
 }
 
@@ -57,10 +59,47 @@ Scope :: struct {
     is_proc_scope: bool;
 }
 
+/* Sea of Nodes
+IrTypeId :: enum u32 {
+    BOT    = 0; // Bottom (ALL)
+    TOP    = 1; // Top    (ANY)
+    CTRL   = 2; // Ctrl flow bottom
+    SIMPLE = 3; // End of the Simple Types
+    NUMBER = 4; // All Numbers
+    INT    = 4; // All Integers
+    TUPLE  = 5; // Tuples; finite collections of unrelated Types, kept in parallel
+}
+
+IrTypeFlag :: enum u32 {
+    CONST = 0x0001;
+    TOP   = 0x0002;
+}
+
+IrValue :: union {
+    number: Number;
+    prim:   Value;
+    tuple:  [..] IrType;
+}
+
+IrType :: struct {
+    type:     IrTypeId;
+    flags:    IrTypeFlag;
+    value:    IrValue;
+}
+
+IrNode :: struct {
+    id:       u32;
+    inputs:   [..] *IrNode;
+    outputs:  [..] *IrNode;
+    type:     IrType;
+}
+*/
+
 Compiler_Context :: struct {
     error:              *Error;
     allocator:           Allocator;
     program:            *Program;
+	options:             Compile_Options;
     trees:               [] Syntax_Tree;
     scopes:              [..] Scope;
     nodes:               [..] Node;
@@ -317,10 +356,10 @@ _insert_value_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
     }
 
     case KAI_EXPR_BINARY; {
-        u: *Expr_Binary = cast expr;
-        if _insert_value_dependencies(context, u.left)
+        b: *Expr_Binary = cast expr;
+        if _insert_value_dependencies(context, b.left)
             ret true;
-        if _insert_value_dependencies(context, u.right)
+        if _insert_value_dependencies(context, b.right)
             ret true;
     }
 /*
@@ -532,8 +571,106 @@ _insert_value_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
 }
 _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
 {
-    context->void;
-    expr->void;
+    if expr == null { kai__todo("null expression\n"); ret true; }
+
+    if expr.id == {
+    case KAI_EXPR_IDENTIFIER; {
+        ref: Node_Reference = _lookup_node(context, expr.source_code);
+
+        if ref.flags & KAI_NODE_NOT_FOUND {
+            node: *Node = *context.nodes.data[context.current_node.index];
+            location: Location = Location.{source = node.location.source, string = expr.source_code, line = expr.line_number};
+            ret _error_not_declared(context, location);
+        }
+
+        if ref.flags & KAI_NODE_LOCAL break;
+        
+        ref.flags |= KAI_NODE_TYPE;
+        add_dependency(context, ref);
+    }
+
+    case KAI_EXPR_UNARY; {
+        u: *Expr_Unary = cast expr;
+        ret _insert_type_dependencies(context, u.expr);
+    }
+
+    case KAI_EXPR_BINARY; {
+        b: *Expr_Binary = cast expr;
+        if _insert_type_dependencies(context, b.left)
+            ret true;
+        if _insert_type_dependencies(context, b.right)
+            ret true;
+    }
+/*
+    break; case KAI_EXPR_PROCEDURE_CALL: {
+        Kai_Expr_Procedure_Call* node = base;
+
+        result = kai__dg_insert_type_dependencies(
+            Context,
+            out_Dependency_Array,
+            Scope_Index,
+            node->proc
+        );
+        if (result != KAI_SUCCESS)
+            return result;
+
+        Kai_Expr current = node->arg_head;
+        while (current != NULL) {
+            result = kai__dg_insert_value_dependencies(
+                Context,
+                out_Dependency_Array,
+                Scope_Index,
+                current,
+                KAI_FALSE // TODO: possible bug here ??
+            );
+            if (result != KAI_SUCCESS)
+                return result;
+            current = current->next;
+        }
+    }
+
+    break; case KAI_EXPR_PROCEDURE_TYPE: {
+        //kai__todo("procedure type\n");
+    }
+
+    break; case KAI_EXPR_PROCEDURE: {
+        Kai_Expr_Procedure* node = base;
+        Kai_Expr current = node->in_out_expr;
+        while (current != NULL) {
+            result = kai__dg_insert_value_dependencies(
+                Context,
+                out_Dependency_Array,
+                Scope_Index,
+                current,
+                KAI_FALSE // TODO: possible bug here ??
+            );
+            if (result != KAI_SUCCESS)
+                return result;
+            current = current->next;
+        }
+    }
+
+    break; case KAI_STMT_DECLARATION: {
+        // What do we do here exactly?
+        kai__todo("declaration\n");
+    }
+
+    break; case KAI_STMT_RETURN: {
+        Kai_Stmt_Return* node = base;
+        return kai__dg_insert_type_dependencies(
+            Context,
+            out_Dependency_Array,
+            Scope_Index,
+            node->expr
+        );
+    }
+
+    break; case KAI_STMT_COMPOUND: {
+        kai__todo("compound\n");
+    }
+*/
+    }
+    
     ret false;
 }
 
@@ -572,19 +709,118 @@ _generate_dependency_graph :: (context: *Compiler_Context) -> bool
         if _insert_type_dependencies(context, node.expr)
             ret true;
     }
-
+/*
     for i: 0..<context.nodes.count {
         node: *Node = *context.nodes.data[i];
-        printf("node (%i) %.*s\n", i, node.location.string.count, node.location.string.data);
+        printf("node (%i) %.*s V{ ", i, node.location.string.count, node.location.string.data);
         for j: 0..<node.value_dependencies.count {
             ref: Node_Reference = node.value_dependencies.data[j];
-            id: u8 = #char " ";
-            if ref.flags & KAI_NODE_TYPE id = #char "T";
-            printf(" - dep %c%i\n", id, ref.index);
+            id: u8 = #char "v";
+            if ref.flags & KAI_NODE_TYPE id = #char "t";
+            printf("%i%c", ref.index, id);
+            if j+1 < node.value_dependencies.count
+                printf(", ");
+        }
+        printf(" } T{ ");
+        for j: 0..<node.type_dependencies.count {
+            ref: Node_Reference = node.type_dependencies.data[j];
+            id: u8 = #char "v";
+            if ref.flags & KAI_NODE_TYPE id = #char "t";
+            printf("%i%c", ref.index, id);
+            if j+1 < node.type_dependencies.count
+                printf(", ");
+        }
+        printf(" }\n");
+    }
+*/
+    ret false;
+}
+
+_DFS_Context :: struct {
+    context: *Compiler_Context;
+    post: *u32;
+    prev: *u32;
+    visited: *bool;
+    next: u32;
+}
+
+_explore_dependencies :: (dfs: *_DFS_Context, ref: Node_Reference)
+{
+    index: u32 = (ref.index << 1) | (ref.flags & KAI_NODE_TYPE);
+    dfs.visited[index] = true;
+
+    node: *Node = *dfs.context.nodes.data[ref.index];
+
+    deps: *[..] Node_Reference;
+    if ref.flags & KAI_NODE_TYPE  deps = *node.type_dependencies;
+    else                          deps = *node.value_dependencies;
+
+    for d: 0..<deps.count {
+        dep: Node_Reference = deps.data[d];
+        d_index: u32 = (dep.index << 1) | (dep.flags & KAI_NODE_TYPE);
+
+        if !dfs.visited[d_index] {
+            dfs.prev[d_index] = index;
+            _explore_dependencies(dfs, dep);
         }
     }
 
-    ret true;
+    dfs.post[index] = dfs.next;
+    dfs.next += 1;
+}
+
+_generate_compilation_order :: (context: *Compiler_Context) -> bool
+{
+    // TODO: only one allocation necessary
+    allocator: *Allocator = *context.allocator;
+    dfs: _DFS_Context = _DFS_Context.{context = context, next = 0};
+    dfs.post    = _allocate(null, context.nodes.count * 2 * sizeof(u32), 0) -> *u32;
+    dfs.prev    = _allocate(null, context.nodes.count * 2 * sizeof(u32), 0) -> *u32;
+    dfs.visited = _allocate(null, context.nodes.count * 2 * sizeof(bool), 0) -> *bool;
+    _memory_fill(dfs.prev, 0xFF, context.nodes.count * 2 * sizeof(u32));
+
+    // Perform DFS traversal
+    for i: 0..<context.nodes.count {
+        ref: Node_Reference = Node_Reference.{index = i};
+
+        v: u32 = (ref.index << 1) | (ref.flags & KAI_NODE_TYPE);
+        if !dfs.visited[v] _explore_dependencies(*dfs, ref);
+
+        ref.flags = KAI_NODE_TYPE;
+        t: u32 = (ref.index << 1) | (ref.flags & KAI_NODE_TYPE);
+        if !dfs.visited[t] _explore_dependencies(*dfs, ref);
+    }
+
+    // Sort based on the post number to linearize the graph
+    context.compilation_order.count = context.nodes.count * 2;
+    context.compilation_order.data = _allocate(null, context.compilation_order.count * sizeof(u32), 0) -> *u32;
+
+    for i: 0..<context.compilation_order.count {
+        context.compilation_order.data[dfs.post[i]] = i;
+    }
+/*
+    for i: 0..<context.compilation_order.count {
+        k: u32 = context.compilation_order.data[i];
+        index: u32 = k >> 1;
+        ch: u8 = #char "v";
+        if k & 1 { ch = #char "t"; }
+        printf("%i%c\n", index, ch);
+    }
+*/
+    ret false;
+}
+
+//_generate_code_no_code_gen :: (context: *Compiler_Context) -> bool
+//{
+//    ret false;
+//}
+
+_generate_compiler_ir :: (context: *Compiler_Context) -> bool
+{
+    context->void;
+
+    //context.error.result = KAI_ERROR_FATAL;
+    ret false;
 }
 
 create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
@@ -593,12 +829,14 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         error = info.error,
         allocator = info.allocator,
         program = out_program,
+        options = info.options,
     };
 
     while true {
         if _create_syntax_trees(*context, info.sources) break;
         if _generate_dependency_graph(*context) break;
-    //    if _generate_platform_code(*context) break;
+        if _generate_compilation_order(*context) break;
+        if _generate_compiler_ir(*context) break;
         break;
     }
 
@@ -617,6 +855,7 @@ Variable :: struct {
 
 find_variable :: (program: *Program, name: string) -> Variable
 {
+    //table_find(program);
     program->void;
     name->void;
     ret Variable.{0};

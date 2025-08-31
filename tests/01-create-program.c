@@ -15,4 +15,6 @@ int main()
     };
     kai_create_program(&info, &program);
     assert_no_error();
+
+    kai_find_variable(&program, KAI_STRING("A"));
 }

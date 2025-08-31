@@ -32,8 +32,8 @@ static inline Kai_Writer* default_writer()
 
 EXAMPLE(simple,
     "A := 123;\n"
-    "B := A + 1;\n"
     "C := A - B;\n"
     "D := B + C;\n"
+    "B := A + 1;\n"
     "\n"
 );
