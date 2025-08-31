@@ -25,6 +25,9 @@
 #define forn(LEN) for (int i = 0; i < (LEN); ++i)
 #define MACRO_STRING(S) #S
 #define MACRO_EXPSTR(S) MACRO_STRING(S)
+#define UNIQUE2(N,L) N ## L
+#define UNIQUE(N,L) UNIQUE2(N,L)
+#define SCOPED_TEMP() for (size_t UNIQUE(__i,__LINE__) = 0, mark = nob_temp_save(); UNIQUE(__i,__LINE__) < 1; ++UNIQUE(__i,__LINE__), nob_temp_rewind(mark))
 
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
@@ -1205,6 +1208,8 @@ void generate_all_struct_definitions(String_Builder* builder, Kai_Stmt_Compound*
 		{
 			Kai_Expr_Enum* _enum = (void*)decl->expr;
 			
+			const char* name = temp_cstr_from_string(decl->name);
+			sb_appendf(builder, "// Type: Kai_%s\n", name);
 			sb_append(builder, "enum {\n");
 			for (Kai_Stmt* field = _enum->head; field != NULL; field = field->next)
 			{
@@ -1634,17 +1639,17 @@ void run_tests(void)
 			test_names[test_index(name)] = name;
 		}
 
-		forn (arrlen(test_names))
+		forn (arrlen(test_names)) SCOPED_TEMP()
 		{
 			const char* name = test_names[i];
 			if (name == NULL) continue;
 			const char* output = executable(name);
 			nob_cc(&cmd);
 			nob_cc_flags(&cmd);
-			nob_cc_inputs(&cmd, format("%s.c", name));
-			nob_cc_output(&cmd, output);
+			nob_cc_inputs(&cmd, temp_sprintf("%s.c", name));
+			nob_cc_output(&cmd, temp_sprintf("../bin/%s", output));
 			exit_on_fail(cmd_run_sync_and_reset(&cmd));
-			cmd_append(&cmd, format("./%s", output));
+			cmd_append(&cmd, temp_sprintf("../bin/%s", output));
 			exit_on_fail(cmd_run_sync_and_reset(&cmd));
 		}
 		
@@ -1656,13 +1661,14 @@ void run_tests(void)
 void compile_command_line_tool(void)
 {
 	set_current_dir("kai");
+	SCOPED_TEMP()
 	{
 		Cmd cmd = {0};
 		const char* output = executable("kai");
 		nob_cc(&cmd);
 		nob_cc_flags(&cmd);
 		nob_cc_inputs(&cmd, "main.c");
-		nob_cc_output(&cmd, output);
+		nob_cc_output(&cmd, temp_sprintf("../bin/%s", output));
 		exit_on_fail(cmd_run_sync_and_reset(&cmd));
 	}
 	set_current_dir("..");
@@ -1874,6 +1880,7 @@ int main(int argc, char** argv)
 	write_entire_file("kai.h", builder.items, builder.count);
 	nob_log(INFO, "Generated \"kai.h\"");
 
+	exit_on_fail(mkdir_if_not_exists("bin"));
 	run_tests();
 	compile_command_line_tool();
 	return 0;

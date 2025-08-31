@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250831053109 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250831090856 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -312,6 +312,7 @@ typedef KAI_DYNAMIC_ARRAY(Kai_Scope) Kai_Scope_DynArray;
 typedef KAI_DYNAMIC_ARRAY(Kai_Node) Kai_Node_DynArray;
 typedef KAI_SLICE(Kai_u32) Kai_u32_Slice;
 
+// Type: Kai_Primitive_Type
 enum {
     KAI_U8 = 0|1<<4,
     KAI_U16 = 1|2<<4,
@@ -336,6 +337,7 @@ struct Kai_Memory {
     void* data;
 };
 
+// Type: Kai_Result
 enum {
     KAI_SUCCESS = 0,
     KAI_ERROR_MEMORY = 1,
@@ -367,6 +369,7 @@ struct Kai_Error {
     Kai_Error* next;
 };
 
+// Type: Kai_Memory_Command
 enum {
     KAI_MEMORY_COMMAND_ALLOCATE_WRITE_ONLY = 0,
     KAI_MEMORY_COMMAND_SET_EXECUTABLE = 1,
@@ -408,6 +411,7 @@ struct Kai_Context {
     void* user;
 };
 
+// Type: Kai_Type_Id
 enum {
     KAI_TYPE_ID_TYPE = 0,
     KAI_TYPE_ID_VOID = 1,
@@ -483,6 +487,7 @@ union Kai_Value {
     Kai_f64 f64;
 };
 
+// Type: Kai_Write_Color
 enum {
     KAI_WRITE_COLOR_PRIMARY = 0,
     KAI_WRITE_COLOR_SECONDARY = 1,
@@ -492,6 +497,7 @@ enum {
     KAI_WRITE_COLOR_COUNT = 5,
 };
 
+// Type: Kai_Write_Flags
 enum {
     KAI_WRITE_FLAGS_NONE = 0,
     KAI_WRITE_FLAGS_HEXIDECIMAL = 1<<0,
@@ -541,6 +547,7 @@ struct Kai__Tree_Traversal_Context {
     Kai_string prefix;
 };
 
+// Type: Kai_Expr_Id
 enum {
     KAI_EXPR_IDENTIFIER = 0,
     KAI_EXPR_STRING = 1,
@@ -566,6 +573,7 @@ enum {
     KAI_STMT_COMPOUND = 21,
 };
 
+// Type: Kai_Control_Kind
 enum {
     KAI_CONTROL_CASE = 0,
     KAI_CONTROL_BREAK = 1,
@@ -574,6 +582,7 @@ enum {
     KAI_CONTROL_DEFER = 4,
 };
 
+// Type: Kai_Expr_Flags
 enum {
     KAI_FLAG_DECL_CONST = 1<<0,
     KAI_FLAG_DECL_USING = 1<<1,
@@ -823,6 +832,7 @@ struct Kai_Syntax_Tree_Create_Info {
     Kai_Error* error;
 };
 
+// Type: Kai_Token_Id
 enum {
     KAI_TOKEN_END = 0,
     KAI_TOKEN_IDENTIFIER = 1,
@@ -874,12 +884,14 @@ struct Kai__Operator {
     Kai_u32 type;
 };
 
+// Type: Kai__Operator_Type
 enum {
     KAI__OPERATOR_TYPE_BINARY = 0,
     KAI__OPERATOR_TYPE_INDEX = 1,
     KAI__OPERATOR_TYPE_PROCEDURE_CALL = 2,
 };
 
+// Type: Kai_Compile_Flags
 enum {
     KAI_COMPILE_NO_CODE_GEN = 1,
 };
@@ -918,6 +930,7 @@ struct Kai_Program {
     Kai_Allocator allocator;
 };
 
+// Type: Kai_Node_Flags
 enum {
     KAI_NODE_TYPE = 1,
     KAI_NODE_TYPE_EVALUATED = 2,
@@ -1055,6 +1068,7 @@ KAI_API(void) kai_writer_file_close(Kai_Writer* writer);
 typedef Kai_u32 Kai_Memory_Error;
 typedef struct Kai_Memory_Metadata Kai_Memory_Metadata;
 
+// Type: Kai_Memory_Error
 enum {
     KAI_MEMORY_ERROR_OUT_OF_MEMORY = 1,
     KAI_MEMORY_ERROR_MEMORY_LEAK = 2,

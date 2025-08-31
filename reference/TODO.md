@@ -5,8 +5,8 @@
 - [x] statement parser
 - [x] declaration parser
 - [x] module/file parser (top level)
-- [ ] dependency graph generation (with small visualizer) (use stack of scopes)
-- [ ] builtin type table, expose api to set what the builtin types should be
+- [x] dependency graph generation (with small visualizer) (use stack of scopes)
+- [?] builtin type table, expose api to set what the builtin types should be
 - [ ] type checker + code generation (nothing for now, so just type checker)
 - [ ] `#char` needs to do a utf8 decode and evaluate to the codepoint value
 - [ ] add `then` keyword

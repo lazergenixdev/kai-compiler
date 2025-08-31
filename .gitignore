@@ -16,9 +16,7 @@
 **.vscode
 
 # Build Binaries
+bin/
 build
 build.old
 /kai/kai
-/tests/*
-!/tests/*.*
-**.exe
