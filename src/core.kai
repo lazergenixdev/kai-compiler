@@ -326,7 +326,7 @@ Hash_Table_Size :: struct {
 raw_hash_table_size :: (capacity: u32, elem_size: u32) -> Hash_Table_Size
 {
     r: Hash_Table_Size;
-    r.occupied = _ceil_div_fast(capacity, 6) * sizeof(u64);
+    r.occupied = _ceil_div_fast(capacity, 6)->u32 * sizeof(u64);
     r.hashes   = capacity * sizeof(u64);
     r.keys     = capacity * sizeof(string);
     r.values   = (capacity + 1) * elem_size;
@@ -885,7 +885,7 @@ arena_create :: (arena: *Arena_Allocator, base: *Allocator)
     assert(base != null);
 
     arena.base = /base;
-    arena.bucket_size = _ceil_div(0x10000, base.page_size) * base.page_size;
+    arena.bucket_size = _ceil_div(0x10000, base.page_size)->u32 * base.page_size;
     arena.current_allocated = sizeof(*Arena_Bucket);
     arena.current_bucket = base.heap_allocate(base.user, null, arena.bucket_size, 0) -> *Arena_Bucket;
 }
@@ -1099,13 +1099,13 @@ _write_source_code_fill :: (writer: *Writer, src: *u8, end: *u8, first: u8, ch: 
 }
 
 result_string_map: [7] string = .{
-    STRING("Success"),
-    STRING("Memory Error"),
-    STRING("Syntax Error"),
-    STRING("Semantic Error"),
-    STRING("Info"),
-    STRING("Fatal Error"),
-    STRING("Internal Error"),
+    CONST_STRING("Success"),
+    CONST_STRING("Memory Error"),
+    CONST_STRING("Syntax Error"),
+    CONST_STRING("Semantic Error"),
+    CONST_STRING("Info"),
+    CONST_STRING("Fatal Error"),
+    CONST_STRING("Internal Error"),
 };
 
 write_error :: (writer: *Writer, error: *Error)
@@ -1214,8 +1214,8 @@ _tree_traversal_pop :: (context: *_Tree_Traversal_Context)
 }
 
 _tree_branches: [4] string = .{
-    STRING("\u2503   "), STRING("\u2523\u2501\u2501 "),
-    STRING("    "),      STRING("\u2517\u2501\u2501 "),
+    CONST_STRING("\u2503   "), CONST_STRING("\u2523\u2501\u2501 "),
+    CONST_STRING("    "),      CONST_STRING("\u2517\u2501\u2501 "),
 };
 
 _write_expr_id_with_name :: (writer: *Writer, id: string, name: string)
@@ -1473,7 +1473,12 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         case KAI_STMT_DECLARATION; {
             d: *Stmt_Declaration = cast expr;
             _write_expr_id_with_name(writer, STRING("declaration"), expr.name);
-            if (d.flags & KAI_FLAG_DECL_CONST) _write(" CONST");
+            if d.flags & KAI_FLAG_DECL_CONST _write(" CONST");
+            if d.flags & KAI_FLAG_DECL_EXPORT {
+        		_set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+				_write(" EXPORT");
+        		_set_color(KAI_WRITE_COLOR_PRIMARY);
+			}
             _write("\n");
 
             has_expr: bool = d.expr != null;

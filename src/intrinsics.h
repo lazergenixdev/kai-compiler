@@ -3,10 +3,10 @@ static inline Kai_u32 kai_intrinsics_clz(Kai_u64 value)
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
     return __builtin_clzll(value);
 #elif defined(KAI_COMPILER_MSVC)
-    Kai_u32 index;
+    DWORD index;
     if (_BitScanReverse64(&index, value) == 0)
         return 64;
-    return 63 - index;
+    return (Kai_u32)(63 - index);
 #endif
 }
 
@@ -15,10 +15,10 @@ static inline Kai_u32 kai_intrinsics_ctz(Kai_u64 value)
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
     return __builtin_ctzll(value);
 #elif defined(KAI_COMPILER_MSVC)
-    Kai_u32 index;
+    DWORD index;
     if (_BitScanForward64(&index, value) == 0)
         return 64;
-    return index;
+    return (Kai_u32)(index);
 #endif
 }
 

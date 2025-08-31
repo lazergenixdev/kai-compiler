@@ -19,7 +19,10 @@ Kai_string load_file_to_string(const char* path)
 {
 	String_Builder builder = {0};
 	read_entire_file(path, &builder);
-	return (Kai_string) {.data = (Kai_u8*)(builder.items), .count = builder.count};
+	return (Kai_string) {
+		.data = (Kai_u8*)(builder.items),
+		.count = (Kai_u32)(builder.count)
+	};
 }
 
 int help(int argc, char** argv)

@@ -6,12 +6,13 @@ int main()
 {
     Kai_Program program = {0};
     Kai_Source sources[1] = {
-        example_simple,
+        load_source_file("scripts/simple.kai"),
     };
     Kai_Program_Create_Info info = {
         .allocator = default_allocator(),
         .error = default_error(),
         .sources = MAKE_SLICE(sources),
+		.options = {.flags = KAI_COMPILE_NO_CODE_GEN}
     };
     kai_create_program(&info, &program);
     assert_no_error();

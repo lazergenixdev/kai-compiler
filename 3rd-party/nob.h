@@ -99,7 +99,9 @@
 #ifndef NOB_H_
 #define NOB_H_
 #ifdef _WIN32
+#ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS (1)
+#endif
 #endif
 
 #ifndef NOBDEF
@@ -580,7 +582,7 @@ NOBDEF bool nob_set_current_dir(const char *path);
 
 #ifndef nob_cc_flags
 #  if defined(_MSC_VER) && !defined(__clang__)
-#    define nob_cc_flags(cmd) nob_cmd_append(cmd, "/W4", "/nologo", "/D_CRT_SECURE_NO_WARNINGS")
+#    define nob_cc_flags(cmd) nob_cmd_append(cmd, "/W4", "/nologo", "/D_CRT_SECURE_NO_WARNINGS", "/utf-8")
 #  else
 #    define nob_cc_flags(cmd) nob_cmd_append(cmd, "-Wall", "-Wextra")
 #  endif
@@ -611,7 +613,7 @@ NOBDEF bool nob_set_current_dir(const char *path);
 #    elif defined(__clang__)
 #       define NOB_REBUILD_URSELF(binary_path, source_path) "clang", "-o", binary_path, source_path
 #    elif defined(_MSC_VER)
-#       define NOB_REBUILD_URSELF(binary_path, source_path) "cl.exe", nob_temp_sprintf("/Fe:%s", (binary_path)), source_path
+#       define NOB_REBUILD_URSELF(binary_path, source_path) "cl.exe", "/utf-8", nob_temp_sprintf("/Fe:%s", (binary_path)), source_path
 #    endif
 #  else
 #    define NOB_REBUILD_URSELF(binary_path, source_path) "cc", "-o", binary_path, source_path
@@ -1510,13 +1512,13 @@ NOBDEF void nob_log(Nob_Log_Level level, const char *fmt, ...)
 
     switch (level) {
     case NOB_INFO:
-        fprintf(stderr, "[\e[94mINFO\e[0m] ");
+        fprintf(stderr, "[\x1b[94mINFO\x1b[0m] ");
         break;
     case NOB_WARNING:
-        fprintf(stderr, "[\e[93mWARNING\e[0m] ");
+        fprintf(stderr, "[\x1b[93mWARNING\x1b[0m] ");
         break;
     case NOB_ERROR:
-        fprintf(stderr, "[\e[91mERROR\e[0m] ");
+        fprintf(stderr, "[\x1b[91mERROR\x1b[0m] ");
         break;
     case NOB_NO_LOGS: return;
     default:

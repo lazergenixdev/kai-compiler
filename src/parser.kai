@@ -37,6 +37,7 @@ Expr_Flags :: enum u8 {
     FLAG_DECL_USING    = 1 << 1;
     FLAG_EXPR_USING    = 1 << 1;
     FLAG_PROC_USING    = 1 << 1;
+    FLAG_DECL_EXPORT   = 1 << 2;
 	FLAG_STRUCT_UNION  = 1 << 2;
     FLAG_IF_CASE       = 1 << 2;
     FLAG_FOR_LESS_THAN = 1 << 2;
@@ -228,21 +229,21 @@ _keyword_map: [32] u8 = .{
 };
 
 _keywords: [15] string = .{
-    STRING("break"),
-    STRING("case"),
-    STRING("cast"),
-    STRING("continue"),
-    STRING("defer"),
-    STRING("else"),
-    STRING("enum"),
-    STRING("for"),
-    STRING("if"),
-    STRING("loop"),
-    STRING("ret"),
-    STRING("struct"),
-    STRING("union"),
-    STRING("using"),
-    STRING("while"),
+    CONST_STRING("break"),
+    CONST_STRING("case"),
+    CONST_STRING("cast"),
+    CONST_STRING("continue"),
+    CONST_STRING("defer"),
+    CONST_STRING("else"),
+    CONST_STRING("enum"),
+    CONST_STRING("for"),
+    CONST_STRING("if"),
+    CONST_STRING("loop"),
+    CONST_STRING("ret"),
+    CONST_STRING("struct"),
+    CONST_STRING("union"),
+    CONST_STRING("using"),
+    CONST_STRING("while"),
 };
 
 _hash_keyword :: (s: string) -> u32 {
@@ -634,28 +635,28 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
                 if context.source.data[context.cursor] == #char "\"" {
                     break;
                 }
-                ch: u8 = context.source.data[context.cursor];
-                if ch == #char "\\" {
+                m: u8 = context.source.data[context.cursor];
+                if m == #char "\\" {
                     context.cursor += 1;
                     token.string.count += 1;
                     if context.cursor >= context.source.count
                         break;
                     
-                    ch = context.source.data[context.cursor];
-                    if ch == {
-                    case #char "\\"; ch = #char "\\";
-                    case #char "\""; ch = #char "\"";
-                    case #char "t"; ch = #char "\t";
-                    case #char "r"; ch = #char "\r";
-                    case #char "n"; ch = #char "\n";
-                    case #char "e"; ch = #char "\e";
+                    m = context.source.data[context.cursor];
+                    if m == {
+                    case #char "\\"; m = #char "\\";
+                    case #char "\""; m = #char "\"";
+                    case #char "t"; m = #char "\t";
+                    case #char "r"; m = #char "\r";
+                    case #char "n"; m = #char "\n";
+                    case #char "e"; m = #char "\e";
                     // TODO: output warning here somehow
                     //case;
                         //printf("!!! warning: could not escape '%c'\n", ch);
                     }
                 }
                 data: *u8 = cast fixed_allocate(*context.string_arena, 1);
-                /data = ch;
+                /data = m;
                 if (token.value.string.data == null)
                     token.value.string.data = data;
                 count += 1;
@@ -1140,10 +1141,11 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
 
 		rows: *Expr;
         cols: *Expr;
+		expr_flags: u8;
 
         if current.id == #multi ".." {
             _next_token();
-            flags |= KAI_FLAG_ARRAY_DYNAMIC;
+            expr_flags |= KAI_FLAG_ARRAY_DYNAMIC;
         }
 		else if current.id != #multi "]" {
             rows = parse_expression(parser, TOP_PRECEDENCE);
@@ -1163,7 +1165,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         type: *Expr = parse_type_expression(parser);
 		_expect(type, "in array type", "expected type here");
         // Types do not have binary operators, so return early
-        ret _parser_create_array(parser, op_token, type, rows, cols, flags);
+        ret _parser_create_array(parser, op_token, type, rows, cols, expr_flags);
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Literal Types
@@ -1336,18 +1338,16 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
     case; ret null;
     }
 
-    while true
+	peeked: *Token = tokenizer_peek(*parser.tokenizer);
+	op_info: _Operator = _operator_info(peeked.id);
+	prec: u32 = flags & PRECEDENCE_MASK;
+
+	// handle precedence by returning early
+    while op_info.prec != 0 && op_info.prec > prec
     {
-        peeked: *Token = tokenizer_peek(*parser.tokenizer);
-        op: u32 = peeked.id;
-        op_info: _Operator = _operator_info(op);
-        prec: u32 = flags & PRECEDENCE_MASK;
-
-        // handle precedence by returning early
-        if op_info.prec == 0 || op_info.prec <= prec
-			ret left;
-
-        if op == #multi "==" {
+		op: u32 = peeked.id;
+        
+		if op == #multi "==" {
             prev_state: Tokenizer = parser.tokenizer;
             tokenizer_next(*parser.tokenizer);
             tokenizer_next(*parser.tokenizer);
@@ -1378,7 +1378,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             args: Expr_List;
             arg_count: u8;
 
-            if current.id != #char ")" while true
+            while current.id != #char ")"
             {
                 expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
                 _expect(expr, "in procedure call", "an expression");
@@ -1386,15 +1386,21 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
                 _expect(arg_count != 255, "in procedure call", "too many inputs to procedure");
                 arg_count += 1;
                 _next_token(); // skip expr
-                if current.id == #char ")" break;
-                if current.id == #char "," _next_token(); // skip ','
-                else ret _unexpected("in procedure call", "',' or ')' expected here");
+                if current.id == #char ","
+					_next_token(); // skip ','
+                else if current.id != #char ")"
+					ret _unexpected("in procedure call", "',' or ')' expected here");
             }
 
             left = _parser_create_procedure_call(parser, left, args.head, arg_count);
         }
         }
+
+		tokenizer_peek(*parser.tokenizer);
+		op_info = _operator_info(peeked.id);
     }
+
+	ret left;
 }
 
 parse_type_expression :: (parser: *Parser) -> *Expr
@@ -1411,8 +1417,7 @@ parse_type_expression :: (parser: *Parser) -> *Expr
     in_out: Expr_List;
 
 	// Parse Procedure input types
-	if current.id != #char ")"
-    while true
+	while current.id != #char ")"
     {
 		name: string;
 		if current.id == KAI_TOKEN_IDENTIFIER {
@@ -1435,9 +1440,10 @@ parse_type_expression :: (parser: *Parser) -> *Expr
 
 		_next_token();  // get ',' token or ')'
 
-		if current.id == #char ")" break;
-		if current.id == #char "," _next_token();
-		else ret _unexpected("in procedure type", "',' or ')' expected here");
+		if current.id == #char ","
+			_next_token();
+		else if current.id != #char ")"
+			ret _unexpected("in procedure type", "',' or ')' expected here");
 	}
 
 	peek: *Token = _peek_token();  // see if we have any returns
@@ -1452,7 +1458,8 @@ parse_type_expression :: (parser: *Parser) -> *Expr
 			_next_token();
 		}
 
-		while true {
+		while current.id != #char ")"
+		{
 			type: *Expr = parse_type_expression(parser);
             if !type ret null;
 
@@ -1492,8 +1499,7 @@ parse_procedure :: (parser: *Parser) -> *Expr
     out_count: u8;
     in_out: Expr_List;
 
-    // TODO: this should be a loop, what is this goto??
-    if current.id != #char ")" while true
+    while current.id != #char ")"
     {
         flags: u8;
         if current.id == KAI_TOKEN_using {
@@ -1517,11 +1523,10 @@ parse_procedure :: (parser: *Parser) -> *Expr
 
         _next_token();
         if current.id == {
-        case #char ")"; break;
-        case #char ","; _next_token(); continue;
+        case #char ")";
+        case #char ","; _next_token();
         case; ret _unexpected("in procedure input", "wanted ')' or ',' here");
         }
-        break;
     }
     _next_token();
 
@@ -1750,6 +1755,25 @@ parse_statement :: (parser: *Parser) -> *Stmt
         if !body ret null;
         ret _parser_create_for(parser, for_token, iterator_name, from, to, body, flags);
     }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+	// Statements with Directives
+	case KAI_TOKEN_DIRECTIVE; {
+        if (string_equals(current.value.string, STRING("export")))
+        {
+			_next_token();
+			decl: *Stmt = parse_declaration(parser);
+			decl.flags |= KAI_FLAG_DECL_EXPORT;
+			ret decl;
+        }
+        else
+        {
+			expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+			_expect(expr, "in statement", "there should be an expression here");
+			_next_token();
+			_expect(current.id == #char ";", "after statement", "there should be a ';' before this");
+			ret expr;
+        }
+	}
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Possible Declarations
     case KAI_TOKEN_IDENTIFIER; {

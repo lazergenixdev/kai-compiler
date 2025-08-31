@@ -16,7 +16,9 @@
 #include "3rd-party/kai.h"
 #endif
 
+#if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
 #pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
+#endif
 
 #define exit_on_fail(E) if (!(E)) exit(1)
 #define len(ARRAY) (sizeof(ARRAY)/sizeof(ARRAY[0]))
@@ -35,7 +37,7 @@ typedef struct {
 	const char* value;
 } Macro;
 
-#define KAI_MULTI2(S) ((Kai_u32)(S[1] << 8) | (Kai_u32)(S[0]))
+#define KAI_MULTI(A,B,C,D) ((Kai_u32)(A) | (Kai_u32)(B << 8) | (Kai_u32)((C+0) << 16) | (Kai_u32)((D+0) << 24))
 
 Macro macros[] = {
 	{"VERSION_MAJOR", "", MACRO_EXPSTR(VERSION_MAJOR)},
@@ -45,6 +47,7 @@ Macro macros[] = {
 	{"$", "", ""},
 	{"BOOL", "(EXPR)", "((Kai_bool)((EXPR) ? KAI_TRUE : KAI_FALSE))"},
 	{"STRING", "(LITERAL)", "KAI_STRUCT(Kai_string){.count = (Kai_u32)(sizeof(LITERAL)-1), .data = (Kai_u8*)(LITERAL)}"},
+	{"CONST_STRING", "(LITERAL)", "{.count = (Kai_u32)(sizeof(LITERAL)-1), .data = (Kai_u8*)(LITERAL)}"},
 	{"SLICE", "(TYPE)", "struct { Kai_u32 count; TYPE* data; }"},
 	{"DYNAMIC_ARRAY", "(T)", "struct { Kai_u32 count; Kai_u32 capacity; T* data; }"},
 	{"HASH_TABLE", "(T)", "struct { Kai_u32 count; Kai_u32 capacity; Kai_u64* occupied; Kai_u64* hashes; Kai_string* keys; T* values; }"},
@@ -157,6 +160,7 @@ typedef struct {
 
 Scope* g_scopes = NULL;
 Kai_Expr* g_current_decl_type = NULL;
+Kai_Syntax_Tree* g_current_tree = NULL;
 
 const char* prim_types[] = {
 	"u8", "s8", "u16", "s16", "u32", "s32", "u64", "s64", "f32", "f64",
@@ -200,6 +204,15 @@ const char* clone_string(Kai_string s)
 	memcpy(new, s.data, s.count);
 	new[s.count] = 0;
 	return new;
+}
+
+const char* executable(const char* name)
+{
+#if _WIN32
+	return temp_sprintf("%s.exe", name);
+#else
+	return name;
+#endif
 }
 
 Variable_Type lookup(const char* var_name)
@@ -314,7 +327,7 @@ Variable_Type type_of_expression(Kai_Expr* expr)
 	case KAI_EXPR_BINARY: {
 		Kai_Expr_Binary* bin = (void*)expr;
 		if (bin->op != '.')
-			return type_of_expression(bin->op == KAI_MULTI2("->") ? bin->right : bin->left);
+			return type_of_expression(bin->op == KAI_MULTI('-','>',,) ? bin->right : bin->left);
 		
 		ASSERT(bin->right != NULL && bin->right->id == KAI_EXPR_IDENTIFIER);
 		//printf("looking for %s", temp_cstr_from_string(bin->right->source_code));
@@ -365,10 +378,10 @@ void generate_all_macros(String_Builder* builder)
 {
 	{
 		time_t current_time = time(NULL);
-		struct tm *local_time_info = localtime(&current_time);
+		struct tm *local_time_info = gmtime(&current_time);
 		char buffer[80]; // Buffer to store the formatted string
-		strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S %Z", local_time_info);
-		sb_appendf(builder, "#define KAI_BUILD_DATE \"%s\"\n", buffer);
+		strftime(buffer, sizeof(buffer), "%Y%m%d%H%M%S", local_time_info);
+		sb_appendf(builder, "#define KAI_BUILD_DATE %s // YMD HMS (UTC)\n", buffer);
 	}
 	for (int i = 0; i < len(macros); ++i)
 	{
@@ -404,6 +417,7 @@ void generate_all_macros(String_Builder* builder)
 		shput(g_identifier_map, internal_macros[i].name, Identifier_Type_Function);
 		sb_appendf(&internal, "#define kai_%s%s %s\n", internal_macros[i].name, internal_macros[i].args, internal_macros[i].value);
 	}
+	sb_append_null(&internal);
 	arrpush(g_internal_macros, internal.items);
 }
 
@@ -479,15 +493,15 @@ const char* map_binary_operator(Kai_u32 op)
 	case '&': return "&";
 	case '^': return "^";
 	case '|': return "|";
-    case KAI_MULTI2("&&"): return "&&";
-    case KAI_MULTI2("||"): return "||";
-    case KAI_MULTI2("=="): return "==";
-    case KAI_MULTI2("!="): return "!=";
-    case KAI_MULTI2("<="): return "<=";
-    case KAI_MULTI2(">="): return ">=";
-    case KAI_MULTI2("<<"): return "<<";
-    case KAI_MULTI2(">>"): return ">>";
-    case KAI_MULTI2("->"): return NULL; // special case
+    case KAI_MULTI('&', '&',,): return "&&";
+    case KAI_MULTI('|', '|',,): return "||";
+    case KAI_MULTI('=', '=',,): return "==";
+    case KAI_MULTI('!', '=',,): return "!=";
+    case KAI_MULTI('<', '=',,): return "<=";
+    case KAI_MULTI('>', '=',,): return ">=";
+    case KAI_MULTI('<', '<',,): return "<<";
+    case KAI_MULTI('>', '>',,): return ">>";
+    case KAI_MULTI('-', '>',,): return NULL; // special case
     case '[': return NULL; // special case
     default:   return "BINOP";
     }
@@ -502,25 +516,25 @@ int binary_operator_precedence(Kai_u32 op)
 		case '[':  return 1;
 		case '(':  return 1;
 		case '!': return 2;
-		case KAI_MULTI2("->"): return 2;
+		case KAI_MULTI('-', '>',,): return 2;
 		case '*':  return 3;
 		case '/':  return 3;
 		case '%':  return 3;
 		case '+':  return 4;
 		case '-':  return 4;
-		case KAI_MULTI2("<<"): return 5;
-		case KAI_MULTI2(">>"): return 5;
-		case KAI_MULTI2("<="): return 6;
-		case KAI_MULTI2(">="): return 6;
+		case KAI_MULTI('<', '<',,): return 5;
+		case KAI_MULTI('>', '>',,): return 5;
+		case KAI_MULTI('<', '=',,): return 6;
+		case KAI_MULTI('>', '=',,): return 6;
 		case '<':  return 6;
 		case '>':  return 6;
-		case KAI_MULTI2("!="): return 7;
-		case KAI_MULTI2("=="): return 10; // (was 7) silence warning
+		case KAI_MULTI('!', '=',,): return 7;
+		case KAI_MULTI('=', '=',,): return 10; // (was 7) silence warning
 		case '&': return 10; // (was 9) silence warning
 		case '^': return 10; // (was 9) silence warning
 		case '|': return 10;
-		case KAI_MULTI2("&&"): return 11;
-		case KAI_MULTI2("||"): return 11; // (was 12) silence warning
+		case KAI_MULTI('&', '&',,): return 11;
+		case KAI_MULTI('|', '|',,): return 11; // (was 12) silence warning
 		default: return TOP_PRECEDENCE;
     }
 }
@@ -663,16 +677,28 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		Kai_Expr_Unary* una = (void*)expr;
 
 		int new_prec = binary_operator_precedence(una->op);
-		bool parenthesis = flags & KEEP_ALL_PARENTHESIS || una->op == '~' || una->op == KAI_MULTI2("->");
+		bool parenthesis = flags & KEEP_ALL_PARENTHESIS || una->op == '~' || una->op == KAI_MULTI('-','>',,);
 
-		if (una->op == KAI_MULTI2("->")) {
+		if (una->op == KAI_MULTI('-','>',,)) {
 			da_append(builder, '(');
 			generate_expression(builder, g_current_decl_type, TOP_PRECEDENCE, NONE);
 			da_append(builder, ')');
 		}
 		else if (una->op != '*' || (flags & NOT_TYPE)) {
-			if (una->op == '/')
+			if (una->op == '/') {
 				da_append(builder, '*');
+				//Kai_Error error = {
+				//	.result = KAI_ERROR_INFO,
+				//	.message = KAI_CONST_STRING("found dereference"),
+				//	.location = {
+				//		.source = g_current_tree->source,
+				//		.line = una->line_number,
+				//		.string = una->source_code,
+				//	},
+				//};
+				//Kai_Writer w = kai_writer_stdout();
+				//kai_write_error(&w, &error);
+			}
 			else
 				da_append(builder, una->op == '*'? '&' : una->op);
 		}
@@ -705,7 +731,7 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		{
 			switch (op)
 			{
-			case KAI_MULTI2("->"): {
+			case KAI_MULTI('-', '>',,): {
 				da_append(builder, '(');
 				generate_expression(builder, bin->right, TOP_PRECEDENCE, NONE);
 				da_append(builder, ')');
@@ -961,7 +987,10 @@ void generate_all_non_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound
 
 					if (!internal)
 						sb_append_buf(builder, def.items, def.count);
-					else arrpush(g_internal_macros, def.items);
+					else {
+						sb_append_null(&def);
+						arrpush(g_internal_macros, def.items);
+					}
 					break;
 				}
 			}
@@ -1355,12 +1384,12 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 		switch (ass->op)
 		{
 			case '=' : op = "="  ;break;
-			case KAI_MULTI2("|="): op = "|=" ;break;
-			case KAI_MULTI2("&="): op = "&=" ;break;
-			case KAI_MULTI2("+="): op = "+=" ;break;
-			case KAI_MULTI2("-="): op = "-=" ;break;
-			case KAI_MULTI2("*="): op = "*=" ;break;
-			case KAI_MULTI2("/="): op = "/=" ;break;
+			case KAI_MULTI('|', '=',,): op = "|=" ;break;
+			case KAI_MULTI('&', '=',,): op = "&=" ;break;
+			case KAI_MULTI('+', '=',,): op = "+=" ;break;
+			case KAI_MULTI('-', '=',,): op = "-=" ;break;
+			case KAI_MULTI('*', '=',,): op = "*=" ;break;
+			case KAI_MULTI('/', '=',,): op = "/=" ;break;
 		}
 		sb_appendf(builder, " %s ", op);
 		generate_expression(builder, ass->expr, TOP_PRECEDENCE, NOT_TYPE);
@@ -1564,11 +1593,11 @@ Kai_Syntax_Tree create_tree_from_file(const char* path)
 	}
 	uint64_t end = nanos_since_unspecified_epoch();
 	String_Builder msg = {0};
-	sb_appendf(&msg, "Parsed file \"\e[92m%s\e[0m\"", path);
+	sb_appendf(&msg, "Parsed file \"\x1b[92m%s\x1b[0m\"", path);
 	int pad = 20 - strlen(path);
 	if (pad < 0) pad = 0;
 	forn(pad) da_append(&msg, ' ');
-	sb_appendf(&msg, " in \e[94m%f\e[0m ms", (double)(end - start)/(NANOS_PER_SEC/1000));
+	sb_appendf(&msg, " in \x1b[94m%f\x1b[0m ms", (double)(end - start)/(NANOS_PER_SEC/1000));
 	sb_append_null(&msg);
 	nob_log(INFO, "%s", msg.items);
 	sb_free(msg);
@@ -1609,12 +1638,13 @@ void run_tests(void)
 		{
 			const char* name = test_names[i];
 			if (name == NULL) continue;
+			const char* output = executable(name);
 			nob_cc(&cmd);
 			nob_cc_flags(&cmd);
 			nob_cc_inputs(&cmd, format("%s.c", name));
-			nob_cc_output(&cmd, name);
+			nob_cc_output(&cmd, output);
 			exit_on_fail(cmd_run_sync_and_reset(&cmd));
-			cmd_append(&cmd, format("./%s", name));
+			cmd_append(&cmd, format("./%s", output));
 			exit_on_fail(cmd_run_sync_and_reset(&cmd));
 		}
 		
@@ -1628,10 +1658,11 @@ void compile_command_line_tool(void)
 	set_current_dir("kai");
 	{
 		Cmd cmd = {0};
+		const char* output = executable("kai");
 		nob_cc(&cmd);
 		nob_cc_flags(&cmd);
 		nob_cc_inputs(&cmd, "main.c");
-		nob_cc_output(&cmd, "kai");
+		nob_cc_output(&cmd, output);
 		exit_on_fail(cmd_run_sync_and_reset(&cmd));
 	}
 	set_current_dir("..");
@@ -1651,7 +1682,7 @@ typedef struct {
 } Module;
 
 Module modules[] = {
-	{KAI_STRING("writer"), NULL, {},
+	{KAI_CONST_STRING("writer"), NULL, {0},
 	"#if defined(KAI_PLATFORM_WINDOWS)\n"
 	"__declspec(dllimport) int __stdcall SetConsoleOutputCP(unsigned int wCodePageID);\n"
 	"KAI_INTERNAL void kai__setup_utf8_stdout(void) {\n"
@@ -1673,7 +1704,7 @@ Module modules[] = {
 	"#    define kai__stdc_file_open fopen\n"
 	"#endif\n\n"
 	},
-	{KAI_STRING("memory"), NULL, {},
+	{KAI_CONST_STRING("memory"), NULL, {0},
 "#if defined(KAI_PLATFORM_LINUX) || defined(KAI_PLATFORM_APPLE)\n"
 "#include <sys/mman.h> // -> mmap\n"
 "#include <unistd.h>   // -> getpagesize\n"
@@ -1712,20 +1743,20 @@ Module modules[] = {
 "__declspec(dllimport) void __stdcall GetSystemInfo(SYSTEM_INFO* lpSystemInfo);\n"
 "KAI_INTERNAL void* kai__memory_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)\n"
 "{\n"
-"	Kai__Memory_Internal* metadata = (Kai__Memory_Internal*)(user);\n"
+"	Kai_Memory_Metadata* metadata = (Kai_Memory_Metadata*)(user);\n"
 "	switch (op) {\n"
-"	case KAI_MEMORY_ALLOCATE_WRITE_ONLY: {\n"
+"	case KAI_MEMORY_COMMAND_ALLOCATE_WRITE_ONLY: {\n"
 "		void* result = VirtualAlloc(NULL, size, 0x1000|0x2000, 0x04);\n"
 "		kai_assert(result != NULL);\n"
 "		metadata->total_allocated += size;\n"
 "		return result;\n"
 "	}\n"
-"	case KAI_MEMORY_SET_EXECUTABLE: {\n"
+"	case KAI_MEMORY_COMMAND_SET_EXECUTABLE: {\n"
 "		DWORD old;\n"
 "		kai_assert(VirtualProtect(ptr, size, 0x10, &old) != 0);\n"
 "		return NULL;\n"
 "	}\n"
-"	case KAI_MEMORY_FREE: {\n"
+"	case KAI_MEMORY_COMMAND_FREE: {\n"
 "		kai_assert(VirtualFree(ptr, 0, 0x8000) != 0);\n"
 "		metadata->total_allocated -= size;\n"
 "	}\n"
@@ -1827,13 +1858,13 @@ int main(int argc, char** argv)
 	generate_all_internal_macros(&builder);
 	exit_on_fail(read_entire_file("src/intrinsics.h", &builder));
 	for (int i = 0; i < arrlen(trees); ++i)
-		generate_all_function_implementations(&builder, &trees[i].root);
+		g_current_tree = &trees[i], generate_all_function_implementations(&builder, &trees[i].root);
 	for (int i = 0; i < len(modules); ++i)
 	{
 		const char* upper_name = temp_cstr_upper(modules[i].name);
 		sb_appendf(&builder, "#ifndef KAI_DONT_USE_%s_API\n\n", upper_name);
 		sb_append(&builder, modules[i].extra);
-		generate_all_function_implementations(&builder, &modules[i].tree.root);
+		g_current_tree = &trees[i], generate_all_function_implementations(&builder, &modules[i].tree.root);
 		sb_append(&builder, "#endif\n");
 	}
 	sb_append(&builder, "#endif // KAI_IMPLEMENTATION\n\n");

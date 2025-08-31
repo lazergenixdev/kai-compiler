@@ -4,10 +4,11 @@
 #define KAI_IMPLEMENTATION
 #include "../kai.h"
 
-#define assert_true(EXPR) if (!(EXPR)) printf("\e[91mTest Failed\e[0m: %s (\e[92m%s:%i\e[0m)\n", #EXPR, __FILE__, __LINE__), exit(1)
+#define FAIL(FMT,...) printf("\x1b[91mTest Failed\x1b[0m: " FMT " (\x1b[92m%s:%i\x1b[0m)\n", __VA_ARGS__, __FILE__, __LINE__), exit(1)
+#define assert_true(EXPR) if (!(EXPR)) printf("\x1b[91mTest Failed\x1b[0m: %s (\x1b[92m%s:%i\x1b[0m)\n", #EXPR, __FILE__, __LINE__), exit(1)
 #define assert_no_error() \
   if (default_error()->result != KAI_SUCCESS) \
-    printf("\e[91mTest Failed\e[0m: (\e[92m%s:%i\e[0m)\n", __FILE__, __LINE__), kai_write_error(default_writer(), default_error()), exit(1)
+    printf("\x1b[91mTest Failed\x1b[0m: (\x1b[92m%s:%i\x1b[0m)\n", __FILE__, __LINE__), kai_write_error(default_writer(), default_error()), exit(1)
 
 static inline Kai_Allocator default_allocator()
 {
@@ -27,13 +28,18 @@ static inline Kai_Writer* default_writer()
     return &writer;
 }
 
-#define EXAMPLE(NAME,SOURCE) \
-  Kai_Source example_##NAME = {.name = KAI_STRING("example_" #NAME),.contents = KAI_STRING(SOURCE)}
-
-EXAMPLE(simple,
-    "A := 123;\n"
-    "C := A - B;\n"
-    "D := B + C;\n"
-    "B := A + 1;\n"
-    "\n"
-);
+static inline Kai_Source load_source_file(const char* path)
+{
+	String_Builder builder = {0};
+	
+	if (!read_entire_file(path, &builder))
+		FAIL("Failed to read \"%s\"", path);
+	
+	return (Kai_Source) {
+		.name = kai_string_from_c(path),
+		.contents = {
+			.data = (Kai_u8*)(builder.items),
+			.count = (Kai_u32)(builder.count)
+		}
+	};
+}

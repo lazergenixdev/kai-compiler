@@ -21,3 +21,4 @@ build.old
 /kai/kai
 /tests/*
 !/tests/*.*
+**.exe

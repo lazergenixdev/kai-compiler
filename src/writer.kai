@@ -2,11 +2,11 @@
 #import "locale.h";
 
 _term_debug_colors: [5] cstring = .{
-    "\e[0;37m", // KAI_COLOR_PRIMARY     
-    "\e[1;97m", // KAI_COLOR_SECONDARY   
-    "\e[1;91m", // KAI_COLOR_IMPORTANT   
-    "\e[1;94m", // KAI_COLOR_IMPORTANT_2 
-    "\e[0;90m", // KAI_COLOR_DECORATION  
+    "\x1b[0;37m", // KAI_COLOR_PRIMARY     
+    "\x1b[1;97m", // KAI_COLOR_SECONDARY   
+    "\x1b[1;91m", // KAI_COLOR_IMPORTANT   
+    "\x1b[1;94m", // KAI_COLOR_IMPORTANT_2 
+    "\x1b[0;90m", // KAI_COLOR_DECORATION  
 };
 
 _file_writer_write_value :: (user: *void, type: u32, value: Value, format: Write_Format)

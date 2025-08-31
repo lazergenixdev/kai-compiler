@@ -24,6 +24,26 @@ example :: ()
     [pointer] = 0x45;
 }
 
+// Idea: multiline string
+//        start = "\"\"\"\n", end = "\n\"\"\""
+example :: ()
+{
+	document: string = 
+"""
+Multi line string literal
+	- yes?
+	- no?
+""";
+	empty ::
+	"""
+	"""
+	
+	oneLine ::
+"""
+
+"""
+}
+
 // Idea: ability to tag any piece of code (== notes in Jai)
 //       (useful for codegen and also reflection)
 example :: ()
@@ -61,6 +81,12 @@ example :: ()
     // In CodeGen: tag values should be compile time constants,
     //             making them runtime values does not make any sense semantically
 }
+@doc_desc("Example function thing")
+@doc_detail(
+"""
+More detailed description of the function
+"""
+)
 
 // Idea: Hash table syntax
 example :: ()
