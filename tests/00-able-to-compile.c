@@ -2,5 +2,6 @@
 
 int main()
 {
+    assert_true(KAI_BUILD_DATE != 0);
     assert_true(strlen(KAI_VERSION_STRING) != 0);
 }

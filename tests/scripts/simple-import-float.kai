@@ -1,0 +1,6 @@
+
+ab : f32 : 0.86;
+pi : f32 : #host_import;
+
+#export
+result :: ab + pi;

@@ -81,12 +81,12 @@ example :: ()
     // In CodeGen: tag values should be compile time constants,
     //             making them runtime values does not make any sense semantically
 }
-@doc_desc("Example function thing")
-@doc_detail(
-"""
-More detailed description of the function
-"""
-)
+// @doc_desc("Example function thing")
+// @doc_detail(
+// """
+// More detailed description of the function
+// """
+// )
 
 // Idea: Hash table syntax
 example :: ()

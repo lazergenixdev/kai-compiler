@@ -474,6 +474,8 @@ Type_Id :: enum u8 {
     PROCEDURE = 5;
     ARRAY     = 6;
     STRUCT    = 7;
+    // compiler internal only
+    NUMBER    = 8;
 }
 
 Type :: *Type_Info;
@@ -797,18 +799,21 @@ number_parse_exponent :: (source: string, offset: *u32) -> Number
     ret result;
 }
 
-// TODO: rename -> Primitive_Value
 Value :: union {
-	u8  : u8;
-	u16 : u16;
-	u32 : u32;
-	u64 : u64;
-	s8  : s8;
-	s16 : s16;
-	s32 : s32;
-	s64 : s64;
-	f32 : f32;
-	f64 : f64;
+	u8: u8;
+	u16: u16;
+	u32: u32;
+	u64: u64;
+	s8: s8;
+	s16: s16;
+	s32: s32;
+	s64: s64;
+	f32: f32;
+	f64: f64;
+    ptr: *void;
+    type: *Type_Info;
+    procedure: *void;
+    number: Number;
 }
 
 
@@ -1189,10 +1194,74 @@ write_error :: (writer: *Writer, error: *Error)
     }
 }
 
-write_type :: (writer: *Writer, type: Type)
+write_type :: (writer: *Writer, type: *Type_Info)
 {
-    writer->void;
-    type->void;
+    if type == null {
+        _write("null");
+        ret;
+    }
+
+    if type.id ==
+    {
+    case;
+        _write("unknown");
+    case KAI_TYPE_ID_TYPE;
+        _write("Type");
+    case KAI_TYPE_ID_NUMBER;
+        _write("Number");
+
+    case KAI_TYPE_ID_INTEGER; {
+        info: *Type_Info_Integer = cast type;
+        if info.is_signed _write("s");
+        else _write("u");
+        _write_u32(info.bits);
+    }
+    case KAI_TYPE_ID_FLOAT; {
+        info: *Type_Info_Float = cast type;
+        _write("f");
+        _write_u32(info.bits);
+    }
+/*
+    case KAI_TYPE_ID_POINTER: {
+        Kai_Type_Info_Pointer* info = void_Type;
+        kai__write_char('*');
+        kai_write_type(writer, info->sub_type);
+    }
+
+    case KAI_TYPE_ID_PROCEDURE: {
+        Kai_Type_Info_Procedure* info = void_Type;
+        kai__write("(");
+        kai__for_n (info->in_count) {
+            kai_write_type(writer, info->sub_types[i]);
+            if ((Kai_u8)i < info->in_count - 1)
+                kai__write(", ");
+        }
+        kai__write(") -> (");
+        kai__for_n (info->out_count) {
+            kai_write_type(writer, info->sub_types[info->in_count+i]);
+            if ((Kai_u8)i < info->out_count - 1)
+                kai__write(", ");
+        }
+        kai__write(")");
+    }
+    
+    case KAI_TYPE_ID_STRUCT: {
+        Kai_Type_Info_Struct* info = void_Type;
+		kai__write("struct {");
+        for (Kai_u32 i = 0;;) {
+			kai__write_string(info->field_names[i]);
+			kai__write(":");
+            kai_write_type(writer, info->field_types[i]);
+            if (++i < info->field_count)
+            {
+                kai__write("; ");
+            }
+            else break;
+        }
+		kai__write("}");
+    }
+*/
+    }
 }
 
 _Tree_Traversal_Context :: struct {

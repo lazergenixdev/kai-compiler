@@ -74,7 +74,8 @@
 #ifndef kai__todo
 #define kai__todo(...)                                       \
 do { char __message__[1024] = {0};                           \
-    snprintf(__message__, sizeof(__message__), __VA_ARGS__); \
+    int __length__ = snprintf(__message__, sizeof(__message__), __VA_ARGS__); \
+    snprintf(__message__ + __length__, sizeof(__message__) - __length__, " (%s)", __FUNCTION__); \
     kai_fatal_error("TODO", __message__);                    \
 } while (0)
 #endif

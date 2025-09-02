@@ -42,6 +42,7 @@ Expr_Flags :: enum u8 {
     FLAG_IF_CASE       = 1 << 2;
     FLAG_FOR_LESS_THAN = 1 << 2;
     FLAG_ARRAY_DYNAMIC = 1 << 2;
+    FLAG_DECL_IMPORT   = 1 << 3;
 }
 
 Expr :: struct {
@@ -656,6 +657,7 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
                     }
                 }
                 data: *u8 = cast fixed_allocate(*context.string_arena, 1);
+                assert(data != null);
                 /data = m;
                 if (token.value.string.data == null)
                     token.value.string.data = data;
@@ -1285,7 +1287,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             current.value.string = STRING("<3");
             left = _parser_create_string(parser, /current);
         }
-        else ret _unexpected("in expression", "?");
+        else ret _unexpected("in expression", "unknown directive"); // TODO: custom error message
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Structs & Unions
@@ -1544,7 +1546,7 @@ parse_procedure :: (parser: *Parser) -> *Expr
     }
 
     body: *Stmt;
-    if current.id == KAI_TOKEN_DIRECTIVE && string_equals(STRING("native"), current.string) {
+    if current.id == KAI_TOKEN_DIRECTIVE && string_equals(STRING("host"), current.string) {
         _next_token();
         _expect(current.id == #char ";", "???", "???");
     }
@@ -1581,20 +1583,26 @@ parse_declaration :: (parser: *Parser) -> *Stmt
 
     if type _next_token(); // skip type if there was one
 
-    expr: *Expr = null;
+    expr: *Expr;
 
     if current.id == {
     case #char ":"; flags |= KAI_FLAG_DECL_CONST;
     case #char "=";
-    case #char ";"; ret _parser_create_declaration(parser, name, type, expr, flags, line_number);
-    case; ret _unexpected("in declaration", "should be '=', ':', or ';'");
+    case #char ";";
+        ret _parser_create_declaration(parser, name, type, expr, flags, line_number);
+    case;
+        ret _unexpected("in declaration", "should be '=', ':', or ';'");
     }
     _next_token(); // skip '=', ':', or ';'
 
     // structs and procedures do not require semicolon
     require_semicolon: bool = false;
 
-    if current.id == #char "(" && _is_procedure_next(parser) {
+    if current.id == KAI_TOKEN_DIRECTIVE && string_equals(current.value.string, STRING("host_import")) {
+        flags |= KAI_FLAG_DECL_IMPORT;
+        require_semicolon = true;
+    }
+    else if current.id == #char "(" && _is_procedure_next(parser) {
         expr = parse_procedure(parser);
         if !expr ret _unexpected("[todo]", "[todo]");
     }

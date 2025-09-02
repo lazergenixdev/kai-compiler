@@ -1,4 +1,5 @@
 #import "stdlib.h";
+//#import "_memory_platform_allocate.h"; @insert
 
 Memory_Error :: enum u32 {
     OUT_OF_MEMORY  = 1; // see memory_create implementation

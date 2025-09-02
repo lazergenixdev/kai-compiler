@@ -33,6 +33,10 @@ _file_writer_write_value :: (user: *void, type: u32, value: Value, format: Write
     {
         fprintf(f, "%u", value.u32);
     }
+    else if (type == KAI_S64)
+    {
+        fprintf(f, "%lli", value.s64);
+    }
     else if (type == KAI_U64)
     {
         base: u8 = #char "u";

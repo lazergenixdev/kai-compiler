@@ -1618,6 +1618,7 @@ int test_index(const char* name)
 
 void run_tests(void)
 {
+	minimal_log_level = NO_LOGS;
 	set_current_dir("tests");
 	{
 		printf("------ Tests ----------------------------------------------------------------\n");
@@ -1643,6 +1644,7 @@ void run_tests(void)
 		{
 			const char* name = test_names[i];
 			if (name == NULL) continue;
+			printf("  %s\n", name);
 			const char* output = executable(name);
 			nob_cc(&cmd);
 			nob_cc_flags(&cmd);
@@ -1656,6 +1658,7 @@ void run_tests(void)
 		printf("-----------------------------------------------------------------------------\n");
 	}
 	set_current_dir("..");
+	minimal_log_level = 0;
 }
 
 void compile_command_line_tool(void)

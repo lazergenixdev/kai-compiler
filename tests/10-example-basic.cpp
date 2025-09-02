@@ -22,10 +22,11 @@ namespace Kai {
 
     struct String: public Kai_string {
         String() = default;
-        String(const char* cstr) {
-            data = reinterpret_cast<u8*>(const_cast<char*>(cstr));
-            count = static_cast<u32>(strlen(cstr));
-        }
+        String(const char* cstr): Kai_string(kai_string_from_c(cstr)) {}
+        String(std::string_view view): Kai_string({
+            .count = static_cast<Kai_u32>(view.size()),
+            .data = reinterpret_cast<Kai_u8*>(const_cast<char*>(view.data())),
+        }) {}
     };
 
     static auto StdOut() -> Writer* {

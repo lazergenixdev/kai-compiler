@@ -10,6 +10,8 @@
   if (default_error()->result != KAI_SUCCESS) \
     printf("\x1b[91mTest Failed\x1b[0m: (\x1b[92m%s:%i\x1b[0m)\n", __FILE__, __LINE__), kai_write_error(default_writer(), default_error()), exit(1)
 
+#define MAKE_SLICE(L) {.data = L, .count = sizeof(L)/sizeof(L[0])}
+
 static inline Kai_Allocator default_allocator()
 {
     Kai_Allocator allocator = {0};

@@ -11,7 +11,7 @@ print          :: (args: [] Any)                #host;
 update_players :: (players: [] Player, dt: f32) #host;
 
 // Functions that the "host" expects to import
-on_update :: (env: *Environment, flags: u32) -> int #import;
+on_update :: (env: *Environment, flags: u32) -> int #host(import);
 
 /* C++
 
