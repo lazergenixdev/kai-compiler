@@ -688,20 +688,9 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 			da_append(builder, ')');
 		}
 		else if (una->op != '*' || (flags & NOT_TYPE)) {
-			if (una->op == '/') {
-				da_append(builder, '*');
-				//Kai_Error error = {
-				//	.result = KAI_ERROR_INFO,
-				//	.message = KAI_CONST_STRING("found dereference"),
-				//	.location = {
-				//		.source = g_current_tree->source,
-				//		.line = una->line_number,
-				//		.string = una->source_code,
-				//	},
-				//};
-				//Kai_Writer w = kai_writer_stdout();
-				//kai_write_error(&w, &error);
-			}
+            if (una->op == '[') {
+                da_append(builder, '*'); // dereference
+            }
 			else
 				da_append(builder, una->op == '*'? '&' : una->op);
 		}
@@ -1884,7 +1873,8 @@ int main(int argc, char** argv)
 	nob_log(INFO, "Generated \"kai.h\"");
 
 	exit_on_fail(mkdir_if_not_exists("bin"));
-	run_tests();
+	if (argc == 2 && strcmp(argv[1], "test") == 0)
+		run_tests();
 	compile_command_line_tool();
 	return 0;
 }

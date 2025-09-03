@@ -15,15 +15,6 @@ example :: ()
     memory := allocate(allocator, 100);
 }
 
-// Idea: pointer dereferencing as "[]"
-example :: ()
-{
-    value: int = 7;
-    pointer: *int = *value;
-
-    [pointer] = 0x45;
-}
-
 // Idea: multiline string
 //        start = "\"\"\"\n", end = "\n\"\"\""
 example :: ()
@@ -147,3 +138,19 @@ example :: ()
 
     objcopy := serial.deserialize(data, 0, #type(object));
 }
+
+// NOTES SECTION
+
+// There are some ambiguities in the language
+// where `[expression]` looks like a dereference,
+// and `() -> int` looks like a procedure declaration.
+// So if you want to get an array type, hash table type,
+// or procedure type, then you need to put an extra directive
+// in-front to tell the parser that you want a type as an expression
+array      :: #array [3] int;
+hash_table :: #map [string] int;
+proc       :: #proc () -> int;
+
+// These expressions will work as expected because
+array :: [] int;   // `[]` is not a valid expression
+array :: [..] int; // `[..]` is also not a valid expression

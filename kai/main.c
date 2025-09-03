@@ -15,13 +15,19 @@ Kai_Writer stdout_writer = {0};
 Kai_Writer* writer = &stdout_writer;
 Kai_Allocator allocator = {0};
 
-Kai_string load_file_to_string(const char* path)
+static inline Kai_Source load_source_file(const char* path)
 {
 	String_Builder builder = {0};
-	read_entire_file(path, &builder);
-	return (Kai_string) {
-		.data = (Kai_u8*)(builder.items),
-		.count = (Kai_u32)(builder.count)
+	
+	if (!read_entire_file(path, &builder))
+		exit(1);
+	
+	return (Kai_Source) {
+		.name = kai_string_from_c(path),
+		.contents = {
+			.data = (Kai_u8*)(builder.items),
+			.count = (Kai_u32)(builder.count)
+		}
 	};
 }
 
@@ -34,13 +40,13 @@ int help(int argc, char** argv)
 int token(int argc, char** argv)
 {
     if (argc == 0) return help(argc, argv);
-    Kai_string source = load_file_to_string(argv[0]);
+    Kai_Source source = load_source_file(argv[0]);
     Kai_Tokenizer tokenizer = {
-        .source = source,
+        .source = source.contents,
         .line_number = 1,
         .string_arena = {
-            .data = allocator.heap_allocate(allocator.user, NULL, source.count, 0),
-            .size = source.count,
+            .data = allocator.heap_allocate(allocator.user, NULL, source.contents.count, 0),
+            .size = source.contents.count,
         },
     };
     Kai_Token* token = kai_tokenizer_next(&tokenizer);
@@ -61,15 +67,13 @@ int parse(int argc, char** argv)
 	Kai_Syntax_Tree_Create_Info info = {
 		.allocator = allocator,
 		.error = &error,
-		.source = {
-            .name = KAI_STRING("[internal]"),
-            .contents = load_file_to_string(argv[0]),
-        },
+		.source = load_source_file(argv[0]),
 	};
-	if (kai_create_syntax_tree(&info, &tree) != KAI_SUCCESS) {
-        kai_write_error(writer, &error);
-    }
+	kai_create_syntax_tree(&info, &tree);
 	kai_write_expression(writer, (Kai_Expr*)&tree.root);
+	if (error.result != KAI_SUCCESS) {
+		kai_write_error(writer, &error);
+	}
 	return error.result != KAI_SUCCESS;
 }
 

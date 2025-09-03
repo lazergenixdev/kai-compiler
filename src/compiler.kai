@@ -28,7 +28,7 @@ Program_Create_Info :: struct {
     error             : *Error;
     native_procedures : [] Native_Procedure;
     imports           : [] Import;
-	options           : Compile_Options;
+    options           : Compile_Options;
 }
 
 Variable :: struct {
@@ -46,19 +46,19 @@ Program :: struct {
 }
 
 Node_Flags :: enum u32 {
-	NODE_TYPE            = 0x01;
-	NODE_TYPE_EVALUATED  = 0x02;
-	NODE_VALUE_EVALUATED = 0x04;
-	NODE_EVALUATED       = 0x06;
-	NODE_LOCAL           = 0x08;
-	NODE_EXPORT          = 0x10;
-	NODE_IMPORT          = 0x20;
-	NODE_NOT_FOUND       = 0x80;
+    NODE_TYPE            = 0x01;
+    NODE_TYPE_EVALUATED  = 0x02;
+    NODE_VALUE_EVALUATED = 0x04;
+    NODE_EVALUATED       = 0x06;
+    NODE_LOCAL           = 0x08;
+    NODE_EXPORT          = 0x10;
+    NODE_IMPORT          = 0x20;
+    NODE_NOT_FOUND       = 0x80;
 }
 
 Node_Reference :: struct {
-	flags: Node_Flags;
-	index: u32;
+    flags: Node_Flags;
+    index: u32;
 }
 
 // Nodes have two high level types: Procedure or anything else
@@ -67,14 +67,14 @@ Node_Reference :: struct {
 //    while Runtime nodes can either be baked in (inlined) or hold a memory addess
 // Only nodes that are explicitly marked with `#export` can be queried by the host program
 Node :: struct {
-	type:                   *Type_Info;  // evaluated type
-	value:                   Value; // evaluated value
-	location:                Location;
-	expr:                   *Expr;
-	type_expr:              *Expr;
-	value_dependencies: [..] Node_Reference;
-	type_dependencies:  [..] Node_Reference; // This can be arena??????
-	flags:                   Node_Flags;
+    type:                   *Type_Info;  // evaluated type
+    value:                   Value; // evaluated value
+    location:                Location;
+    expr:                   *Expr;
+    type_expr:              *Expr;
+    value_dependencies: [..] Node_Reference;
+    type_dependencies:  [..] Node_Reference; // This can be arena??????
+    flags:                   Node_Flags;
 }
 
 Scope :: struct {
@@ -84,13 +84,13 @@ Scope :: struct {
 
 /* Sea of Nodes
 IrTypeId :: enum u32 {
-	BOT    = 0; // Bottom (ALL)
-	TOP    = 1; // Top    (ANY)
-	CTRL   = 2; // Ctrl flow bottom
-	SIMPLE = 3; // End of the Simple Types
-	NUMBER = 4; // All Numbers
-	INT    = 4; // All Integers
-	TUPLE  = 5; // Tuples; finite collections of unrelated Types, kept in parallel
+    BOT    = 0; // Bottom (ALL)
+    TOP    = 1; // Top    (ANY)
+    CTRL   = 2; // Ctrl flow bottom
+    SIMPLE = 3; // End of the Simple Types
+    NUMBER = 4; // All Numbers
+    INT    = 4; // All Integers
+    TUPLE  = 5; // Tuples; finite collections of unrelated Types, kept in parallel
 }
 
 IrTypeFlag :: enum u32 {
@@ -122,7 +122,7 @@ Compiler_Context :: struct {
     error:              *Error;
     allocator:           Allocator;
     program:            *Program;
-	options:             Compile_Options;
+    options:             Compile_Options;
     trees:               [] Syntax_Tree;
     scopes:              [..] Scope;
     nodes:               [..] Node;
@@ -138,19 +138,19 @@ Compiler_Context :: struct {
 
 _create_syntax_trees :: (context: *Compiler_Context, sources: [] Source) -> bool
 {
-	allocator: *Allocator = *context.allocator;
-	context.trees.data = _allocate(null, sources.count * sizeof(Syntax_Tree), 0) -> *Syntax_Tree;
-	context.trees.count = sources.count;
-	for i: 0..<sources.count {
-		info: Syntax_Tree_Create_Info = Syntax_Tree_Create_Info.{
-			source = sources[i],
-			allocator = context.allocator,
-			error = context.error,
-		};
-		if create_syntax_tree(*info, *array_last(*context.trees)) != KAI_SUCCESS
-			ret true;
-	}
-	ret false;
+    allocator: *Allocator = *context.allocator;
+    context.trees.data = _allocate(null, sources.count * sizeof(Syntax_Tree), 0) -> *Syntax_Tree;
+    context.trees.count = sources.count;
+    for i: 0..<sources.count {
+        info: Syntax_Tree_Create_Info = Syntax_Tree_Create_Info.{
+            source = sources[i],
+            allocator = context.allocator,
+            error = context.error,
+        };
+        if create_syntax_tree(*info, *array_last(*context.trees)) != KAI_SUCCESS
+            ret true;
+    }
+    ret false;
 }
 
 _inside_procedure_scope :: (context: *Compiler_Context) -> bool
@@ -165,7 +165,7 @@ _inside_procedure_scope :: (context: *Compiler_Context) -> bool
 
 _error_redefinition :: (context: *Compiler_Context, location: Location, original: u32) -> bool
 {
-    /context.error = Error.{
+    [context.error] = Error.{
         result = KAI_ERROR_SEMANTIC,
         location = location,
     };
@@ -196,7 +196,7 @@ _error_redefinition :: (context: *Compiler_Context, location: Location, original
 
         // Put everything together
         info: *Error = (memory.data->*u8 + info_range.start) -> *Error;
-        /info = Error.{
+        [info] = Error.{
             result = KAI_ERROR_INFO,
             location = existing.location,
             message = _range_to_string(message_range, memory),
@@ -210,7 +210,7 @@ _error_redefinition :: (context: *Compiler_Context, location: Location, original
 
 _error_not_declared :: (context: *Compiler_Context, location: Location) -> bool
 {
-    /context.error = Error.{
+    [context.error] = Error.{
         result = KAI_ERROR_SEMANTIC,
         location = location,
     };
@@ -710,41 +710,41 @@ _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
 
 _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
 {
-	allocator: *Allocator = *context.allocator;
-	scope: *Scope = *array_last(*context.scopes);
-	ref: Node_Reference;
+    allocator: *Allocator = *context.allocator;
+    scope: *Scope = *array_last(*context.scopes);
+    ref: Node_Reference;
 
-	type_type: *Type_Info = cast arena_allocate(*context.type_allocator, sizeof(Type_Info));
-	type_type.id = KAI_TYPE_ID_TYPE;
-	ref.index = context.nodes.count;
-	table_set(*scope.identifiers, STRING("Type"), ref);
-	array_push(*context.nodes, Node.{type = type_type, value = Value.{type = type_type}, flags = KAI_NODE_EVALUATED});
-	
-	s32_type: *Type_Info_Integer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Integer));
-	s32_type.id = KAI_TYPE_ID_INTEGER;
-	s32_type.is_signed = true;
-	s32_type.bits = 32;
-	ref.index = context.nodes.count;
-	table_set(*scope.identifiers, STRING("s32"), ref);
-	array_push(*context.nodes, Node.{type = type_type, value = Value.{type = s32_type->Type}, flags = KAI_NODE_EVALUATED});
+    type_type: *Type_Info = cast arena_allocate(*context.type_allocator, sizeof(Type_Info));
+    type_type.id = KAI_TYPE_ID_TYPE;
+    ref.index = context.nodes.count;
+    table_set(*scope.identifiers, STRING("Type"), ref);
+    array_push(*context.nodes, Node.{type = type_type, value = Value.{type = type_type}, flags = KAI_NODE_EVALUATED});
+    
+    s32_type: *Type_Info_Integer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Integer));
+    s32_type.id = KAI_TYPE_ID_INTEGER;
+    s32_type.is_signed = true;
+    s32_type.bits = 32;
+    ref.index = context.nodes.count;
+    table_set(*scope.identifiers, STRING("s32"), ref);
+    array_push(*context.nodes, Node.{type = type_type, value = Value.{type = s32_type->Type}, flags = KAI_NODE_EVALUATED});
 
-	s64_type: *Type_Info_Integer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Integer));
-	s64_type.id = KAI_TYPE_ID_INTEGER;
-	s64_type.is_signed = true;
-	s64_type.bits = 64;
-	ref.index = context.nodes.count;
-	table_set(*scope.identifiers, STRING("s64"), ref);
-	array_push(*context.nodes, Node.{type = type_type, value = Value.{type = s64_type->Type}, flags = KAI_NODE_EVALUATED});
-	
-	f32_type: *Type_Info_Float = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Float));
-	f32_type.id = KAI_TYPE_ID_FLOAT;
-	f32_type.bits = 32;
-	ref.index = context.nodes.count;
-	table_set(*scope.identifiers, STRING("f32"), ref);
-	array_push(*context.nodes, Node.{type = type_type, value = Value.{type = f32_type->Type}, flags = KAI_NODE_EVALUATED});
-	
+    s64_type: *Type_Info_Integer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Integer));
+    s64_type.id = KAI_TYPE_ID_INTEGER;
+    s64_type.is_signed = true;
+    s64_type.bits = 64;
+    ref.index = context.nodes.count;
+    table_set(*scope.identifiers, STRING("s64"), ref);
+    array_push(*context.nodes, Node.{type = type_type, value = Value.{type = s64_type->Type}, flags = KAI_NODE_EVALUATED});
+    
+    f32_type: *Type_Info_Float = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Float));
+    f32_type.id = KAI_TYPE_ID_FLOAT;
+    f32_type.bits = 32;
+    ref.index = context.nodes.count;
+    table_set(*scope.identifiers, STRING("f32"), ref);
+    array_push(*context.nodes, Node.{type = type_type, value = Value.{type = f32_type->Type}, flags = KAI_NODE_EVALUATED});
+    
     context.number_type.id = KAI_TYPE_ID_NUMBER;
-	ret false;
+    ret false;
 }
 
 _generate_dependency_graph :: (context: *Compiler_Context) -> bool
@@ -755,8 +755,8 @@ _generate_dependency_graph :: (context: *Compiler_Context) -> bool
     // Initialize Global Scope
     array_push(*context.scopes, Scope.{ is_proc_scope = false });
 
-	if _generate_dependency_builtin_types(context)
-		ret true;
+    if _generate_dependency_builtin_types(context)
+        ret true;
 
     // Insert nodes from syntax tree
     for i: 0..<context.trees.count {
@@ -777,8 +777,8 @@ _generate_dependency_graph :: (context: *Compiler_Context) -> bool
         node: *Node = *context.nodes.data[i];
         context.current_node.index = i;
 
-		if node.flags & KAI_NODE_EVALUATED || node.flags & KAI_NODE_IMPORT
-			continue;
+        if node.flags & KAI_NODE_EVALUATED || node.flags & KAI_NODE_IMPORT
+            continue;
 
         context.current_node.flags = 0;
         if _insert_value_dependencies(context, node.expr)
@@ -891,9 +891,9 @@ _generate_compilation_order :: (context: *Compiler_Context) -> bool
 
 _error_fatal :: (context: *Compiler_Context, message: string) -> bool
 {
-	context.error.result = KAI_ERROR_FATAL;
-	context.error.message = message;
-	ret true;
+    context.error.result = KAI_ERROR_FATAL;
+    context.error.message = message;
+    ret true;
 }
 
 _value_to_number :: (value: Value, type: *Type_Info, out_number: *Number) -> bool
@@ -914,7 +914,7 @@ _value_to_number :: (value: Value, type: *Type_Info, out_number: *Number) -> boo
             else {
                 num.n = value.u64;
             }
-            /out_number = number_normalize(num);
+            [out_number] = number_normalize(num);
             ret false;
         }
 
@@ -969,29 +969,29 @@ _evalate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) -> 
 
 _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, out_type: *Type) -> bool
 {
-	assert(expr != null);
+    assert(expr != null);
 
-	if expr.id == {
-		case KAI_EXPR_IDENTIFIER; {
-			ref: Node_Reference = _lookup_node(context, expr.source_code);
+    if expr.id == {
+        case KAI_EXPR_IDENTIFIER; {
+            ref: Node_Reference = _lookup_node(context, expr.source_code);
 
-			if ref.flags & KAI_NODE_NOT_FOUND
-				ret _error_fatal(context, STRING("cant find node [todo]"));
+            if ref.flags & KAI_NODE_NOT_FOUND
+                ret _error_fatal(context, STRING("cant find node [todo]"));
 
-			node: *Node = *context.nodes.data[ref.index];
-			
-			if !(node.flags & KAI_NODE_EVALUATED)
-				ret _error_fatal(context, STRING("node not evaluated [todo]"));
+            node: *Node = *context.nodes.data[ref.index];
+            
+            if !(node.flags & KAI_NODE_EVALUATED)
+                ret _error_fatal(context, STRING("node not evaluated [todo]"));
 
-            /out_value = node.value;
-			/out_type = node.type;
-			ret false;
-		}
+            [out_value] = node.value;
+            [out_type] = node.type;
+            ret false;
+        }
 
         case KAI_EXPR_NUMBER; {
             n: *Expr_Number = cast expr;
-            /out_value = Value.{number = n.value};
-            /out_type = *context.number_type;
+            [out_value] = Value.{number = n.value};
+            [out_type] = *context.number_type;
             ret false;
         }
 
@@ -1027,45 +1027,45 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
                 else _error_fatal(context, STRING("invalid binary expression [todo]"));
             }
 
-            /out_value = _evalate_binary_operation(b.op, lt, lv, rv);
-            /out_type = lt;
+            [out_value] = _evalate_binary_operation(b.op, lt, lv, rv);
+            [out_type] = lt;
             ret false;
         }
 
-		case; {
-			kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
-		}
-	}
+        case; {
+            kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
+        }
+    }
 }
 
 _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
 {
-	assert(expr != null);
+    assert(expr != null);
 
-	if expr.id == {
-		case KAI_EXPR_IDENTIFIER; {
-			ref: Node_Reference = _lookup_node(context, expr.source_code);
+    if expr.id == {
+        case KAI_EXPR_IDENTIFIER; {
+            ref: Node_Reference = _lookup_node(context, expr.source_code);
 
-			if ref.flags & KAI_NODE_NOT_FOUND {
-				_error_fatal(context, STRING("cant find node [todo]"));
-				ret null;
-			}
+            if ref.flags & KAI_NODE_NOT_FOUND {
+                _error_fatal(context, STRING("cant find node [todo]"));
+                ret null;
+            }
 
-			node: *Node = *context.nodes.data[ref.index];
-			
-			if !(node.flags & KAI_NODE_TYPE_EVALUATED) {
-				_error_fatal(context, STRING("node type not evaluated [todo]"));
-				ret null;
-			}
+            node: *Node = *context.nodes.data[ref.index];
+            
+            if !(node.flags & KAI_NODE_TYPE_EVALUATED) {
+                _error_fatal(context, STRING("node type not evaluated [todo]"));
+                ret null;
+            }
 
-			ret node.type;
-		}
+            ret node.type;
+        }
 
         case KAI_EXPR_NUMBER; {
             // TODO make better
-			ref: Node_Reference = _lookup_node(context, STRING("s32"));
-			if ref.flags & KAI_NODE_NOT_FOUND ret null;
-			node: *Node = *context.nodes.data[ref.index];
+            ref: Node_Reference = _lookup_node(context, STRING("s32"));
+            if ref.flags & KAI_NODE_NOT_FOUND ret null;
+            node: *Node = *context.nodes.data[ref.index];
             ret node.value.type;
         }
 
@@ -1080,10 +1080,10 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
             ret lt;
         }
 
-		case; {
-			kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
-		}
-	}
+        case; {
+            kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
+        }
+    }
 }
 
 _compile_node_value :: (context: *Compiler_Context, node: *Node) -> bool
@@ -1123,7 +1123,7 @@ _compile_node_value :: (context: *Compiler_Context, node: *Node) -> bool
     }
 
     node.value = value;
-	ret false;
+    ret false;
 }
 
 _find_import :: (context: *Compiler_Context, name: string) -> *Import
@@ -1175,18 +1175,18 @@ _compile_node_type :: (context: *Compiler_Context, node: *Node) -> bool
         node.value = import.value;
     }
 
-	if node.type_expr != null {
-		type: *Type_Info;
+    if node.type_expr != null {
+        type: *Type_Info;
         value: Value;
 
         if _value_of_expression(context, node.type_expr, *value, *type)
             ret true;
-		
-		if type == null
-			ret true;
+        
+        if type == null
+            ret true;
 
-		if type.id != KAI_TYPE_ID_TYPE
-			ret _error_fatal(context, STRING("type is not type"));
+        if type.id != KAI_TYPE_ID_TYPE
+            ret _error_fatal(context, STRING("type is not type"));
 
         // check type against import
         if node.flags & KAI_NODE_IMPORT && import.type.count != 0
@@ -1209,19 +1209,19 @@ _compile_node_type :: (context: *Compiler_Context, node: *Node) -> bool
             if value.type != import_type_value.type
                 ret _error_fatal(context, STRING("import type does not match declaration"));
         }
-		
-		node.type = value.type;
-		node.flags |= KAI_NODE_TYPE_EVALUATED;
-		ret false;
-	}
+        
+        node.type = value.type;
+        node.flags |= KAI_NODE_TYPE_EVALUATED;
+        ret false;
+    }
 
-	type: Type = _type_of_expression(context, node.expr);
-	if type == null
-		ret true;
+    type: Type = _type_of_expression(context, node.expr);
+    if type == null
+        ret true;
 
-	node.type = type;
-	node.flags |= KAI_NODE_TYPE_EVALUATED;
-	ret false;
+    node.type = type;
+    node.flags |= KAI_NODE_TYPE_EVALUATED;
+    ret false;
 }
 
 // ret #size(type)  (bytes)
@@ -1248,26 +1248,26 @@ _copy_value :: (out: *u8, type: *Type_Info, value: Value)
             info: *Type_Info_Integer = cast type;
             if info.is_signed {
                 if info.bits == {
-                    case  8; /(out -> *s8)  = value.s8;
-                    case 16; /(out -> *s16) = value.s16;
-                    case 32; /(out -> *s32) = value.s32;
-                    case 64; /(out -> *s64) = value.s64;
+                    case  8; [out -> *s8]  = value.s8;
+                    case 16; [out -> *s16] = value.s16;
+                    case 32; [out -> *s32] = value.s32;
+                    case 64; [out -> *s64] = value.s64;
                 }
             }
             else {
                 if info.bits == {
-                    case  8; /(out -> *u8)  = value.u8;
-                    case 16; /(out -> *u16) = value.u16;
-                    case 32; /(out -> *u32) = value.u32;
-                    case 64; /(out -> *u64) = value.u64;
+                    case  8; [out -> *u8]  = value.u8;
+                    case 16; [out -> *u16] = value.u16;
+                    case 32; [out -> *u32] = value.u32;
+                    case 64; [out -> *u64] = value.u64;
                 }
             }
         }
         case KAI_TYPE_ID_FLOAT; {
             info: *Type_Info_Float = cast type;
             if info.bits == {
-                case 32; /(out -> *f32) = value.f32;
-                case 64; /(out -> *f64) = value.f64;
+                case 32; [out -> *f32] = value.f32;
+                case 64; [out -> *f64] = value.f64;
             }
         }
         case; {
@@ -1293,28 +1293,28 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
     {
         k: u32 = context.compilation_order.data[i];
         ref: Node_Reference = Node_Reference.{index = (k >> 1), flags = (k & 1)};
-		node: *Node = *context.nodes.data[ref.index];
+        node: *Node = *context.nodes.data[ref.index];
 
-		if (node.flags & KAI_NODE_EVALUATED) == KAI_NODE_EVALUATED
-			continue;
+        if (node.flags & KAI_NODE_EVALUATED) == KAI_NODE_EVALUATED
+            continue;
 
         context.current_source = node.location.source;
 
         writer: *Writer = *context.debug_writer;
 
-		if ref.flags & KAI_NODE_TYPE {
+        if ref.flags & KAI_NODE_TYPE {
             if context.options.flags & KAI_COMPILE_DEBUG {
                 printf("compiling typeof(%.*s)\n", node.location.string.count, node.location.string.data);
             }
-			if _compile_node_type(context, node)
-				ret true;
+            if _compile_node_type(context, node)
+                ret true;
             if context.options.flags & KAI_COMPILE_DEBUG {
                 printf("=> ");
                 write_type(*context.debug_writer, node.type);
                 printf("\n");
             }
-		}
-		else {
+        }
+        else {
             if context.options.flags & KAI_COMPILE_DEBUG {
                 printf("compiling (%.*s)\n", node.location.string.count, node.location.string.data);
             }
@@ -1341,7 +1341,7 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
                 location: u32 = _push_value(context, node.type, node.value);
                 table_set(*context.program.variable_table, node.location.string, Variable.{type = node.type, location = location});
             }
-		}
+        }
     }
     ret false;
 }
@@ -1363,14 +1363,14 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         imports = info.imports,
         debug_writer = writer_stdout(),
     };
-	arena_create(*context.type_allocator, *info.allocator);
-	arena_create(*context.temp_allocator, *info.allocator);
+    arena_create(*context.type_allocator, *info.allocator);
+    arena_create(*context.temp_allocator, *info.allocator);
 
-	if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN) {
-		context.error.message = STRING("Code generation not currently supported :(");
-		context.error.result = KAI_ERROR_FATAL;
-		ret KAI_ERROR_FATAL;
-	}
+    if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN) {
+        context.error.message = STRING("Code generation not currently supported :(");
+        context.error.result = KAI_ERROR_FATAL;
+        ret KAI_ERROR_FATAL;
+    }
 
     while context.error.result == KAI_SUCCESS {
         if _create_syntax_trees(*context, info.sources) break;
@@ -1394,7 +1394,7 @@ find_variable :: (program: *Program, name: string, type: *Type) -> *void
     if index == -1 ret null;
     var: Variable = program.variable_table.values[index];
     if type == null ret null;
-    /type = var.type;
+    [type] = var.type;
     ret program.memory.data + var.location;
 }
 

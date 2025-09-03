@@ -20,16 +20,16 @@ Primitive_Type :: enum u32 {
 
 version_string :: () -> string
 {
-	ret STRING(VERSION_STRING);
+    ret STRING(VERSION_STRING);
 }
 
 version :: () -> vector3_u32
 {
-	v: vector3_u32;
-	v.x = VERSION_MAJOR;
-	v.y = VERSION_MINOR;
-	v.z = VERSION_PATCH;
-	ret v;
+    v: vector3_u32;
+    v.x = VERSION_MAJOR;
+    v.y = VERSION_MINOR;
+    v.z = VERSION_PATCH;
+    ret v;
 }
 
 
@@ -47,7 +47,7 @@ Memory :: struct {
 
 Result :: enum u32 {
     SUCCESS        = 0;
-	ERROR_MEMORY   = 1; // allocator failed
+    ERROR_MEMORY   = 1; // allocator failed
     ERROR_SYNTAX   = 2;
     ERROR_SEMANTIC = 3;
     ERROR_INFO     = 4;
@@ -120,33 +120,33 @@ _gcd :: (a: u64, b: u64) -> u64
 _ldexp :: (x: f64, n: int) -> f64
 {
     // Copyright (C) 1993,2004 Sun Microsystems
-	u: union { f: f64; i: u64; };
-	y: f64 = x;
+    u: union { f: f64; i: u64; };
+    y: f64 = x;
 
-	if (n > 1023) {
-		y *= C("0x1p1023");
-		n -= 1023;
-		if (n > 1023) {
-			y *= C("0x1p1023");
-			n -= 1023;
-			if (n > 1023)
-				n = 1023;
-		}
-	} else if (n < -1022) {
-		/* make sure final n < -53 to avoid double
-		   rounding in the subnormal range */
-		y *= C("0x1p-1022") * C("0x1p53");
-		n += 1022 - 53;
-		if (n < -1022) {
-			y *= C("0x1p-1022") * C("0x1p53");
-			n += 1022 - 53;
-			if (n < -1022)
-				n = -1022;
-		}
-	}
-	u.i = (0x3ff+n)->u64 << 52;
-	x = y * u.f;
-	ret x;
+    if (n > 1023) {
+        y *= C("0x1p1023");
+        n -= 1023;
+        if (n > 1023) {
+            y *= C("0x1p1023");
+            n -= 1023;
+            if (n > 1023)
+                n = 1023;
+        }
+    } else if (n < -1022) {
+        /* make sure final n < -53 to avoid double
+           rounding in the subnormal range */
+        y *= C("0x1p-1022") * C("0x1p53");
+        n += 1022 - 53;
+        if (n < -1022) {
+            y *= C("0x1p-1022") * C("0x1p53");
+            n += 1022 - 53;
+            if (n < -1022)
+                n = -1022;
+        }
+    }
+    u.i = (0x3ff+n)->u64 << 52;
+    x = y * u.f;
+    ret x;
 }
 
 _mul_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
@@ -163,8 +163,8 @@ _mul_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
     // Amount of right shift required to fit in 64 bits
     shift: s32 = 64 - kai_intrinsics_clz(hi)->s32;
     
-    if sub { /exp -= shift; }
-    else   { /exp += shift; }
+    if sub { [exp] -= shift; }
+    else   { [exp] += shift; }
     ret (hi << (64 - shift)) | (lo >> shift);
 }
 
@@ -175,8 +175,8 @@ _add_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
 
     if !carry ret sum;
 
-    if sub { /exp -= 1; }
-    else   { /exp += 1; }
+    if sub { [exp] -= 1; }
+    else   { [exp] += 1; }
     ret (1->u64 << 63) | (sum >> 1);
 }
 
@@ -184,13 +184,13 @@ _add_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
 // Memory Allocator
 
 Memory_Command :: enum u32 {
-	ALLOCATE_WRITE_ONLY = 0; // input: Size
-	SET_EXECUTABLE      = 1; // input: Ptr, Size
-	FREE                = 2; // input: Ptr, Size
+    ALLOCATE_WRITE_ONLY = 0; // input: Size
+    SET_EXECUTABLE      = 1; // input: Ptr, Size
+    FREE                = 2; // input: Ptr, Size
 };
 
-P_Memory_Heap_Allocate     :: #type (user: *void, ptr: *void, new_size: u32, old_size: u32) -> *void;
-P_Memory_Platform_Allocate :: #type (user: *void, ptr: *void, size: u32, op: Memory_Command) -> *void;
+P_Memory_Heap_Allocate     :: #proc (user: *void, ptr: *void, new_size: u32, old_size: u32) -> *void;
+P_Memory_Platform_Allocate :: #proc (user: *void, ptr: *void, size: u32, op: Memory_Command) -> *void;
 
 Allocator :: struct {
     heap_allocate      : *P_Memory_Heap_Allocate;
@@ -271,6 +271,12 @@ string_hash :: (s: string) -> u64
     hash: u64 = 5381;
     for i: 0..<s.count
         hash = ((hash << 5) + hash) + s.data[i]; /* hash * 33 + c */
+    ret hash;
+}
+string_hash_next :: (hash: u64, s: string) -> u64
+{
+    for i: 0..<s.count
+        hash = ((hash << 5) + hash) + s.data[i];
     ret hash;
 }
 
@@ -412,20 +418,20 @@ raw_hash_table_emplace_key :: (table: *Raw_Hash_Table, key: string, out_index: *
             table.hashes[index] = hash;
             table.keys[index] = key;
             table.count += 1;
-            /out_index = index;
+            [out_index] = index;
             ret true;
         }
 
         // Emplace an existing item
         if table.hashes[index] == hash && string_equals(table.keys[index], key)
         {
-            /out_index = index;
+            [out_index] = index;
             ret false;
         }
 
         index = (index + 1) & mask;
     }
-    /out_index = 0xFFFFFFFF;
+    [out_index] = 0xFFFFFFFF;
     ret false;
 }
 
@@ -550,7 +556,7 @@ number_to_f64 :: (number: Number) -> f64
 
     if number.is_neg {
         val = -val;
-	}
+    }
 
     ret _ldexp(val, number.e);
 }
@@ -723,7 +729,7 @@ number_parse_whole :: (source: string, offset: *u32, base: u32) -> Number
     result: Number;
     // TODO: Better to call normalize, or leave base as is?
     base_number: Number = number_normalize(Number.{n = base, d = 1});
-    i: u32 = /offset;
+    i: u32 = [offset];
 
     while i < source.count
     {
@@ -751,7 +757,7 @@ number_parse_whole :: (source: string, offset: *u32, base: u32) -> Number
         i += 1;
     }
 
-    /offset = i;
+    [offset] = i;
     ret result;
 }
 
@@ -759,7 +765,7 @@ number_parse_decimal :: (source: string, offset: *u32) -> Number
 {
     result: Number;
     power: Number = Number.{1, 5, -1, 0}; // 1 / 10
-    i: u32 = /offset;
+    i: u32 = [offset];
     
     while i < source.count
     {
@@ -772,7 +778,7 @@ number_parse_decimal :: (source: string, offset: *u32) -> Number
         i += 1;
     }
     
-    /offset = i;
+    [offset] = i;
     ret result;
 }
 
@@ -783,7 +789,7 @@ _powers_of_five: [10] u64 = .{
 number_parse_exponent :: (source: string, offset: *u32) -> Number
 {
     result: Number = Number.{1, 1, 0, 0};
-    i: u32 = /offset;
+    i: u32 = [offset];
     
     while i < source.count
     {
@@ -795,21 +801,21 @@ number_parse_exponent :: (source: string, offset: *u32) -> Number
         i += 1;
     }
     
-    /offset = i;
+    [offset] = i;
     ret result;
 }
 
 Value :: union {
-	u8: u8;
-	u16: u16;
-	u32: u32;
-	u64: u64;
-	s8: s8;
-	s16: s16;
-	s32: s32;
-	s64: s64;
-	f32: f32;
-	f64: f64;
+    u8: u8;
+    u16: u16;
+    u32: u32;
+    u64: u64;
+    s8: s8;
+    s16: s16;
+    s32: s32;
+    s64: s64;
+    f32: f32;
+    f64: f64;
     ptr: *void;
     type: *Type_Info;
     procedure: *void;
@@ -840,9 +846,9 @@ Write_Format :: struct {
     fill_character : u8;
 }
 
-P_Write_String :: #type (user: *void, str: string);
-P_Write_Value  :: #type (user: *void, type: u32, value: Value, format: Write_Format);
-P_Set_Color    :: #type (user: *void, color: Write_Color);
+P_Write_String :: #proc (user: *void, str: string);
+P_Write_Value  :: #proc (user: *void, type: u32, value: Value, format: Write_Format);
+P_Set_Color    :: #proc (user: *void, color: Write_Color);
 
 Writer :: struct {
     write_string : *P_Write_String;
@@ -889,7 +895,7 @@ arena_create :: (arena: *Arena_Allocator, base: *Allocator)
     assert(arena != null);
     assert(base != null);
 
-    arena.base = /base;
+    arena.base = [base];
     arena.bucket_size = _ceil_div(0x10000, base.page_size)->u32 * base.page_size;
     arena.current_allocated = sizeof(*Arena_Bucket);
     arena.current_bucket = base.heap_allocate(base.user, null, arena.bucket_size, 0) -> *Arena_Bucket;
@@ -977,7 +983,7 @@ _buffer_done :: (buffer: *Buffer) -> Memory
         size = buffer.array.capacity,
         data = buffer.array.data,
     };
-    /buffer = Buffer.{allocator = buffer.allocator};
+    [buffer] = Buffer.{allocator = buffer.allocator};
     ret memory;
 }
 
@@ -1002,7 +1008,7 @@ _advance_to_line :: (source: *u8, line: u32) -> *u8
 {
     line -= 1;
     while line > 0 {
-        if /source == #char "\n"
+        if [source] == #char "\n"
             line -= 1;
         source += 1;
     }
@@ -1012,9 +1018,9 @@ _advance_to_line :: (source: *u8, line: u32) -> *u8
 // TODO: Audit code
 _write_source_code :: (writer: *Writer, src: *u8)
 {
-    while (/src != 0 && /src != #char "\n")
+    while ([src] != 0 && [src] != #char "\n")
     {
-        if (/src == #char "\t")
+        if ([src] == #char "\t")
             _write(" ");
         else
             _write_string(string.{count = 1, data = src});
@@ -1024,7 +1030,7 @@ _write_source_code :: (writer: *Writer, src: *u8)
 
 _utf8_decode :: (s: **u8) -> u32
 {
-    p: *u8 = /s;
+    p: *u8 = [s];
     cp: u32 = 0;
     len: u32 = 0;
 
@@ -1056,7 +1062,7 @@ _utf8_decode :: (s: **u8) -> u32
         len = 1;     // skip
     }
 
-    /s += len;
+    [s] += len;
     ret cp;
 }
 
@@ -1095,7 +1101,7 @@ _unicode_char_width :: (writer: *Writer, cp: u32, first: u8, ch: u8) -> u32
 // TODO: Audit code
 _write_source_code_fill :: (writer: *Writer, src: *u8, end: *u8, first: u8, ch: u8)
 {
-    while (src < end && /src != 0 && /src != #char "\n")
+    while (src < end && [src] != 0 && [src] != #char "\n")
     {
         cp: u32 = _utf8_decode(*src);
         _unicode_char_width(writer, cp, first, ch);
@@ -1247,10 +1253,10 @@ write_type :: (writer: *Writer, type: *Type_Info)
     
     case KAI_TYPE_ID_STRUCT: {
         Kai_Type_Info_Struct* info = void_Type;
-		kai__write("struct {");
+        kai__write("struct {");
         for (Kai_u32 i = 0;;) {
-			kai__write_string(info->field_names[i]);
-			kai__write(":");
+            kai__write_string(info->field_names[i]);
+            kai__write(":");
             kai_write_type(writer, info->field_types[i]);
             if (++i < info->field_count)
             {
@@ -1258,7 +1264,7 @@ write_type :: (writer: *Writer, type: *Type_Info)
             }
             else break;
         }
-		kai__write("}");
+        kai__write("}");
     }
 */
     }
@@ -1305,7 +1311,7 @@ _write_unary_operator_name :: (writer: *Writer, op: u32)
     if op == {
     case #char  "-";  _write("negate");
     case #char  "*";  _write("pointer to");
-    case #char  "[";  _write("array");
+    case #char  "[";  _write("dereference");
     case #char  ".";  _write("inference");
     case #multi "->"; _write("auto cast");
     case;             _write("[unknown]");
@@ -1321,6 +1327,8 @@ _write_binary_operator_name :: (writer: *Writer, op: u32)
     case #multi "=="; _write("equals");
     case #multi "<="; _write("less or equal");
     case #multi ">="; _write("greater or equal");
+    case #char "<";   _write("less than");
+    case #char ">";   _write("greater than");
     case #char "+";   _write("add");
     case #char "-";   _write("subtract");
     case #char "*";   _write("multiply");
@@ -1350,7 +1358,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
     _set_color(KAI_WRITE_COLOR_DECORATION);
     last: u32 = context.stack_count - 1;
     for i: 0..<context.stack_count {
-		bit: u64 = context.stack[i/64] >> (i%64);
+        bit: u64 = context.stack[i/64] >> (i%64);
         a: u32 = bit & 1;
         b: u32 = i == last;
         _write_string(_tree_branches[(a << 1) | b]);
@@ -1432,6 +1440,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         case KAI_EXPR_ARRAY; {
             a: *Expr_Array = cast expr;
             _write_expr_id_with_name(writer, STRING("array"), expr.name);
+            if a.flags & KAI_FLAG_ARRAY_DYNAMIC _write(" DYNAMIC");
             _write("\n");
             if a.rows != null {
                 context.prefix = STRING("rows");
@@ -1544,10 +1553,10 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write_expr_id_with_name(writer, STRING("declaration"), expr.name);
             if d.flags & KAI_FLAG_DECL_CONST _write(" CONST");
             if d.flags & KAI_FLAG_DECL_EXPORT {
-        		_set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-				_write(" EXPORT");
-        		_set_color(KAI_WRITE_COLOR_PRIMARY);
-			}
+                _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+                _write(" EXPORT");
+                _set_color(KAI_WRITE_COLOR_PRIMARY);
+            }
             _write("\n");
 
             has_expr: bool = d.expr != null;
@@ -1589,7 +1598,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_IF; {
             i: *Stmt_If = cast expr;
-            _write_expr_id_with_name(writer, STRING("if statement"), expr.name);
+            _write_expr_id_with_name(writer, STRING("if"), expr.name);
             _write("\n");
 
             context.prefix = STRING("expr");
@@ -1601,7 +1610,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_FOR; {
             f: *Stmt_For = cast expr;
-            _write_expr_id_with_name(writer, STRING("for statement"), expr.name);
+            _write_expr_id_with_name(writer, STRING("for"), expr.name);
             _write(" (iterator name = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_string(f.iterator_name);
@@ -1614,8 +1623,11 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _explore(f.body, 1);
         }
         case KAI_STMT_WHILE; {
+            w: *Stmt_While = cast expr;
             _write_expr_id_with_name(writer, STRING("while"), expr.name);
-            _write(" TODO\n");
+            _write("\n");
+            _explore(w.expr, false);
+            _explore(w.body, true);
         }
         case KAI_STMT_CONTROL; {
             _write_expr_id_with_name(writer, STRING("control"), expr.name);
