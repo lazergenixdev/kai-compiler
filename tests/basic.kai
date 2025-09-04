@@ -1,24 +1,29 @@
 
 
 // Structs that live in both host and script
-Player :: struct #host {
+// #host_share (implement with tagged source file)
+Player :: struct {
     position: [2] f64; // Fixed(u64,22);
     velocity: [2] f64;
 }
 
-// Functions that are provided by the "host"
-print          :: (args: [] Any)                #host;
-update_players :: (players: [] Player, dt: f32) #host;
+DEFAULT_GRAVITY :: #host_import;
 
-// Functions that the "host" expects to import
-on_update :: (env: *Environment, flags: u32) -> int #host(import);
+// Procedures that are provided by the "host"
+print          :: (args: [] Any)                #host_import;
+update_players :: (players: [] Player, dt: f32) #host_import;
+
+// Procedures that the "host" expects the script to export
+// note: no need to put `#export` on the implementation of these procedures
+on_update :: (env: *Environment, flags: u32) -> int #require_export;
 
 /* C++
 
-    KAI_HOST_STRUCT(Player, { Kai_vector2_f64 position; Kai_vector2_f64 velocity; })
+    STRUCT(Player,       { Kai_vector2_f64 position; Kai_vector2_f64 velocity; })
+    STRUCT(Player_Slice, { Kai_u32 count; Player* data; })
 
-    KAI_HOST_EXPORT(print,          "([]Any)")
-    KAI_HOST_EXPORT(update_players, "([]Player,f32)")
+    EXPORT(print,          "([]Any)",        void, (Any_Slice))
+    EXPORT(update_players, "([]Player,f32)", void, (Player_Slice players, Kai_f32 dt))
 
-    KAI_HOST_IMPORT(on_update, void, (Kai_Environment* env, Kai_u32 dt))
+    IMPORT(on_update, void, (Environment* env, Kai_u32 dt))
 */

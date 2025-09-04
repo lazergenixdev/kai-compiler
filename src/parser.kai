@@ -24,6 +24,11 @@ Expr_Id :: enum u8 {
     STMT_COMPOUND       = 21;
 }
 
+// SPECIAL_EVAL_TYPE // #type
+// SPECIAL_EVAL_SIZE // #size
+// SPECIAL_TYPE      // #Type
+// SPECIAL_CODE      // #Code
+
 Control_Kind :: enum u8 {
     CONTROL_CASE     = 0;
     CONTROL_BREAK    = 1;
@@ -51,6 +56,7 @@ Expr :: struct {
     source_code : string;
     name        : string;
     next        : *Expr;
+    this_type   : *Type_Info;
     line_number : u32;
 }
 

@@ -32,7 +32,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_PATCH 0
-#define VERSION_EXTRA ""
+#define VERSION_EXTRA "alpha"
 
 typedef struct {
 	const char* name;
@@ -95,6 +95,7 @@ Macro internal_macros[] = {
 	{"_expect", "(EXPR, Where, Context)", "if (!(EXPR)) return kai__unexpected(Where, Context)"},
 	{"_next_token", "()", "kai_tokenizer_next(&parser->tokenizer)"},
 	{"_peek_token", "()", "kai_tokenizer_peek(&parser->tokenizer)"},
+	{"_dump_memory", "(ARRAY)", "do { for (Kai_u32 i = 0; i < (ARRAY).count * sizeof((ARRAY).data[0]); ++i) printf(\"%02x \", ((Kai_u8*)((ARRAY).data))[i]); printf(\"\\n\"); } while (0)"}, // TODO: delete this
 };
 
 char** g_internal_macros = NULL;
@@ -143,6 +144,7 @@ typedef struct {
 
 Identifier_Map* g_identifier_map = NULL;
 Function_Decl_Map* g_function_cache = NULL;
+char** g_internal_functions = NULL;
 Struct_Map* g_struct_map = NULL;
 Bool_Map* g_generated_slice_types = NULL;
 Bool_Map* g_generated_dynarray_types = NULL;
@@ -393,6 +395,13 @@ void generate_all_macros(String_Builder* builder)
 			read_entire_file("src/macros.h", builder);
 			sb_append(builder, "\n");
 			continue;
+		}
+		if (strcmp(macros[i].name, "VERSION_STRING") == 0)
+		{
+			if (strlen(VERSION_EXTRA) == 0)
+				macros[i].value = "\"" MACRO_EXPSTR(VERSION_MAJOR) "." MACRO_EXPSTR(VERSION_MINOR) "." MACRO_EXPSTR(VERSION_PATCH) "\"";
+			else
+				macros[i].value = "\"" MACRO_EXPSTR(VERSION_MAJOR) "." MACRO_EXPSTR(VERSION_MINOR) "." MACRO_EXPSTR(VERSION_PATCH) " " VERSION_EXTRA "\"";
 		}
 		shput(g_identifier_map, macros[i].name, Identifier_Type_Macro);
 		sb_appendf(builder, "#define KAI_%s%s %s\n", macros[i].name, macros[i].args, macros[i].value);
@@ -1279,6 +1288,8 @@ void generate_all_function_definitions(String_Builder* builder, Kai_Stmt_Compoun
 		
 		sb_append_null(&def);
 		shput(g_function_cache, t, def.items);
+		if (is_internal)
+			arrpush(g_internal_functions, def.items);
 	}
 	if (count != 0 && insert_newline_after)
 		sb_append_cstr(builder, "\n");
@@ -1522,6 +1533,16 @@ void generate_all_imports(String_Builder* builder, Kai_Stmt_Compound* stmt)
 		const char* name = temp_cstr_from_string(current->name);
 		sb_appendf(builder, "#include <%s>\n", name);	
 	}
+}
+
+void generate_all_internal_function_definitions(String_Builder* builder)
+{
+	for (int i = 0; i < arrlen(g_internal_functions); ++i)
+	{
+		sb_append(builder, g_internal_functions[i]);
+		sb_append(builder, ";\n");
+	}
+	sb_append(builder, "\n");
 }
 
 void generate_all_function_implementations(String_Builder* builder, Kai_Stmt_Compound* stmt)
@@ -1855,6 +1876,7 @@ int main(int argc, char** argv)
 	sb_append(&builder, "#ifdef KAI_IMPLEMENTATION\n\n");
 	generate_all_internal_macros(&builder);
 	exit_on_fail(read_entire_file("src/intrinsics.h", &builder));
+	generate_all_internal_function_definitions(&builder);
 	for (int i = 0; i < arrlen(trees); ++i)
 		g_current_tree = &trees[i], generate_all_function_implementations(&builder, &trees[i].root);
 	for (int i = 0; i < len(modules); ++i)

@@ -6,11 +6,13 @@
 - [x] declaration parser
 - [x] module/file parser (top level)
 - [x] dependency graph generation (with small visualizer) (use stack of scopes)
-- [?] builtin type table, expose api to set what the builtin types should be
+- [ ] add `#optional_export` and `#require_export` directives
 - [ ] type checker + code generation (nothing for now, so just type checker)
 - [ ] `#char` needs to do a utf8 decode and evaluate to the codepoint value
 - [ ] add `then` keyword
 - [ ] utility (function + commandline) to generate C/C++ bindings from host script file
+- [ ] measure performance hit of occupied array in hash table
+- [ ] remove `;` from case statements?
 
 # Version 1
 - [ ] AST interpreter (compile-time)

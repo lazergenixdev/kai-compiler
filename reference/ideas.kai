@@ -15,6 +15,15 @@ example :: ()
     memory := allocate(allocator, 100);
 }
 
+// Idea: don't use identifier for type of types, use directive
+example :: (w: $T) -> T
+{
+    a, b: u32;
+    T :: #type(a + b); // get type of `a + b`
+    K: #Type = u32; // K is a `#Type`
+    assert(T == K);
+}
+
 // Idea: multiline string
 //        start = "\"\"\"\n", end = "\n\"\"\""
 example :: ()
@@ -154,3 +163,8 @@ proc       :: #proc () -> int;
 // These expressions will work as expected because
 array :: [] int;   // `[]` is not a valid expression
 array :: [..] int; // `[..]` is also not a valid expression
+
+// Too soon to think about macros
+macro :: (code: #Code, expr: #Code) #expand {
+    expr = code;
+}

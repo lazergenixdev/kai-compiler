@@ -84,13 +84,25 @@ struct Script {
 
 int main()
 {
-    Kai::Program program;
-    auto hello_world = program.find_procedure<Kai_int(*)()>("hello_world", nullptr);
-    Kai_int n = hello_world();
+    Kai::Program program = Kai::create_program_from_file("script.kai");
+    auto hello_world = program.find_procedure<Kai_s32(*)(Kai_s32, Kai_s32)>("hello_world", nullptr);
+    Kai_s32 n = hello_world(1, 2);
+    printf("got %i!\n", n);
+}
 
-    // #nocontext
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    Script script = Script({});
-    Kai_Context context;// = kai_default_context();
-    script.on_jump(&context, 23, {.x = 2, .y = 4});
+#define EXPORT(...)
+
+struct Player_Slice {};
+
+#define EXPORT(name, type, ret, args) ret name ## args ## ;
+
+EXPORT(update_players, "([]Player,f32)", void, (Player_Slice players, Kai_f32 dt))
+
+#undef EXPORT
+#define EXPORT(N,T,R,A) {.name = KAI_CONST_STRING(#N), .type = KAI_CONST_STRING(T), .value = {.procedure = &N}},
+
+Kai_Import imports[] = {
+EXPORT(update_players, "([]Player,f32)", void, (Player_Slice players, Kai_f32 dt))
 }

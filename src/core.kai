@@ -18,11 +18,18 @@ Primitive_Type :: enum u32 {
 
 // Version
 
+//VERSION_STRING :: #host_import;
+//VERSION_MAJOR  :: #host_import;
+//VERSION_MINOR  :: #host_import;
+//VERSION_PATCH  :: #host_import;
+
+#export
 version_string :: () -> string
 {
     ret STRING(VERSION_STRING);
 }
 
+#export
 version :: () -> vector3_u32
 {
     v: vector3_u32;
@@ -91,7 +98,7 @@ _ceil_div :: (num: u64, den: u64) -> u64
 
 _ceil_div_fast :: (num: u64, exp: u32) -> u64
 {
-    ret ( (num + (1->u64 << exp) - 1) >> exp )->u32;
+    ret (num + (1->u64 << exp) - 1) >> exp;
 }
 
 _max_u32 :: (a: u32, b: u32) -> u32
@@ -878,6 +885,9 @@ fixed_allocate :: (arena: *Fixed_Allocator, size: u32) -> *void
 
 
 // Arena Allocator
+// TODO: LArena -- list arena     // linked list implementation
+//       GArena -- growing arena  // dynamic array implementation
+//       FArena -- fixed arena    // no resize, fixed size
 
 Arena_Bucket :: struct {
     prev: *Arena_Bucket;
@@ -1209,12 +1219,19 @@ write_type :: (writer: *Writer, type: *Type_Info)
 
     if type.id ==
     {
-    case;
-        _write("unknown");
-    case KAI_TYPE_ID_TYPE;
+    case; {
+
+        //_write("unknown");
+        _write_u32(type.id);
+    }
+    case KAI_TYPE_ID_TYPE; {
+
         _write("Type");
-    case KAI_TYPE_ID_NUMBER;
+    }
+    case KAI_TYPE_ID_NUMBER; {
+
         _write("Number");
+    }
 
     case KAI_TYPE_ID_INTEGER; {
         info: *Type_Info_Integer = cast type;
@@ -1227,28 +1244,25 @@ write_type :: (writer: *Writer, type: *Type_Info)
         _write("f");
         _write_u32(info.bits);
     }
+    case KAI_TYPE_ID_PROCEDURE; {
+        info: *Type_Info_Procedure = cast type;
+        _write("(");
+        for i: 0..<info.inputs.count {
+            write_type(writer, info.inputs.data[i]);
+            if i < info.inputs.count - 1 _write(", ");
+        }
+        _write(") -> (");
+        for i: 0..<info.outputs.count {
+            write_type(writer, info.outputs.data[i]);
+            if i < info.outputs.count - 1 _write(", ");
+        }
+        kai__write(")");
+    }
 /*
     case KAI_TYPE_ID_POINTER: {
         Kai_Type_Info_Pointer* info = void_Type;
         kai__write_char('*');
         kai_write_type(writer, info->sub_type);
-    }
-
-    case KAI_TYPE_ID_PROCEDURE: {
-        Kai_Type_Info_Procedure* info = void_Type;
-        kai__write("(");
-        kai__for_n (info->in_count) {
-            kai_write_type(writer, info->sub_types[i]);
-            if ((Kai_u8)i < info->in_count - 1)
-                kai__write(", ");
-        }
-        kai__write(") -> (");
-        kai__for_n (info->out_count) {
-            kai_write_type(writer, info->sub_types[info->in_count+i]);
-            if ((Kai_u8)i < info->out_count - 1)
-                kai__write(", ");
-        }
-        kai__write(")");
     }
     
     case KAI_TYPE_ID_STRUCT: {
@@ -1293,17 +1307,25 @@ _tree_branches: [4] string = .{
     CONST_STRING("    "),      CONST_STRING("\u2517\u2501\u2501 "),
 };
 
-_write_expr_id_with_name :: (writer: *Writer, id: string, name: string)
+_write_expr_id_with_name :: (writer: *Writer, id: string, expr: *Expr)
 {
     _set_color(KAI_WRITE_COLOR_SECONDARY);
     _write_string(id);
     _set_color(KAI_WRITE_COLOR_PRIMARY);
-    if name.count == 0 ret;
-    _write(" (name = \"");
-    _set_color(KAI_WRITE_COLOR_IMPORTANT);
-    _write_string(name);
-    _set_color(KAI_WRITE_COLOR_PRIMARY);
-    _write("\")");
+    if expr.name.count != 0 {
+        _write(" (name = \"");
+        _set_color(KAI_WRITE_COLOR_IMPORTANT);
+        _write_string(expr.name);
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _write("\")");
+    }
+    if expr.this_type != null {
+        _write(" [");
+        _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        write_type(writer, expr.this_type);
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _write("]");
+    }
 }
 
 _write_unary_operator_name :: (writer: *Writer, op: u32)
@@ -1329,6 +1351,8 @@ _write_binary_operator_name :: (writer: *Writer, op: u32)
     case #multi ">="; _write("greater or equal");
     case #char "<";   _write("less than");
     case #char ">";   _write("greater than");
+    case #multi "<<"; _write("shift left");
+    case #multi ">>"; _write("shift right");
     case #char "+";   _write("add");
     case #char "-";   _write("subtract");
     case #char "*";   _write("multiply");
@@ -1378,7 +1402,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
     }
     if expr.id == {
         case KAI_EXPR_IDENTIFIER; {
-            _write_expr_id_with_name(writer, STRING("identifier"), expr.name);
+            _write_expr_id_with_name(writer, STRING("identifier"), expr);
             _write(" \"");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_string(expr.source_code);
@@ -1387,7 +1411,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_STRING; {
             s: *Expr_String = cast expr;
-            _write_expr_id_with_name(writer, STRING("string"), expr.name);
+            _write_expr_id_with_name(writer, STRING("string"), expr);
             _write(" ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_string(s.source_code);
@@ -1396,7 +1420,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_NUMBER; {
             n: *Expr_Number = cast expr;
-            _write_expr_id_with_name(writer, STRING("number"), expr.name);
+            _write_expr_id_with_name(writer, STRING("number"), expr);
             _write(" ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             write_number(writer, n.value);
@@ -1405,7 +1429,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_LITERAL; {
             l: *Expr_Literal = cast expr;
-            _write_expr_id_with_name(writer, STRING("literal"), expr.name);
+            _write_expr_id_with_name(writer, STRING("literal"), expr);
             _write("\n");
 
             current: *Stmt = l.head;
@@ -1416,7 +1440,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_UNARY; {
             u: *Expr_Unary = cast expr;
-            _write_expr_id_with_name(writer, STRING("unary"), expr.name);
+            _write_expr_id_with_name(writer, STRING("unary"), expr);
             _write(" (op = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_unary_operator_name(writer, u.op);
@@ -1427,7 +1451,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_BINARY; {
             b: *Expr_Binary = cast expr;
-            _write_expr_id_with_name(writer, STRING("binary"), expr.name);
+            _write_expr_id_with_name(writer, STRING("binary"), expr);
             _write(" (op = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_binary_operator_name(writer, b.op);
@@ -1439,7 +1463,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_ARRAY; {
             a: *Expr_Array = cast expr;
-            _write_expr_id_with_name(writer, STRING("array"), expr.name);
+            _write_expr_id_with_name(writer, STRING("array"), expr);
             if a.flags & KAI_FLAG_ARRAY_DYNAMIC _write(" DYNAMIC");
             _write("\n");
             if a.rows != null {
@@ -1454,12 +1478,8 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_PROCEDURE_TYPE; {
             p: *Expr_Procedure_Type = cast expr;
-            _write_expr_id_with_name(writer, STRING("procedure type"), expr.name);
-            _write(" (");
-            _write_u32(p.in_count);
-            _write(" in, ");
-            _write_u32(p.out_count);
-            _write(" out)\n");
+            _write_expr_id_with_name(writer, STRING("procedure type"), expr);
+            _write("\n");
 
             end: u32 = p.in_count + p.out_count - 1;
             current: *Expr = p.in_out_expr;
@@ -1479,7 +1499,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_PROCEDURE_CALL; {
             p: *Expr_Procedure_Call = cast expr;
-            _write_expr_id_with_name(writer, STRING("procedure call"), expr.name);
+            _write_expr_id_with_name(writer, STRING("procedure call"), expr);
             _write("\n");
 
             context.prefix = KAI_STRING("proc");
@@ -1493,12 +1513,8 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_PROCEDURE; {
             p: *Expr_Procedure = cast expr;
-            _write_expr_id_with_name(writer, STRING("procedure"), expr.name);
-            _write(" (");
-            _write_u32(p.in_count);
-            _write(" in, ");
-            _write_u32(p.out_count);
-            _write(" out)\n");
+            _write_expr_id_with_name(writer, STRING("procedure"), expr);
+            _write("\n");
 
             current: *Expr = p.in_out_expr;
 
@@ -1517,12 +1533,12 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _explore(p.body, true);
         }
         case KAI_EXPR_IMPORT; {
-            _write_expr_id_with_name(writer, STRING("import"), expr.name);
+            _write_expr_id_with_name(writer, STRING("import"), expr);
             _write("\n");
         }
         case KAI_EXPR_STRUCT; {
             s: *Expr_Struct = cast expr;
-            _write_expr_id_with_name(writer, STRING("struct"), expr.name);
+            _write_expr_id_with_name(writer, STRING("struct"), expr);
             kai__write("\n");
 
             current: *Stmt = s.head;
@@ -1533,7 +1549,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_EXPR_ENUM; {
             e: *Expr_Enum = cast expr;
-            _write_expr_id_with_name(writer, STRING("enum"), expr.name);
+            _write_expr_id_with_name(writer, STRING("enum"), expr);
             kai__write("\n");
 
             current: *Stmt = e.head;
@@ -1544,17 +1560,22 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_RETURN; {
             r: *Stmt_Return = cast expr;
-            _write_expr_id_with_name(writer, STRING("return"), expr.name);
+            _write_expr_id_with_name(writer, STRING("return"), expr);
             _write("\n");
             _explore(r.expr, true);
         }
         case KAI_STMT_DECLARATION; {
             d: *Stmt_Declaration = cast expr;
-            _write_expr_id_with_name(writer, STRING("declaration"), expr.name);
+            _write_expr_id_with_name(writer, STRING("declaration"), expr);
             if d.flags & KAI_FLAG_DECL_CONST _write(" CONST");
             if d.flags & KAI_FLAG_DECL_EXPORT {
                 _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
                 _write(" EXPORT");
+                _set_color(KAI_WRITE_COLOR_PRIMARY);
+            }
+            if d.flags & KAI_FLAG_DECL_IMPORT {
+                _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+                _write(" IMPORT");
                 _set_color(KAI_WRITE_COLOR_PRIMARY);
             }
             _write("\n");
@@ -1570,7 +1591,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_ASSIGNMENT; {
             a: *Stmt_Assignment = cast expr;
-            _write_expr_id_with_name(writer, STRING("assignment"), expr.name);
+            _write_expr_id_with_name(writer, STRING("assignment"), expr);
             if a.op != #char "=" {
                 _write(" (op = ");
                 _set_color(KAI_WRITE_COLOR_IMPORTANT);
@@ -1587,7 +1608,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_COMPOUND; {
             c: *Stmt_Compound = cast expr;
-            _write_expr_id_with_name(writer, STRING("compound statement"), expr.name);
+            _write_expr_id_with_name(writer, STRING("compound statement"), expr);
             _write("\n");
 
             current: *Stmt = c.head;
@@ -1598,7 +1619,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_IF; {
             i: *Stmt_If = cast expr;
-            _write_expr_id_with_name(writer, STRING("if"), expr.name);
+            _write_expr_id_with_name(writer, STRING("if"), expr);
             _write("\n");
 
             context.prefix = STRING("expr");
@@ -1610,7 +1631,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_FOR; {
             f: *Stmt_For = cast expr;
-            _write_expr_id_with_name(writer, STRING("for"), expr.name);
+            _write_expr_id_with_name(writer, STRING("for"), expr);
             _write(" (iterator name = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_string(f.iterator_name);
@@ -1624,13 +1645,13 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_WHILE; {
             w: *Stmt_While = cast expr;
-            _write_expr_id_with_name(writer, STRING("while"), expr.name);
+            _write_expr_id_with_name(writer, STRING("while"), expr);
             _write("\n");
             _explore(w.expr, false);
             _explore(w.body, true);
         }
         case KAI_STMT_CONTROL; {
-            _write_expr_id_with_name(writer, STRING("control"), expr.name);
+            _write_expr_id_with_name(writer, STRING("control"), expr);
             _write(" TODO\n");
         }
         case; {
@@ -1644,12 +1665,12 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
     }
 }
 
-write_expression :: (writer: *Writer, expr: *Expr)
+write_expression :: (writer: *Writer, expr: *Expr, depth: u32)
 {
     context: _Tree_Traversal_Context;
     context.writer = writer;
     context.stack[0] = 1;
-    context.stack_count = 1;
+    context.stack_count = depth;
     _write_tree(*context, expr);
 }
 

@@ -45,3 +45,8 @@ static inline Kai_Source load_source_file(const char* path)
 		}
 	};
 }
+
+static inline void write_expression(Kai_Expr* expr)
+{
+    kai_write_expression(default_writer(), expr, 1);
+}

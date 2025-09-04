@@ -1,5 +1,4 @@
 # Types
-Types define how to interpret bytes stored in memory.
 
 ## Primitive Types
 | Name   | Meaning                    |
@@ -18,15 +17,15 @@ Types define how to interpret bytes stored in memory.
 | `Type` | Type of types              |
 
 ## Non-Primitive Types
-| Syntax (**T** = any type) | Meaning                             |
-| ------------------------- | ----------------------------------- |
-| `* T`                     | Pointer to `T`                      |
-| `string`                  | String (alias for `[] u8`)          |
-| `[N,M] T`                 | `N` x `M` Matrix                    |
-| `[N] T`                   | Fixed Array of size `N` (or Vector) |
-| `[] T`                    | Array Slice                         |
-| `[..] T`                  | Dynamic Array                       |
-| `[K] T`                   | Hash Table with key of type `K`     |
+| Syntax      | Meaning                                         |
+| ----------- | ----------------------------------------------- |
+| `* T`       | Pointer to `T`                                  |
+| `string`    | String (alias for `[] u8`)                      |
+| `[N,M] T`   | `N` x `M` Matrix of `T`                         |
+| `[N] T`     | Fixed Array of `T` of size `N` (or Vector)      |
+| `[] T`      | Array Slice of `T`                              |
+| `[..] T`    | Dynamic Array of `T`                            |
+| `[K] T`     | Hash Table with key type `K` and value type `T` |
 
 # Variables
 
@@ -44,37 +43,22 @@ But to specify the type of a variable, put it's type after the first `:`
 my_var : u32 : 69; // 'u32' can be replaced with any type!
 ```
 
-Types are *not* special, types are also values.
-That means that your variable can be assigned to a type!
-```C
-Real :: f32;          // Assign a variable to a type
-my_var : Real : 1.23; // Use the type when declaring another variable
-```
-
 The value of a variable can be omitted, in which case
 the variable is given the initial value of 'zero'
 ```C
 my_var : f32; // same as "my_var : f32 = 0"
 ```
 
-## Variable Assignment
-The syntax for reassigning a variable is to just use '='
-```C
-my_var = 4;
-my_var = my_var + 1;
-```
-**Note**: *<b>Constants</b> cannot be reassigned*
-
 ## Value Literals
 ```Javascript
 a :: 123;         // Basic integer
-b :: 100_000;     // can use '_' for readability (does not affect the value)
+b :: 100_000;     // can use any number of '_' for readability (does not affect the value)
 c :: 0b01011;     // Binary (base 2)
 c :: 0xFE;        // Hexidecimal (base 16)
 d :: 3.1415;      // Basic floating point
 e :: 1.23e-5;     // can use exp notation (reads as 1.23 times 10 to the power -5)
 f :: "helo!";     // Strings!
-g :: #char "h";   // Single character
+g :: #char "h";   // Single character (Unicode codepoint value)
 h :: #multi "->"; // Multi character
 
 // Floating point values also have special "directives"
@@ -83,11 +67,6 @@ nan :: #nan;
 ```
 
 ## Procedures (Functions)
-This language is a procedure programming language,
-that means that there must be some way to define *procedures*.
-(Think of procedures as just functions,
-something that takes *some* input and
-transforms it into *some* output)
 ```C
 // define a procedure
 add_two :: (num: s32) -> s32 {
@@ -106,28 +85,6 @@ The general syntax for the procedure type is
 But procedures are actually allowed to return more than one value
 ```
 (var1: type1, var2: type2, ...) -> (ret1, ret2, ret3, ...)
-```
-
-## Example Program 1
-```C
-print :: #builtin;
-
-iterate_fibonacci :: (a, b: u32) -> (u32, u32) {
-	ret b, a + b;
-}
-
-main :: () {
-	curr, next : s32 = 1, 1;
-	print(curr);
-	curr, next = iterate_fibonacci(curr, next);
-	print(curr);
-	curr, next = iterate_fibonacci(curr, next);
-	print(curr);
-	curr, next = iterate_fibonacci(curr, next);
-	print(curr);
-	curr, next = iterate_fibonacci(curr, next);
-	print(curr);
-}
 ```
 
 ## Type Casting and Type Punning
@@ -207,13 +164,21 @@ vecC := matA * math.cross(vecA, vecB);
 # Dynamic Arrays
 
 # Directives
-```C
-#import
-#run
-#size_of()
-#type_of()
-```
+| Name            | Meaning                                                              |
+| --------------- | -------------------------------------------------------------------- |
+| `#import`       | import a module                                                      |
+| `#export`       | expose variable/procedure to host environment                        |
+| `#host_import`  | value imported from host environment                                 |
+| `#size(T)`      | get size of type `T`                                                 |
+| `#type(E)`      | get type of expression `E`                                           |
+| `#through`      | flow into next case statement                                        |
+| `#char`         | get unicode codepoint from next string token                         |
+| `#multi`        | create u32 number from up to 4 characters (u8) in next string token  |
+| `#array`        | parse next expression as an array type                               |
+| `#map`          | parse next expression as a hash table type                           |
+| `#proc`         | parse next expression as a procedure type                            |
 
+# Polymorphic Procedures
 ```
 if T == s32 {
 	ret f32;

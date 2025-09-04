@@ -5,6 +5,6 @@ alias kai ./bin/kai
 
 if [ ! -f "build" ]; then
 	clang -o build build.c
-fi
+end
 
 ./build

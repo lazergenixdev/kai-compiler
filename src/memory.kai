@@ -1,15 +1,20 @@
 #import "stdlib.h";
-//#import "_memory_platform_allocate.h"; @insert
+// #import "_memory_platform_allocate.h"; @insert
 
+#export
 Memory_Error :: enum u32 {
     OUT_OF_MEMORY  = 1; // see memory_create implementation
     MEMORY_LEAK    = 2; // see memory_destroy implementation
 }
 
+#export
 Memory_Metadata :: struct {
     total_allocated: u64;
 }
 
+// _memory_platform_allocate :: #host_import;
+
+#export
 _memory_heap_allocate :: (user: *void, old_ptr: *void, new_size: u32, old_size: u32) -> *void
 {
     ptr: *void = null;
@@ -28,6 +33,7 @@ _memory_heap_allocate :: (user: *void, old_ptr: *void, new_size: u32, old_size: 
     ret ptr;
 }
 
+#export
 memory_create :: (out_allocator: *Allocator) -> Result
 {
     assert(out_allocator != null);
@@ -43,6 +49,7 @@ memory_create :: (out_allocator: *Allocator) -> Result
     ret KAI_SUCCESS;
 }
 
+#export
 memory_destroy :: (allocator: *Allocator) -> Result
 {
     assert(allocator != null);
@@ -56,6 +63,7 @@ memory_destroy :: (allocator: *Allocator) -> Result
     ret KAI_SUCCESS;
 }
 
+#export
 memory_usage :: (allocator: *Allocator) -> u64
 {
     metadata: *Memory_Metadata = cast allocator.user;
