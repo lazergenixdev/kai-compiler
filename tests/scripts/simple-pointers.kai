@@ -1,0 +1,8 @@
+
+#export
+memcpy :: (dst: *void, src: *void, size: u32)
+{
+    for i: 0..<size {
+        (dst->*u8)[i] = (src->*u8)[i];
+    }
+}

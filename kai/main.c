@@ -51,6 +51,7 @@ int help(int argc, char** argv)
         "      version   Print version and exit\n"
         "      token     Tokenize file\n"
         "      parse     Parse file\n"
+        "      bind      Generate host language bindings\n"
         "\n"
     ,   program_name
     );
@@ -240,6 +241,33 @@ int compile(int argc, char** argv)
 	return error.result != KAI_SUCCESS;
 }
 
+typedef enum {
+    Language_C,
+    Language_Cpp,
+    Language_Invalid,
+} Language;
+
+int bind(int argc, char** argv)
+{
+    if (argc <= 0) {
+        nob_log(ERROR, "No language provided");
+        return 1;
+    }
+    const char* lang_str = argv[0];
+    Language lang = Language_Invalid;
+    if (argc <= 1) return error_no_source_provided();
+    if      (strcmp(lang_str, "C")   == 0) lang = Language_C;
+    else if (strcmp(lang_str, "C++") == 0) lang = Language_Cpp;
+
+    if (lang == Language_Invalid) {
+        nob_log(ERROR, "Language not supported (lang = %s)", lang_str);
+        return 1;
+    }
+
+    nob_log(INFO, "binding generation not yet supported :(");
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     if (argc <= 1) return help(argc, argv);
@@ -250,6 +278,7 @@ int main(int argc, char** argv)
     if (strcmp(argv[-1], "token"  ) == 0) return token(argc, argv);
     if (strcmp(argv[-1], "parse"  ) == 0) return parse(argc, argv);
     if (strcmp(argv[-1], "compile") == 0) return compile(argc, argv);
+    if (strcmp(argv[-1], "bind"   ) == 0) return bind(argc, argv);
     if (strcmp(argv[-1], "help"   ) == 0
     ||  strcmp(argv[-1], "--help" ) == 0
     ||  strcmp(argv[-1], "-?"     ) == 0

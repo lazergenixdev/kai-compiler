@@ -81,12 +81,12 @@ example :: ()
     // In CodeGen: tag values should be compile time constants,
     //             making them runtime values does not make any sense semantically
 }
-// @doc_desc("Example function thing")
-// @doc_detail(
-// """
-// More detailed description of the function
-// """
-// )
+@doc_short ("Example function thing")
+@doc_long (
+"""
+More detailed description of the function
+"""
+)
 
 // Idea: Hash table syntax
 example :: ()
@@ -146,6 +146,14 @@ example :: ()
     bytes_wrote := serial.serialize(data, 0, object);
 
     objcopy := serial.deserialize(data, 0, #type(object));
+}
+
+// Idea: Procedures that can only be accessed within the file
+//        they are defined (same as Jai file_scope)
+#internal
+example :: (a: u64, b: u32) -> f32
+{
+    ret (a - 1)->f32 + b->f32;
 }
 
 // NOTES SECTION

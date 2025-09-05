@@ -1,7 +1,4 @@
 
-// ceil_div      :: (num: u64, den: u64) -> u64 #require_export;
-// ceil_div_fast :: (num: u64, exp: u32) -> u64 #require_export;
-
 #export
 ceil_div :: (num: u64, den: u64) -> u64
 {

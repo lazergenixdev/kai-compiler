@@ -23,6 +23,14 @@ Import :: struct {
     value: Value;
 }
 
+/*
+Resolve_Result :: enum u32 {
+    FOUND_SOURCE :: 0;
+    MISSING      :: 1;
+}
+P_Resolve_Import :: #proc (user: *void, name: string, out_source: *Source) -> Resolve_Result;
+*/
+
 Program_Create_Info :: struct {
     sources           : [] Source;
     allocator         : Allocator;
@@ -1679,6 +1687,15 @@ find_variable :: (program: *Program, name: string, out_type: *Type) -> *void
     }
     ret program.data.data + var.location;
 }
+//@doc_description (
+//"""
+//This procedure returns a pointer to a variable in the script.
+//Returning a pointer allows the host program to modify the variable at anytime
+//after the script is compiled, and it is the host programmer's responsibility
+//to handle things like race conditions.
+//"""
+//)
+//@doc_warning ("If you wish to modify the variable, then make sure the variable is not declared as a constant in the script!")
 
 find_procedure :: (program: *Program, name: string, type: string) -> *void
 {

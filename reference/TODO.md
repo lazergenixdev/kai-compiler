@@ -10,11 +10,17 @@
 - [ ] type checker + code generation (nothing for now, so just type checker)
 - [ ] `#char` needs to do a utf8 decode and evaluate to the codepoint value
 - [ ] add `then` keyword
-- [ ] utility (function + commandline) to generate C/C++ bindings from host script file
+- [ ] utility (function + commandline) to generate C/C++ bindings from script
 - [ ] measure performance hit of occupied array in hash table
+- [ ] add structs to compilation
+- [ ] add strings to compilation
+- [ ] add multi-line string literals
+- [ ] add tags (notes) to language parser
+- [ ] figure out how to do multi declaration statements `a, b, c: int;`
+- [ ] need some kind of import handler from host
 - [ ] remove `;` from case statements?
 
 # Version 1
-- [ ] AST interpreter (compile-time)
-- [ ] Source code to machine code (x86)
+- [ ] AST interpreter (compile-time) -> compile time execution
+- [ ] Source code to machine code (x86) -> host procedure execution
 - [ ] No optimization (yet!)
