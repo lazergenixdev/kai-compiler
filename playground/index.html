@@ -195,11 +195,11 @@
 				this.start = c_memory.grow(1) * PAGESIZE;
 				this.offset = 0;
 				this.reserved = PAGESIZE;
-				console.log("START", this);
+				console.info("START", this);
 			}
 
 			reset() {
-				console.log("Memory Used:", this.offset/(1024*1024), "MiB")
+				console.info("Memory Used:", Math.trunc(1000*this.offset/(1024*1024))/1000, "MiB")
 				new Uint8Array(c_memory.buffer).fill(0, this.start, this.start + this.offset);
 				this.offset = 0;
 			}
@@ -232,8 +232,15 @@
 			if (length === undefined) {
 				length = c_string_length(address);
 			}
-			const bytes = new Uint8Array(c_memory.buffer).slice(address, address + length);
-			return new TextDecoder().decode(bytes);
+			return new TextDecoder().decode(new Uint8Array(c_memory.buffer).slice(address, address + length));
+		}
+
+		// Convert Kai string to Javascript string
+		function kai_string(address) {
+			const dataView = new DataView(c_memory.buffer);
+			let len = dataView.getUint32(address, true);
+			let ptr = dataView.getUint32(address + 4, true);
+			return new TextDecoder().decode(new Uint8Array(c_memory.buffer).slice(ptr, ptr + len));
 		}
 
 		function panic(_desc, _message, _file, line) {
@@ -351,7 +358,6 @@ inc :: (n: s32) -> s32 {
 			// Run this function when the code changes
 			editor.onDidChangeModelContent(() => {
 				const code = editor.getValue();
-				// console.log("Code changed:", code);
 				localStorage.setItem("kai-compiler.playground.code", code);
 				compile(code);
 			});
@@ -366,7 +372,7 @@ inc :: (n: s32) -> s32 {
 			const c_bytes = new Uint8Array(c_memory.buffer);
 			c_bytes.set(encodedString, scratch_buffer); // Write string to WASM memory
 			builder = new HTML_Builder();
-			console.group("compile");
+			console.groupCollapsed("compile", mode.children[mode.value].innerText);
 			try {
 				let result;
 				switch (parseInt(mode.value)) {
@@ -377,10 +383,10 @@ inc :: (n: s32) -> s32 {
 						result = c.compile_no_code_gen(scratch_buffer, encodedString.byteLength);
 					break;
 					default:
-						console.log(mode.value);
+						console.warn("unknown case", mode.value);
 					break;
 				}
-				console.log("test returned:", result);
+				console.info("exit:", result);
 				if (result === 0) {
 					SyntaxTree.innerHTML = builder.finalize();
 					CompileError.innerHTML = "";
@@ -417,15 +423,11 @@ inc :: (n: s32) -> s32 {
 		}).then(async (wasm) => {
 			c = wasm.instance.exports; // Exported C Functions
 			c_memory = wasm.instance.exports.memory;
-			console.log(c_memory.size);
 			allocator.init();
 
 			const scratch_buffer = allocator.allocate(8);
 			c.kai_version_string(scratch_buffer);
-			const dataView = new DataView(c_memory.buffer);
-			let ptr = dataView.getUint32(scratch_buffer    , true);
-			let len = dataView.getUint32(scratch_buffer + 4, true);
-			title.innerText = "Kai " + c_string(ptr, len);
+			title.innerText = "Kai " + kai_string(scratch_buffer);
 
 			mode.addEventListener("input", e => compile(SOURCE));
 

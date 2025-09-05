@@ -3,11 +3,25 @@
 
 WASM_IMPORT(void, console_log)(const char* message, int value);
 WASM_IMPORT(void, panic)(const char* desc, const char* message, const char* file, int line);
+WASM_IMPORT(void*, allocate)(size_t size);
+WASM_IMPORT(void, free)(void* ptr);
+
+const char* join(const char* left, const char* right)
+{
+    size_t lc = strlen(left);
+    size_t rc = strlen(right);
+    char* buffer = __env_allocate(lc + rc + 2);
+    memcpy(buffer, left, lc);
+    buffer[lc] = ' ';
+    memcpy(buffer + lc + 1, right, rc);
+    buffer[lc + rc + 1] = 0;
+    return buffer;
+}
 
 #define KAI_API(T) WASM_EXPORT T
 #define printf(...) (void)sizeof(__VA_ARGS__)
 #define kai_fatal_error(DESC, MESSAGE) __env_panic(DESC, MESSAGE, __FILE__, __LINE__)
-#define kai__todo(...) __env_panic("TODO", __FUNCTION__, __FILE__, __LINE__)
+#define kai__todo(...) __env_panic("TODO", join(__FUNCTION__, #__VA_ARGS__), __FILE__, __LINE__)
 #define KAI_DONT_USE_WRITER_API
 #define KAI_DONT_USE_MEMORY_API
 #define KAI_IMPLEMENTATION
@@ -16,8 +30,6 @@ WASM_IMPORT(void, panic)(const char* desc, const char* message, const char* file
 WASM_IMPORT(void, write_string)(void* user, Kai_string String);
 WASM_IMPORT(void, write_value)(void* user, Kai_u32 type, Kai_Value value, Kai_Write_Format format);
 WASM_IMPORT(void, set_color)(void* user, Kai_Write_Color color_index);
-WASM_IMPORT(void*, allocate)(size_t size);
-WASM_IMPORT(void, free)(void* ptr);
 
 #define hash_table_iterate(Table, Iter_Var)                               \
   for (Kai_u32 Iter_Var = 0; Iter_Var < (Table).capacity; ++Iter_Var)     \

@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250905114307 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250905233953 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -238,6 +238,7 @@ typedef struct Kai_Buffer Kai_Buffer;
 typedef struct Kai__Tree_Traversal_Context Kai__Tree_Traversal_Context;
 
 typedef Kai_u8 Kai_Expr_Id;
+typedef Kai_u8 Kai_Special_Kind;
 typedef Kai_u8 Kai_Control_Kind;
 typedef Kai_u8 Kai_Expr_Flags;
 typedef struct Kai_Expr Kai_Expr;
@@ -252,6 +253,7 @@ typedef struct Kai_Expr_Procedure Kai_Expr_Procedure;
 typedef struct Kai_Expr_Struct Kai_Expr_Struct;
 typedef struct Kai_Expr_Enum Kai_Expr_Enum;
 typedef struct Kai_Expr_Array Kai_Expr_Array;
+typedef struct Kai_Expr_Special Kai_Expr_Special;
 typedef struct Kai_Stmt_Return Kai_Stmt_Return;
 typedef struct Kai_Stmt_Declaration Kai_Stmt_Declaration;
 typedef struct Kai_Stmt_Assignment Kai_Stmt_Assignment;
@@ -572,14 +574,24 @@ enum {
     KAI_EXPR_STRUCT = 11,
     KAI_EXPR_ENUM = 12,
     KAI_EXPR_ARRAY = 13,
-    KAI_STMT_RETURN = 14,
-    KAI_STMT_DECLARATION = 15,
-    KAI_STMT_ASSIGNMENT = 16,
-    KAI_STMT_IF = 17,
-    KAI_STMT_WHILE = 18,
-    KAI_STMT_FOR = 19,
-    KAI_STMT_CONTROL = 20,
-    KAI_STMT_COMPOUND = 21,
+    KAI_EXPR_SPECIAL = 14,
+    KAI_STMT_RETURN = 15,
+    KAI_STMT_DECLARATION = 16,
+    KAI_STMT_ASSIGNMENT = 17,
+    KAI_STMT_IF = 18,
+    KAI_STMT_WHILE = 19,
+    KAI_STMT_FOR = 20,
+    KAI_STMT_CONTROL = 21,
+    KAI_STMT_COMPOUND = 22,
+};
+
+// Type: Kai_Special_Kind
+enum {
+    KAI_SPECIAL_EVAL_TYPE = 0,
+    KAI_SPECIAL_EVAL_SIZE = 1,
+    KAI_SPECIAL_TYPE = 2,
+    KAI_SPECIAL_NUMBER = 3,
+    KAI_SPECIAL_CODE = 4,
 };
 
 // Type: Kai_Control_Kind
@@ -750,6 +762,17 @@ struct Kai_Expr_Array {
     Kai_Expr* rows;
     Kai_Expr* cols;
     Kai_Expr* expr;
+};
+
+struct Kai_Expr_Special {
+    Kai_Expr_Id id;
+    Kai_Expr_Flags flags;
+    Kai_string source_code;
+    Kai_string name;
+    Kai_Expr* next;
+    Kai_Type_Info* this_type;
+    Kai_u32 line_number;
+    Kai_u8 kind;
 };
 
 struct Kai_Stmt_Return {
@@ -1256,6 +1279,7 @@ KAI_INTERNAL Kai_Expr* kai__parser_create_literal(Kai_Parser* parser, Kai_Token 
 KAI_INTERNAL Kai_Expr* kai__parser_create_unary(Kai_Parser* parser, Kai_Token op_token, Kai_Expr* expr);
 KAI_INTERNAL Kai_Expr* kai__parser_create_binary(Kai_Parser* parser, Kai_Expr* left, Kai_Expr* right, Kai_u32 op);
 KAI_INTERNAL Kai_Expr* kai__parser_create_array(Kai_Parser* parser, Kai_Token op_token, Kai_Expr* expr, Kai_Expr* rows, Kai_Expr* cols, Kai_u8 flags);
+KAI_INTERNAL Kai_Expr* kai__parser_create_special(Kai_Parser* parser, Kai_Token token, Kai_u8 kind);
 KAI_INTERNAL Kai_Expr* kai__parser_create_procedure_type(Kai_Parser* parser, Kai_Expr* in_out, Kai_u8 in_count, Kai_u8 out_count);
 KAI_INTERNAL Kai_Expr* kai__parser_create_procedure_call(Kai_Parser* parser, Kai_Expr* proc, Kai_Expr* args, Kai_u8 arg_count);
 KAI_INTERNAL Kai_Expr* kai__parser_create_procedure(Kai_Parser* parser, Kai_Token token, Kai_Expr* in_out, Kai_Stmt* body, Kai_u8 in_count, Kai_u8 out_count);
@@ -2477,6 +2501,28 @@ KAI_INTERNAL void kai__write_tree(Kai__Tree_Traversal_Context* context, Kai_Expr
             }
             kai__explore(a->expr, KAI_TRUE);
         }
+        break; case KAI_EXPR_SPECIAL:
+        {
+            Kai_Expr_Special* s = (Kai_Expr_Special*)(expr);
+            kai__write_expr_id_with_name(writer, KAI_STRING("special"), expr);
+            kai__write(" \"");
+            kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
+            switch (s->kind)
+            {
+                break; case KAI_SPECIAL_EVAL_TYPE:
+                kai__write("type");
+                break; case KAI_SPECIAL_EVAL_SIZE:
+                kai__write("size");
+                break; case KAI_SPECIAL_TYPE:
+                kai__write("Type");
+                break; case KAI_SPECIAL_NUMBER:
+                kai__write("Number");
+                break; case KAI_SPECIAL_CODE:
+                kai__write("Code");
+            }
+            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+            kai__write("\"\n");
+        }
         break; case KAI_EXPR_PROCEDURE_TYPE:
         {
             Kai_Expr_Procedure_Type* p = (Kai_Expr_Procedure_Type*)(expr);
@@ -3443,6 +3489,16 @@ KAI_INTERNAL Kai_Expr* kai__parser_create_array(Kai_Parser* parser, Kai_Token op
     return (Kai_Expr*)(node);
 }
 
+KAI_INTERNAL Kai_Expr* kai__parser_create_special(Kai_Parser* parser, Kai_Token token, Kai_u8 kind)
+{
+    Kai_Expr_Special* node = (Kai_Expr_Special*)(kai_arena_allocate(&parser->arena, sizeof(Kai_Expr_Special)));
+    node->id = KAI_EXPR_SPECIAL;
+    node->source_code = token.string;
+    node->line_number = token.line_number;
+    node->kind = kind;
+    return (Kai_Expr*)(node);
+}
+
 KAI_INTERNAL Kai_Expr* kai__parser_create_procedure_type(Kai_Parser* parser, Kai_Expr* in_out, Kai_u8 in_count, Kai_u8 out_count)
 {
     Kai_Expr_Procedure_Type* node = (Kai_Expr_Procedure_Type*)(kai_arena_allocate(&parser->arena, sizeof(Kai_Expr_Procedure_Type)));
@@ -3744,8 +3800,27 @@ KAI_API(Kai_Expr*) kai_parse_expression(Kai_Parser* parser, Kai_u32 flags)
             else
             if (kai_string_equals((current->value).string, KAI_STRING("type")))
             {
-                kai__expect(KAI_FALSE, "[todo]", "#type");
-                return NULL;
+                return kai__parser_create_special(parser, *current, KAI_SPECIAL_EVAL_TYPE);
+            }
+            else
+            if (kai_string_equals((current->value).string, KAI_STRING("Type")))
+            {
+                return kai__parser_create_special(parser, *current, KAI_SPECIAL_TYPE);
+            }
+            else
+            if (kai_string_equals((current->value).string, KAI_STRING("size")))
+            {
+                return kai__parser_create_special(parser, *current, KAI_SPECIAL_EVAL_SIZE);
+            }
+            else
+            if (kai_string_equals((current->value).string, KAI_STRING("Number")))
+            {
+                return kai__parser_create_special(parser, *current, KAI_SPECIAL_NUMBER);
+            }
+            else
+            if (kai_string_equals((current->value).string, KAI_STRING("#Code")))
+            {
+                return kai__parser_create_special(parser, *current, KAI_SPECIAL_CODE);
             }
             else
             if (kai_string_equals((current->value).string, KAI_STRING("import")))
@@ -5218,6 +5293,20 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
             *out_type = context->type_type;
             return KAI_FALSE;
         }
+        break; case KAI_EXPR_SPECIAL:
+        {
+            Kai_Expr_Special* s = (Kai_Expr_Special*)(expr);
+            switch (s->kind)
+            {
+                break; case KAI_SPECIAL_TYPE:
+                {
+                    out_value->type = context->type_type;
+                    *out_type = context->type_type;
+                    return KAI_FALSE;
+                }
+            }
+            kai__todo("special value not implemented");
+        }
         break; default:
         {
             kai__todo("%s (expr.id = %i)", __FUNCTION__, expr->id);
@@ -5254,6 +5343,10 @@ KAI_INTERNAL Kai_Type kai__type_of_expression(Kai_Compiler_Context* context, Kai
                 return NULL;
             Kai_Node* node = &((context->nodes).data)[ref.index];
             return (node->value).type;
+        }
+        break; case KAI_EXPR_STRING:
+        {
+            kai__todo("strings");
         }
         break; case KAI_EXPR_BINARY:
         {

@@ -14,20 +14,24 @@ Expr_Id :: enum u8 {
     EXPR_STRUCT         = 11;
     EXPR_ENUM           = 12;
     EXPR_ARRAY          = 13; // (consider renaming => EXPR_ARRAY_TYPE)
-    STMT_RETURN         = 14;
-    STMT_DECLARATION    = 15;
-    STMT_ASSIGNMENT     = 16;
-    STMT_IF             = 17;
-    STMT_WHILE          = 18;
-    STMT_FOR            = 19;
-    STMT_CONTROL        = 20;
-    STMT_COMPOUND       = 21;
+    EXPR_SPECIAL        = 14;
+    STMT_RETURN         = 15;
+    STMT_DECLARATION    = 16;
+    STMT_ASSIGNMENT     = 17;
+    STMT_IF             = 18;
+    STMT_WHILE          = 19;
+    STMT_FOR            = 20;
+    STMT_CONTROL        = 21;
+    STMT_COMPOUND       = 22;
 }
 
-// SPECIAL_EVAL_TYPE // #type
-// SPECIAL_EVAL_SIZE // #size
-// SPECIAL_TYPE      // #Type
-// SPECIAL_CODE      // #Code
+Special_Kind :: enum u8 {
+    SPECIAL_EVAL_TYPE   = 0; // #type
+    SPECIAL_EVAL_SIZE   = 1; // #size
+    SPECIAL_TYPE        = 2; // #Type
+    SPECIAL_NUMBER      = 3; // #Number
+    SPECIAL_CODE        = 4; // #Code
+}
 
 Control_Kind :: enum u8 {
     CONTROL_CASE     = 0;
@@ -131,6 +135,11 @@ Expr_Array :: struct {
     rows : *Expr;
     cols : *Expr;
     expr : *Expr;
+}
+
+Expr_Special :: struct {
+    using Expr;
+    kind : u8;
 }
 
 Stmt_Return :: struct {
@@ -959,6 +968,15 @@ _parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: *E
     node.expr = expr;
     ret node -> *Expr;
 }
+_parser_create_special :: (parser: *Parser, token: Token, kind: u8) -> *Expr
+{
+    node: *Expr_Special = cast arena_allocate(*parser.arena, sizeof(Expr_Special));
+    node.id = KAI_EXPR_SPECIAL;
+    node.source_code = token.string;
+    node.line_number = token.line_number;
+    node.kind = kind;
+    ret node -> *Expr;
+}
 _parser_create_procedure_type :: (parser: *Parser, in_out: *Expr, in_count: u8, out_count: u8) -> *Expr
 {
     node: *Expr_Procedure_Type = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure_Type));
@@ -1248,8 +1266,23 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         }
         else if (string_equals(current.value.string, STRING("type")))
         {
-            _expect(false, "[todo]", "#type");
-            ret null;
+            ret _parser_create_special(parser, [current], KAI_SPECIAL_EVAL_TYPE);
+        }
+        else if (string_equals(current.value.string, STRING("Type")))
+        {
+            ret _parser_create_special(parser, [current], KAI_SPECIAL_TYPE);
+        }
+        else if (string_equals(current.value.string, STRING("size")))
+        {
+            ret _parser_create_special(parser, [current], KAI_SPECIAL_EVAL_SIZE);
+        }
+        else if (string_equals(current.value.string, STRING("Number")))
+        {
+            ret _parser_create_special(parser, [current], KAI_SPECIAL_NUMBER);
+        }
+        else if (string_equals(current.value.string, STRING("#Code")))
+        {
+            ret _parser_create_special(parser, [current], KAI_SPECIAL_CODE);
         }
         else if (string_equals(current.value.string, STRING("import")))
         {

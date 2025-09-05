@@ -24,4 +24,12 @@ void *memcpy(void *restrict dest, const void *restrict src, size_t n)
 	return dest;
 }
 
+// NOTE: start is not checked for nullptr
+size_t strlen(const char* start)
+{
+    const char* end = start;
+    while (*end != '\0') ++end;
+    return end - start;
+}
+
 #endif // WASM_H

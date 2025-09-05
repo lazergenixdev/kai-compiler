@@ -1477,6 +1477,21 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
             _explore(a.expr, true);
         }
+        case KAI_EXPR_SPECIAL; {
+            s: *Expr_Special = cast expr;
+            _write_expr_id_with_name(writer, STRING("special"), expr);
+            _write(" \"");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            if s.kind == {
+                case KAI_SPECIAL_EVAL_TYPE; _write("type"); // #type
+                case KAI_SPECIAL_EVAL_SIZE; _write("size"); // #size
+                case KAI_SPECIAL_TYPE; _write("Type"); // #Type
+                case KAI_SPECIAL_NUMBER; _write("Number"); // #Number
+                case KAI_SPECIAL_CODE; _write("Code"); // #Code
+            }
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write("\"\n");
+        }
         case KAI_EXPR_PROCEDURE_TYPE; {
             p: *Expr_Procedure_Type = cast expr;
             _write_expr_id_with_name(writer, STRING("procedure type"), expr);

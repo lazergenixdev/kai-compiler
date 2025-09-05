@@ -1173,6 +1173,7 @@ Kai_bool enum_excludes_name(Kai_string name)
 {
 	if (kai_string_equals(name, KAI_STRING("Expr_Id"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Expr_Flags"))) return true;
+	if (kai_string_equals(name, KAI_STRING("Special_Kind"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Control_Kind"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Compile_Flags"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Node_Flags"))) return true;
@@ -1693,7 +1694,7 @@ void compile_playground(void)
 	SCOPED_TEMP()
 	{
 		Cmd cmd = {0};
-		cmd_append(&cmd, "clang.exe");
+		cmd_append(&cmd, executable("clang"));
 		cmd_append(&cmd, "-Wall", "-Wextra");
 		cmd_append(&cmd, "--target=wasm32", "-D__WASM__", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic"/* , "-Wl,--allow-undefined" */);
 		cmd_append(&cmd, "lib.c");

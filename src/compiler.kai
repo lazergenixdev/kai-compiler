@@ -1313,6 +1313,18 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             ret false;
         }
 
+        case KAI_EXPR_SPECIAL; {
+            s: *Expr_Special = cast expr;
+            if s.kind == {
+                case KAI_SPECIAL_TYPE; {
+                    out_value.type = context.type_type;
+                    [out_type] = context.type_type;
+                    ret false;
+                }
+            }
+            kai__todo("special value not implemented");
+        }
+
         case; {
             kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
         }
@@ -1351,6 +1363,10 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
             if ref.flags & KAI_NODE_NOT_FOUND ret null;
             node: *Node = *context.nodes.data[ref.index];
             ret node.value.type;
+        }
+
+        case KAI_EXPR_STRING; {
+            kai__todo("strings");
         }
 
         case KAI_EXPR_BINARY; {
