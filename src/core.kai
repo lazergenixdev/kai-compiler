@@ -838,7 +838,8 @@ Write_Color :: enum u32 {
     IMPORTANT   = 2;
     IMPORTANT_2 = 3;
     DECORATION  = 4;
-    COUNT       = 5;
+    TYPE        = 5;
+    COUNT       = 6;
 };
 
 Write_Flags :: enum u32 {
@@ -1226,11 +1227,11 @@ write_type :: (writer: *Writer, type: *Type_Info)
     }
     case KAI_TYPE_ID_TYPE; {
 
-        _write("Type");
+        _write("#Type");
     }
     case KAI_TYPE_ID_NUMBER; {
 
-        _write("Number");
+        _write("#Number");
     }
 
     case KAI_TYPE_ID_INTEGER; {
@@ -1321,7 +1322,7 @@ _write_expr_id_with_name :: (writer: *Writer, id: string, expr: *Expr)
     }
     if expr.this_type != null {
         _write(" [");
-        _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        _set_color(KAI_WRITE_COLOR_TYPE);
         write_type(writer, expr.this_type);
         _set_color(KAI_WRITE_COLOR_PRIMARY);
         _write("]");
@@ -1492,7 +1493,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
 
             if p.out_count for i: 0..<p.out_count {
                 context.prefix = STRING("out");
-                idx: int = i + p.in_count;
+                idx: u32 = i + p.in_count;
                 _explore(current, idx == end);
                 current = current.next;
             }

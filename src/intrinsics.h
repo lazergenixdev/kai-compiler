@@ -24,12 +24,17 @@ static inline Kai_u32 kai_intrinsics_ctz(Kai_u64 value)
 
 // 128 bit integers (unsigned)
 
-#if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
+// Always use fallback when compiling for WASM
+#if defined(__WASM__) && !defined(KAI_NO_INTRINSIC_128)
+#	define KAI_NO_INTRINSIC_128
+#endif
+
+#if !defined(KAI_NO_INTRINSIC_128) && (defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU))
     typedef unsigned __int128 Kai_u128;
 #   define kai_intrinsics_u128_low(Value) (Kai_u64)(Value)
 #   define kai_intrinsics_u128_high(Value) (Kai_u64)(Value >> 64)
 #   define kai_intrinsics_u128_multiply(A,B) ((Kai_u128)(A) * (Kai_u128)(B))
-#elif defined(KAI_COMPILER_MSVC)
+#elif !defined(KAI_NO_INTRINSIC_128) && defined(KAI_COMPILER_MSVC)
     typedef struct { unsigned __int64 low, high; } Kai_u128;
 #   define kai_intrinsics_u128_low(Value) (Value).low
 #   define kai_intrinsics_u128_high(Value) (Value).high
@@ -38,7 +43,7 @@ static inline Kai_u32 kai_intrinsics_ctz(Kai_u64 value)
         r.low = _umul128(A, B, &r.high);
         return r;
     }
-#else
+#else // fallback
     typedef struct { Kai_u64 low, high; } Kai_u128;
 #   define kai_intrinsics_u128_low(Value) (Value).low
 #   define kai_intrinsics_u128_high(Value) (Value).high

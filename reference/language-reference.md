@@ -164,19 +164,24 @@ vecC := matA * math.cross(vecA, vecB);
 # Dynamic Arrays
 
 # Directives
-| Name            | Meaning                                                              |
-| --------------- | -------------------------------------------------------------------- |
-| `#import`       | import a module                                                      |
-| `#export`       | expose variable/procedure to host environment                        |
-| `#host_import`  | value imported from host environment                                 |
-| `#size(T)`      | get size of type `T`                                                 |
-| `#type(E)`      | get type of expression `E`                                           |
-| `#through`      | flow into next case statement                                        |
-| `#char`         | get unicode codepoint from next string token                         |
-| `#multi`        | create u32 number from up to 4 characters (u8) in next string token  |
-| `#array`        | parse next expression as an array type                               |
-| `#map`          | parse next expression as a hash table type                           |
-| `#proc`         | parse next expression as a procedure type                            |
+| Name               | Meaning                                                              |
+| ------------------ | -------------------------------------------------------------------- |
+| `#import`          | import a module                                                      |
+| `#export`          | expose variable/procedure to host environment                        |
+| `#host_import`     | value imported from host environment                                 |
+| `#require_export`  | ...                                                                  |
+| `#optional_export` | ...                                                                  |
+| `#size(T)`         | get size of type `T` (in bytes)                                      |
+| `#type(E)`         | get type of expression `E`                                           |
+| `#Type`            | the type of all types                                                |
+| `#Number`          | special number type only available at compile-time                   |
+| `#Code`            | the type of AST nodes, used for meta-programming                     |
+| `#through`         | flow into next case statement                                        |
+| `#char`            | get unicode codepoint from next string token                         |
+| `#multi`           | create u32 number from up to 4 characters (u8) in next string token  |
+| `#array`           | parse next expression as an array type                               |
+| `#map`             | parse next expression as a hash table type                           |
+| `#proc`            | parse next expression as a procedure type                            |
 
 # Polymorphic Procedures
 ```

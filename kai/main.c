@@ -282,7 +282,7 @@ int main(int argc, char** argv)
     if (strcmp(argv[-1], "help"   ) == 0
     ||  strcmp(argv[-1], "--help" ) == 0
     ||  strcmp(argv[-1], "-?"     ) == 0
-    ||  strcmp(argv[-1], "-h"     ) == 0) help(argc, argv), exit(0);
+    ||  strcmp(argv[-1], "-h"     ) == 0) help(argc, argv), exit(0); // No error
     if (strcmp(argv[-1], "version") == 0)
     {
         Kai_string version = kai_version_string();

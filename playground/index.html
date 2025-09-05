@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Kai </title>
+		<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22&gt;&lt;text y=%22.9em%22 font-size=%2285%22&gt;🪁&lt;/text&gt;&lt;/svg&gt;">
+		<script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/firacode@6.2.0/distr/fira_code.css">
+		<style>
+			.monospaced-font {
+				font-family: monospace;
+				font-optical-sizing: auto;
+				font-weight: 400;
+				font-style: normal;
+				font-size: small;
+			}
+			html, body {
+				height: 100%;
+				margin: 0;
+				background-color: #000;
+				color: white;
+				font-family: Calibri, sans-serif;
+			}
+			#title {
+				color: #BBB;
+			}
+			#header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				padding: 0.75rem 1rem;
+				background-color: #000;
+				color: white;
+			}
+			#header a {
+				color: white;
+				text-decoration: none;
+			}
+			#header svg {
+				fill: #aaa;
+				width: 24px;
+				height: 24px;
+				vertical-align: middle;
+				border-radius: 50%;
+				padding: 6px;
+				margin: -6px;
+				transition: filter 0.3s ease-in-out;
+				transition: fill 0.2s ease-in-out;
+			}
+			#header svg:hover {
+				fill: white;
+				filter: drop-shadow(0 0 4px #777) drop-shadow(0 0 2px #BBB);
+			}
+			#container {
+				display: flex;
+				height: 80vh;
+				background-color: #111;
+			}
+			.column {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+			}
+			#editor {
+				flex: auto;
+				width: 0%;
+			}
+			#CompileError {
+				height: auto;
+				margin: 0;
+				overflow: auto;
+				box-sizing: border-box;
+				background: #000;
+				margin: 4px;
+				padding: 4px;
+			}
+			.contains_error {
+				border: thin solid #F54;
+			}
+			#SyntaxTree {
+				flex: 1;
+				margin: 0;
+				padding: 0.5em;
+				overflow: auto;
+			}
+			pre {
+				color: #acacac;
+				font-family: 'Fira Code', monospace;
+			}
+			select {
+				color: white;
+				background-color: #222;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="header">
+			<div id="title">hi</div>
+			<strong>Playground</strong>
+			<a href="https://github.com/lazergenixdev/kai-compiler" aria-label="GitHub repository">
+				<!-- GitHub Icon -->
+				<svg viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"/></svg>
+			</a>
+		</div>
+		<div id="container">
+			<div id="editor"></div>
+			<div class="column">
+				<select name="cars" id="mode">
+					<option value="0" selected>AST</option>
+					<option value="1">Type-Checked AST</option>
+				</select>
+				<pre id="SyntaxTree" class="monospaced-font"></pre>
+			</div>
+		</div>
+		<pre id="CompileError"></pre>
+	</body>
+	<script>
+		const SYNTAX_TREE        = 0;
+		const COMPILE_NO_CODEGEN = 1;
+		
+		let c = null; // functions we defined in C!
+		let c_memory = null;
+		const PAGESIZE = 64 * 1024;
+
+		class HTML_Builder {
+			constructor() {
+				this.parts = [];
+				this.currentColorIndex = 0;
+				this.colorMap = {
+					1: "#FFF",
+					2: "#F76",
+					3: "#237ccf",
+					4: "#333",
+					5: "#b2ec45",
+				};
+				this.colorActive = false;
+				this.bytes = [];
+			}
+
+			append(string) {
+				if (string instanceof Uint8Array) {
+					this.bytes.push(...string.values());
+				}
+				else {
+					this.bytes.push(string);
+				}
+			}
+
+			set_color(index) {
+				if (this.bytes.length !== 0) {
+					this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+					this.bytes.length = 0;
+				}
+
+				if (index === this.currentColorIndex) {
+					return; // no change
+				}
+
+				// Close current span if active
+				if (this.colorActive) {
+					this.parts.push("</span>");
+					this.colorActive = false;
+				}
+
+				// Open new span if not default color (index != 0)
+				if (index !== 0 && this.colorMap[index]) {
+					const color = this.colorMap[index];
+					this.parts.push(`<span style="color: ${color}">`);
+					this.colorActive = true;
+				}
+
+				this.currentColorIndex = index;
+			}
+
+			finalize() {
+				if (this.bytes.length !== 0) {
+					this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+					this.bytes.length = 0;
+				}
+				if (this.colorActive) {
+					this.parts.push("</span>");
+					this.colorActive = false;
+				}
+				return this.parts.join("");
+			}
+		}
+
+		class ArenaAllocator {
+			constructor() {
+				this.start = 0;
+				this.offset = 0;
+				this.reserved = 0; // Total size we can allocate without growing
+			}
+
+			init() {
+				this.start = c_memory.grow(1) * PAGESIZE;
+				this.offset = 0;
+				this.reserved = PAGESIZE;
+				console.log("START", this);
+			}
+
+			reset() {
+				console.log("Memory Used:", this.offset/(1024*1024), "MiB")
+				new Uint8Array(c_memory.buffer).fill(0, this.start, this.start + this.offset);
+				this.offset = 0;
+			}
+
+			allocate(size) {
+				function ceil_div(num, den) {
+					return Math.ceil((num + den - 1) / den);
+				}
+				if (this.offset + size > this.reserved) {
+					const pages = ceil_div(this.offset + size - this.reserved, PAGESIZE);
+					c_memory.grow(pages);
+					this.reserved += pages * PAGESIZE;
+				}
+				const ptr = this.offset + this.start;
+				this.offset += size;
+				return ptr;
+			}
+		}
+		
+		// Find length of C string
+		function c_string_length(address) {
+			const start = address;
+			const c_bytes = new Uint8Array(c_memory.buffer);
+			while (c_bytes[address] != 0) address++;
+			return address - start;
+		}
+		
+		// Convert C string to Javascript string
+		function c_string(address, length) {
+			if (length === undefined) {
+				length = c_string_length(address);
+			}
+			const bytes = new Uint8Array(c_memory.buffer).slice(address, address + length);
+			return new TextDecoder().decode(bytes);
+		}
+
+		function panic(_desc, _message, _file, line) {
+			const desc = c_string(_desc);
+			const message = c_string(_message);
+			const file = c_string(_file);
+			const error = Error(`${message}\n(${file}:${line})`);
+			error.name = desc;
+			throw error;
+		}
+
+		function console_log(message, value) {
+			console.log(c_string(message), value);
+		}
+
+		let builder = null;
+
+		function write_string(user, string) {
+			const dataView = new DataView(c_memory.buffer);
+			let count = dataView.getUint32(string, true);
+			let data = dataView.getUint32(string + 4, true);
+			const c_bytes = new Uint8Array(c_memory.buffer);
+			builder.append(c_bytes.slice(data, data + count));
+		}
+
+		function write_value(user, type, value, format) {
+			const view = new DataView(c_memory.buffer);
+			const map = {
+				///*KAI_U8  */ 16 : (value, format) => {},
+				///*KAI_U16 */ 33 : (value, format) => {},
+				/*KAI_U32 */ 66 : (value, format) => {
+					const string = view.getUint32(value, true).toString();
+					builder.append(new TextEncoder().encode(string));
+				},
+				/*KAI_U64 */ 131: (value, format) => {
+					const string = view.getBigUint64(value, true).toString();
+					builder.append(new TextEncoder().encode(string));
+				},
+				///*KAI_S8  */ 20 : (value, format) => {},
+				///*KAI_S16 */ 37 : (value, format) => {},
+				/*KAI_S32 */ 70 : (value, format) => {
+					const string = view.getInt32(value, true).toString();
+					builder.append(new TextEncoder().encode(string));
+				},
+				/*KAI_S64 */ 135: (value, format) => {
+					const string = view.getBigInt64(value, true).toString();
+					builder.append(new TextEncoder().encode(string));
+				},
+				/*KAI_F32 */ 72 : (value, format) => {
+					const string = view.getFloat32(value, true).toString();
+					builder.append(new TextEncoder().encode(string));
+				},
+				/*KAI_F64 */ 137: (value, format) => {
+					const string = view.getFloat64(value, true).toString();
+					builder.append(new TextEncoder().encode(string));
+				},
+				///*KAI_TYPE*/ 74 : (value, format) => {},
+				/*KAI_FILL*/ 0x800: (value, format) => {
+					let min_count      = view.getUint32(format + 4, true);
+					let fill_character = view.getUint8(format + 12, true);
+					//builder.append(String.fromCharCode(fill_character).repeat(min_count));
+					builder.append(new Uint8Array(min_count).fill(fill_character));
+				},
+			}
+			if (!(type in map)) {
+				console.warn("value type not implemented")
+				return;
+			}
+
+			map[type](value, format);
+		}
+
+		function set_color(user, color) {
+			builder.set_color(color);
+		}
+
+		let SOURCE = `
+// compile time :3
+// value :: add(inc(1), 3);
+
+#export 
+Callback :: #proc (s32, f32) -> s32;
+
+#export
+value : f32 = 3.14e-7;
+
+#export
+add :: (a: s64, b: s32) -> s32 {
+   // if a <= 0 ret 0;
+   // if b <= 0 ret 1;
+	ret a->s32 + b;
+}
+
+#export
+inc :: (n: s32) -> s32 {
+	ret n + 1;
+}
+`;
+		{
+			const src = localStorage.getItem("kai-compiler.playground.code");
+			if (src !== null) {
+				SOURCE = src;
+			}
+		}
+
+		require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@latest/min/vs' }});
+		require(['vs/editor/editor.main'], function () {
+			const editor = monaco.editor.create(document.getElementById('editor'), {
+				value: SOURCE,
+				language: 'c',
+				theme: 'vs-dark',
+				automaticLayout: true
+			});
+
+			// Run this function when the code changes
+			editor.onDidChangeModelContent(() => {
+				const code = editor.getValue();
+				// console.log("Code changed:", code);
+				localStorage.setItem("kai-compiler.playground.code", code);
+				compile(code);
+			});
+		});
+		
+		const allocator = new ArenaAllocator();
+
+		function compile(code) {
+			SOURCE = code;
+			const encodedString = new TextEncoder().encode(code); // Convert to UTF-8
+			const scratch_buffer = allocator.allocate(encodedString.byteLength); // Allocate memory in WASM module to put string
+			const c_bytes = new Uint8Array(c_memory.buffer);
+			c_bytes.set(encodedString, scratch_buffer); // Write string to WASM memory
+			builder = new HTML_Builder();
+			console.group("compile");
+			try {
+				let result;
+				switch (parseInt(mode.value)) {
+					case SYNTAX_TREE:
+						result = c.create_syntax_tree(scratch_buffer, encodedString.byteLength);
+					break;
+					case COMPILE_NO_CODEGEN:
+						result = c.compile_no_code_gen(scratch_buffer, encodedString.byteLength);
+					break;
+					default:
+						console.log(mode.value);
+					break;
+				}
+				console.log("test returned:", result);
+				if (result === 0) {
+					SyntaxTree.innerHTML = builder.finalize();
+					CompileError.innerHTML = "";
+					CompileError.classList.remove("contains_error");
+				}
+				else {
+					SyntaxTree.innerHTML = "";
+					CompileError.innerHTML = builder.finalize();
+					CompileError.classList.add("contains_error");
+				}
+			}
+			catch (error) {
+				SyntaxTree.innerHTML = "";
+				CompileError.innerText = error;
+				CompileError.classList.add("contains_error");
+				throw error;
+			}
+			finally {
+				allocator.reset();
+				console.groupEnd();
+			}
+		}
+
+		WebAssembly.instantiateStreaming(fetch('lib.wasm'), {
+			env: {
+				console_log,
+				write_string,
+				write_value,
+				set_color,
+				panic,
+				allocate: (size) => allocator.allocate(size),
+				free: (ptr) => {},
+			}
+		}).then(async (wasm) => {
+			c = wasm.instance.exports; // Exported C Functions
+			c_memory = wasm.instance.exports.memory;
+			console.log(c_memory.size);
+			allocator.init();
+
+			const scratch_buffer = allocator.allocate(8);
+			c.kai_version_string(scratch_buffer);
+			const dataView = new DataView(c_memory.buffer);
+			let ptr = dataView.getUint32(scratch_buffer    , true);
+			let len = dataView.getUint32(scratch_buffer + 4, true);
+			title.innerText = "Kai " + c_string(ptr, len);
+
+			mode.addEventListener("input", e => compile(SOURCE));
+
+			compile(SOURCE);
+		});
+	</script>
+</html>

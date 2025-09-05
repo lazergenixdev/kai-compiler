@@ -1,0 +1,27 @@
+// Header for easier compilation to wasm modules
+// Clang Flags: --target=wasm32 -nostdlib -Wl,--no-entry -Wl,--export-dynamic
+
+#ifndef WASM_H
+#define WASM_H
+#include <stddef.h> // --> NULL, size_t
+
+#define WASM_EXPORT __attribute__((__visibility__("default"))) extern
+#define WASM_IMPORT(R,NAME) __attribute__((import_module("env"), import_name(#NAME))) extern R __env_ ## NAME
+#define WASM_PAGE_SIZE 65536
+
+void *memset(void *dest, int c, size_t n)
+{
+	unsigned char *s = dest;
+	for (; n; n--, s++) *s = c;
+	return dest;
+}
+
+void *memcpy(void *restrict dest, const void *restrict src, size_t n)
+{
+	unsigned char *d = dest;
+	const unsigned char *s = src;
+	for (; n; n--) *d++ = *s++;
+	return dest;
+}
+
+#endif // WASM_H

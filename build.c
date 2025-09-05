@@ -1687,6 +1687,22 @@ void compile_command_line_tool(void)
 	set_current_dir("..");
 }
 
+void compile_playground(void)
+{
+	set_current_dir("playground");
+	SCOPED_TEMP()
+	{
+		Cmd cmd = {0};
+		cmd_append(&cmd, "clang.exe");
+		cmd_append(&cmd, "-Wall", "-Wextra");
+		cmd_append(&cmd, "--target=wasm32", "-D__WASM__", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic"/* , "-Wl,--allow-undefined" */);
+		cmd_append(&cmd, "lib.c");
+		cmd_append(&cmd, "-o", "lib.wasm");
+		exit_on_fail(cmd_run_sync_and_reset(&cmd));
+	}
+	set_current_dir("..");
+}
+
 const char* source_files[] = {
 	"src/core.kai",
 	"src/parser.kai",
@@ -1898,5 +1914,6 @@ int main(int argc, char** argv)
 	if (argc == 2 && strcmp(argv[1], "test") == 0)
 		run_tests();
 	compile_command_line_tool();
+	compile_playground();
 	return 0;
 }

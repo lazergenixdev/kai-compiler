@@ -666,6 +666,10 @@ _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
             current = current.next;
         }
     }
+    
+    case KAI_EXPR_PROCEDURE_TYPE; {
+        ret false; // always a type
+    }
 /*
     break; case KAI_EXPR_PROCEDURE_CALL: {
         Kai_Expr_Procedure_Call* node = base;
@@ -692,10 +696,6 @@ _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
                 return result;
             current = current->next;
         }
-    }
-
-    break; case KAI_EXPR_PROCEDURE_TYPE: {
-        //kai__todo("procedure type\n");
     }
 
     break; case KAI_STMT_DECLARATION: {
@@ -733,23 +733,28 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
     ref.index = context.nodes.count;
 
     table_set(*scope.identifiers, STRING("Type"), Node_Reference.{index = context.nodes.count});
-    table_set(*scope.identifiers, STRING("s8"),   Node_Reference.{index = context.nodes.count+1});
-    table_set(*scope.identifiers, STRING("s16"),  Node_Reference.{index = context.nodes.count+2});
-    table_set(*scope.identifiers, STRING("s32"),  Node_Reference.{index = context.nodes.count+3});
-    table_set(*scope.identifiers, STRING("s64"),  Node_Reference.{index = context.nodes.count+4});
-    table_set(*scope.identifiers, STRING("u8"),   Node_Reference.{index = context.nodes.count+5});
-    table_set(*scope.identifiers, STRING("u16"),  Node_Reference.{index = context.nodes.count+6});
-    table_set(*scope.identifiers, STRING("u32"),  Node_Reference.{index = context.nodes.count+7});
-    table_set(*scope.identifiers, STRING("u64"),  Node_Reference.{index = context.nodes.count+8});
-    table_set(*scope.identifiers, STRING("f32"),  Node_Reference.{index = context.nodes.count+9});
-    table_set(*scope.identifiers, STRING("f64"),  Node_Reference.{index = context.nodes.count+10});
+    table_set(*scope.identifiers, STRING("void"), Node_Reference.{index = context.nodes.count+1});
+    table_set(*scope.identifiers, STRING("s8"),   Node_Reference.{index = context.nodes.count+2});
+    table_set(*scope.identifiers, STRING("s16"),  Node_Reference.{index = context.nodes.count+3});
+    table_set(*scope.identifiers, STRING("s32"),  Node_Reference.{index = context.nodes.count+4});
+    table_set(*scope.identifiers, STRING("s64"),  Node_Reference.{index = context.nodes.count+5});
+    table_set(*scope.identifiers, STRING("u8"),   Node_Reference.{index = context.nodes.count+6});
+    table_set(*scope.identifiers, STRING("u16"),  Node_Reference.{index = context.nodes.count+7});
+    table_set(*scope.identifiers, STRING("u32"),  Node_Reference.{index = context.nodes.count+8});
+    table_set(*scope.identifiers, STRING("u64"),  Node_Reference.{index = context.nodes.count+9});
+    table_set(*scope.identifiers, STRING("f32"),  Node_Reference.{index = context.nodes.count+10});
+    table_set(*scope.identifiers, STRING("f64"),  Node_Reference.{index = context.nodes.count+11});
     // Compiler Internal
-    table_set(*scope.identifiers, STRING("$Number"),  Node_Reference.{index = context.nodes.count+11});
+    table_set(*scope.identifiers, STRING("$Number"),  Node_Reference.{index = context.nodes.count+12});
 
     type_type: *Type_Info = cast arena_allocate(*context.type_allocator, sizeof(Type_Info));
     type_type.id = KAI_TYPE_ID_TYPE;
     array_push(*context.nodes, Node.{type = type_type, value = Value.{type = type_type}, flags = KAI_NODE_EVALUATED});
     context.type_type = type_type;
+    
+    void_type: *Type_Info = cast arena_allocate(*context.type_allocator, sizeof(Type_Info));
+    void_type.id = KAI_TYPE_ID_VOID;
+    array_push(*context.nodes, Node.{type = type_type, value = Value.{type = void_type}, flags = KAI_NODE_EVALUATED});
 
     bits: u8 = 8;
     while bits <= 64 {
@@ -999,9 +1004,10 @@ _evalate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) -> 
         }
         case KAI_TYPE_ID_NUMBER; {
             if op == {
-                case #char "+"; {
-                    ret Value.{number = number_add(a.number, b.number)};
-                }
+                case #char "+"; ret Value.{number = number_add(a.number, b.number)};
+                case #char "-"; ret Value.{number = number_sub(a.number, b.number)};
+                case #char "*"; ret Value.{number = number_mul(a.number, b.number)};
+                case #char "/"; ret Value.{number = number_div(a.number, b.number)};
             }
             kai__todo("op = %i", op);
         }
@@ -1009,6 +1015,7 @@ _evalate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) -> 
             kai__todo("type.id = %i", type.id);
         }
     }
+    ret Value.{0};
 }
 
 _type_check :: (context: *Compiler_Context, expr: *Expr, out_or_expected: **Type_Info) -> bool
@@ -1026,9 +1033,6 @@ _type_check :: (context: *Compiler_Context, expr: *Expr, out_or_expected: **Type
             current: *Expr = p.in_out_expr;
             for i: 0..<p.in_count {
                 type: Type = pt.inputs.data[i];
-                // printf("inserting \"%.*s\" ", current.name.count, current.name.data);
-                // write_type(*context.debug_writer, type);
-                // printf("\n");
                 ref: Node_Reference = Node_Reference.{flags = KAI_NODE_LOCAL, index = context.local_nodes.count}; 
                 array_push(*context.local_nodes, Local_Node.{
                     type = type,
@@ -1266,11 +1270,55 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             out_value.ptr = expr;
             ret false;
         }
+        
+        case KAI_EXPR_PROCEDURE_TYPE; {
+            p: *Expr_Procedure_Type = cast expr;
+            
+            pt: *Type_Info_Procedure = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Procedure));
+            pt.id = KAI_TYPE_ID_PROCEDURE;
+            pt.inputs.count = p.in_count;
+            pt.inputs.data = arena_allocate(*context.type_allocator, sizeof(Type) * pt.inputs.count) -> *Type;
+            pt.outputs.count = p.out_count;
+            pt.outputs.data = arena_allocate(*context.type_allocator, sizeof(Type) * pt.outputs.count) -> *Type;
+
+            current: *Expr = p.in_out_expr;
+            for i: 0..<p.in_count {
+                type: *Type_Info;
+                value: Value;
+                if _value_of_expression(context, current, *value, *type)
+                    ret true;
+                if type.id != KAI_TYPE_ID_TYPE
+                    ret true;
+                pt.inputs.data[i] = value.type;
+                current = current.next;
+            }
+            for i: 0..<p.out_count {
+                type: *Type_Info;
+                value: Value;
+                if _value_of_expression(context, current, *value, *type)
+                    ret true;
+                if type.id != KAI_TYPE_ID_TYPE
+                    ret true;
+                if value.type.id == KAI_TYPE_ID_VOID && p.out_count == 1 {
+                    pt.outputs.count = 0;
+                    break;
+                }
+                // TODO: allocate output types here
+                pt.outputs.data[i] = value.type;
+                current = current.next;
+            }
+
+            out_value.type = pt -> Type;
+            [out_type] = context.type_type;
+            ret false;
+        }
 
         case; {
             kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
         }
     }
+
+    ret true;
 }
 
 _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
@@ -1283,7 +1331,6 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
             ref: Node_Reference = _lookup_node(context, expr.source_code);
 
             if ref.flags & KAI_NODE_NOT_FOUND {
-                printf("cannot find (%.*s)\n", expr.source_code.count, expr.source_code.data);
                 _error_fatal(context, STRING("cant find node [todo]"));
                 ret null;
             }
@@ -1349,11 +1396,17 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
 
             ret pt -> Type;
         }
+        
+        case KAI_EXPR_PROCEDURE_TYPE; {
+            ret context.type_type;
+        }
 
         case; {
             kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
         }
     }
+
+    ret null;
 }
 
 _compile_node_value :: (context: *Compiler_Context, node: *Node) -> bool
@@ -1391,12 +1444,7 @@ _compile_node_value :: (context: *Compiler_Context, node: *Node) -> bool
             }
         }
 
-        printf("Cannot convert ");
-        write_type(*context.debug_writer, type);
-        printf(" => ");
-        write_type(*context.debug_writer, node.type);
-        printf("\n");
-        ret true;
+        ret _error_fatal(context, STRING("cannot convert [todo]"));
     }
 
     node.value = value;
@@ -1504,6 +1552,9 @@ _compile_node_type :: (context: *Compiler_Context, node: *Node) -> bool
 _type_size :: (type: *Type_Info) -> u32
 {
     if type.id == {
+        case KAI_TYPE_ID_TYPE; {
+            ret sizeof(Type);
+        }
         case KAI_TYPE_ID_INTEGER; {
             info: *Type_Info_Integer = cast type;
             ret info.bits / 8;
@@ -1518,11 +1569,15 @@ _type_size :: (type: *Type_Info) -> u32
     }
 
     kai__todo("type.id = %i", type.id);
+    ret 0;
 }
 
 _copy_value :: (out: *u8, type: *Type_Info, value: Value)
 {
     if type.id == {
+        case KAI_TYPE_ID_TYPE; {
+            [out -> *Type] = value.type;
+        }
         case KAI_TYPE_ID_INTEGER; {
             info: *Type_Info_Integer = cast type;
             if info.is_signed {
@@ -1650,7 +1705,7 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         program = out_program,
         options = info.options,
         imports = info.imports,
-        debug_writer = writer_stdout(),
+    //    debug_writer = writer_stdout(),
     };
     arena_create(*context.type_allocator, *info.allocator);
     arena_create(*context.temp_allocator, *info.allocator);

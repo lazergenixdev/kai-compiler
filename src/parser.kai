@@ -274,7 +274,7 @@ Token_Id :: enum u32 {
     TOKEN_break      = 0x80;
     TOKEN_case       = 0x81;
     TOKEN_cast       = 0x82;
-    TOKEN_continue   = 0x83;
+    TOKEN_continue   = 0x83; // => skip?
     TOKEN_defer      = 0x84;
     TOKEN_else       = 0x85;
     TOKEN_enum       = 0x86;
@@ -1150,7 +1150,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         left = parse_expression(parser, TOP_PRECEDENCE);
         _expect(left != null, "in expression", "should be an expression here");
         tokenizer_next(*parser.tokenizer);
-        _expect(current.id == #char ")", "in expression", "an operator or ')' in expression");
+        _expect(current.id == #char ")", "in expression", "should be an operator or ')' here");
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Dereference Operator (or Array Type)
@@ -1166,7 +1166,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             left = parse_expression(parser, TOP_PRECEDENCE);
             _expect(left, "in dereference expression", "should be an expression here");
             _next_token(); // skip op token
-            _expect(current.id == #char "]", "in dereference expression", "an operator or ']' in expression");
+            _expect(current.id == #char "]", "in dereference expression", "should be an operator or ']' here");
             left = _parser_create_unary(parser, op_token, left);
         }
     }

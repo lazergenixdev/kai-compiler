@@ -19,6 +19,8 @@
 - [ ] figure out how to do multi declaration statements `a, b, c: int;`
 - [ ] need some kind of import handler from host
 - [ ] remove `;` from case statements?
+- [ ] remove need for `destroy_syntax_tree` by passing in arena as input to `create_syntax_tree`
+- [ ] errors should use an arena so that `destroy_error` can be removed
 
 # Version 1
 - [ ] AST interpreter (compile-time) -> compile time execution
