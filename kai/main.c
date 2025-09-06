@@ -209,7 +209,7 @@ int compile(int argc, char** argv)
         .allocator = allocator,
         .error = &error,
         .sources = { .count = 1, .data = &source },
-		.options = { .flags = KAI_COMPILE_NO_CODE_GEN },
+		.options = { .flags = KAI_COMPILE_NO_CODE_GEN | KAI_COMPILE_DEBUG },
     };
     kai_create_program(&info, &program);
 

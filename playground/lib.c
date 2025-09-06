@@ -20,6 +20,7 @@ const char* join(const char* left, const char* right)
 
 #define KAI_API(T) WASM_EXPORT T
 #define printf(...) (void)sizeof(__VA_ARGS__)
+#define putchar(...) (void)sizeof(__VA_ARGS__)
 #define kai_fatal_error(DESC, MESSAGE) __env_panic(DESC, MESSAGE, __FILE__, __LINE__)
 #define kai__todo(...) __env_panic("TODO", join(__FUNCTION__, #__VA_ARGS__), __FILE__, __LINE__)
 #define KAI_DONT_USE_WRITER_API
@@ -133,6 +134,36 @@ void write_value_no_code_gen(Kai_Writer* writer, void* data, Kai_Type type)
         kai_write_type(writer, type);
         kai__set_color(KAI_WRITE_COLOR_PRIMARY);
 		kai__write("\n");
+    } break;
+    case KAI_TYPE_ID_BOOLEAN: {
+        Kai_bool value = *(Kai_bool*)data;
+        kai__write(" = ");
+        kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
+        if (value) kai__write("true");
+        else       kai__write("false");
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write(" [");
+        kai__set_color(KAI_WRITE_COLOR_TYPE);
+        kai_write_type(writer, type);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write("]\n");
+    } break;
+    case KAI_TYPE_ID_POINTER: {
+        uintptr_t expr = *(uintptr_t*)data;
+        Kai_Write_Format fmt = {
+            .fill_character = '0',
+            .min_count = 16,
+            .flags = KAI_WRITE_FLAGS_HEXIDECIMAL
+        };
+        kai__write(" = ");
+        kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
+        writer->write_value(writer->user, KAI_U64, (Kai_Value){.u64 = expr}, fmt);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write(" [");
+        kai__set_color(KAI_WRITE_COLOR_TYPE);
+        kai_write_type(writer, type);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write("]\n");
     } break;
     case KAI_TYPE_ID_PROCEDURE: {
         Kai_Expr* expr = *(Kai_Expr**)data;

@@ -1261,26 +1261,21 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         // TODO: directive map
         if (string_equals(current.value.string, STRING("size")))
         {
-            _expect(false, "[todo]", "#size");
-            ret null;
+            left = _parser_create_special(parser, [current], KAI_SPECIAL_EVAL_SIZE);
         }
         else if (string_equals(current.value.string, STRING("type")))
         {
-            ret _parser_create_special(parser, [current], KAI_SPECIAL_EVAL_TYPE);
+            left = _parser_create_special(parser, [current], KAI_SPECIAL_EVAL_TYPE);
         }
         else if (string_equals(current.value.string, STRING("Type")))
         {
             ret _parser_create_special(parser, [current], KAI_SPECIAL_TYPE);
         }
-        else if (string_equals(current.value.string, STRING("size")))
-        {
-            ret _parser_create_special(parser, [current], KAI_SPECIAL_EVAL_SIZE);
-        }
         else if (string_equals(current.value.string, STRING("Number")))
         {
             ret _parser_create_special(parser, [current], KAI_SPECIAL_NUMBER);
         }
-        else if (string_equals(current.value.string, STRING("#Code")))
+        else if (string_equals(current.value.string, STRING("Code")))
         {
             ret _parser_create_special(parser, [current], KAI_SPECIAL_CODE);
         }
@@ -1680,6 +1675,7 @@ parse_declaration :: (parser: *Parser) -> *Stmt
     case #char ":"; flags |= KAI_FLAG_DECL_CONST;
     case #char "=";
     case #char ";";
+        _expect(type != null, "in declaration", "should be '=', ':', or expression here");
         ret _parser_create_declaration(parser, name, type, expr, flags, line_number);
     case;
         ret _unexpected("in declaration", "should be '=', ':', or ';'");

@@ -89,6 +89,7 @@
 			select {
 				color: white;
 				background-color: #222;
+				border-color: #333;
 			}
 		</style>
 	</head>
@@ -107,6 +108,7 @@
 				<select name="cars" id="mode">
 					<option value="0" selected>AST</option>
 					<option value="1">Type-Checked AST</option>
+					<option value="2">Exported Variables</option>
 				</select>
 				<pre id="SyntaxTree" class="monospaced-font"></pre>
 			</div>
@@ -345,6 +347,12 @@ inc :: (n: s32) -> s32 {
 				SOURCE = src;
 			}
 		}
+		{
+			const sel = localStorage.getItem("kai-compiler.playground.selection");
+			if (sel !== null) {
+				mode.value = sel;
+			}
+		}
 
 		require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@latest/min/vs' }});
 		require(['vs/editor/editor.main'], function () {
@@ -375,6 +383,7 @@ inc :: (n: s32) -> s32 {
 			console.groupCollapsed("compile", mode.children[mode.value].innerText);
 			try {
 				let result;
+				localStorage.setItem("kai-compiler.playground.selection", mode.value);
 				switch (parseInt(mode.value)) {
 					case SYNTAX_TREE:
 						result = c.create_syntax_tree(scratch_buffer, encodedString.byteLength);
@@ -383,7 +392,7 @@ inc :: (n: s32) -> s32 {
 						result = c.compile_no_code_gen(scratch_buffer, encodedString.byteLength);
 					break;
 					default:
-						console.warn("unknown case", mode.value);
+						throw new Error(`unknown casse (${mode.value})`);
 					break;
 				}
 				console.info("exit:", result);

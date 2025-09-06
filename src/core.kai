@@ -481,14 +481,15 @@ Context :: struct {
 Type_Id :: enum u8 {
     TYPE      = 0;
     VOID      = 1;
-    INTEGER   = 2;
-    FLOAT     = 3;
-    POINTER   = 4;
-    PROCEDURE = 5;
-    ARRAY     = 6;
-    STRUCT    = 7;
+    BOOLEAN   = 2;
+    INTEGER   = 3;
+    FLOAT     = 4;
+    POINTER   = 5;
+    PROCEDURE = 6;
+    ARRAY     = 7;
+    STRUCT    = 8;
     // compiler internal only
-    NUMBER    = 8;
+    NUMBER    = 9;
 }
 
 Type :: *Type_Info;
@@ -1221,19 +1222,12 @@ write_type :: (writer: *Writer, type: *Type_Info)
     if type.id ==
     {
     case; {
-
-        //_write("unknown");
+        _write("id = ");
         _write_u32(type.id);
     }
-    case KAI_TYPE_ID_TYPE; {
-
-        _write("#Type");
-    }
-    case KAI_TYPE_ID_NUMBER; {
-
-        _write("#Number");
-    }
-
+    case KAI_TYPE_ID_TYPE;    _write("#Type");
+    case KAI_TYPE_ID_NUMBER;  _write("#Number");
+    case KAI_TYPE_ID_BOOLEAN; _write("bool");
     case KAI_TYPE_ID_INTEGER; {
         info: *Type_Info_Integer = cast type;
         if info.is_signed _write("s");
@@ -1244,6 +1238,11 @@ write_type :: (writer: *Writer, type: *Type_Info)
         info: *Type_Info_Float = cast type;
         _write("f");
         _write_u32(info.bits);
+    }
+    case KAI_TYPE_ID_POINTER; {
+        info: *Type_Info_Pointer = cast type;
+        kai__write("*");
+        kai_write_type(writer, info.sub_type);
     }
     case KAI_TYPE_ID_PROCEDURE; {
         info: *Type_Info_Procedure = cast type;
@@ -1259,13 +1258,7 @@ write_type :: (writer: *Writer, type: *Type_Info)
         }
         kai__write(")");
     }
-/*
-    case KAI_TYPE_ID_POINTER: {
-        Kai_Type_Info_Pointer* info = void_Type;
-        kai__write_char('*');
-        kai_write_type(writer, info->sub_type);
-    }
-    
+/*  
     case KAI_TYPE_ID_STRUCT: {
         Kai_Type_Info_Struct* info = void_Type;
         kai__write("struct {");
@@ -1336,6 +1329,8 @@ _write_unary_operator_name :: (writer: *Writer, op: u32)
     case #char  "*";  _write("pointer to");
     case #char  "[";  _write("dereference");
     case #char  ".";  _write("inference");
+    case #char  "!";  _write("not");
+    case #char  "~";  _write("bitwise not");
     case #multi "->"; _write("auto cast");
     case;             _write("[unknown]");
     }
@@ -1348,17 +1343,21 @@ _write_binary_operator_name :: (writer: *Writer, op: u32)
     case #multi "&&"; _write("and");
     case #multi "||"; _write("or");
     case #multi "=="; _write("equals");
+    case #multi "!="; _write("not equals");
     case #multi "<="; _write("less or equal");
     case #multi ">="; _write("greater or equal");
-    case #char "<";   _write("less than");
-    case #char ">";   _write("greater than");
     case #multi "<<"; _write("shift left");
     case #multi ">>"; _write("shift right");
+    case #char "<";   _write("less than");
+    case #char ">";   _write("greater than");
     case #char "+";   _write("add");
     case #char "-";   _write("subtract");
     case #char "*";   _write("multiply");
     case #char "/";   _write("divide");
     case #char "%";   _write("mod");
+    case #char "^";   _write("xor");
+    case #char "&";   _write("bitwise and");
+    case #char "|";   _write("bitwise or");
     case #char ".";   _write("member access");
     case #char "[";   _write("index");
     case;             _write("[unknown]");
