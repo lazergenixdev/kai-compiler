@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250906025521 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250906042032 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -2698,7 +2698,10 @@ KAI_INTERNAL void kai__write_tree(Kai__Tree_Traversal_Context* context, Kai_Expr
         break; case KAI_STMT_IF:
         {
             Kai_Stmt_If* i = (Kai_Stmt_If*)(expr);
-            kai__write_expr_id_with_name(writer, KAI_STRING("if"), expr);
+            Kai_string name = KAI_STRING("if");
+            if (i->flags&KAI_FLAG_IF_CASE)
+                name = KAI_STRING("if-case");
+            kai__write_expr_id_with_name(writer, name, expr);
             kai__write("\n");
             context->prefix = KAI_STRING("expr");
             kai__explore(i->expr, KAI_FALSE);

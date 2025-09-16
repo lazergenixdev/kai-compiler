@@ -1634,7 +1634,10 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
         case KAI_STMT_IF; {
             i: *Stmt_If = cast expr;
-            _write_expr_id_with_name(writer, STRING("if"), expr);
+            name: string = STRING("if");
+            if i.flags & KAI_FLAG_IF_CASE
+                name = STRING("if-case");
+            _write_expr_id_with_name(writer, name, expr);
             _write("\n");
 
             context.prefix = STRING("expr");
