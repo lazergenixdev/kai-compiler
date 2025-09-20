@@ -1,12 +1,13 @@
 #import "stdio.h";
 #import "locale.h";
 
-_term_debug_colors: [5] cstring = .{
+_term_debug_colors: [6] cstring = .{
     "\x1b[0;37m", // KAI_COLOR_PRIMARY     
     "\x1b[1;97m", // KAI_COLOR_SECONDARY   
     "\x1b[1;91m", // KAI_COLOR_IMPORTANT   
     "\x1b[1;94m", // KAI_COLOR_IMPORTANT_2 
-    "\x1b[0;90m", // KAI_COLOR_DECORATION  
+    "\x1b[0;90m", // KAI_COLOR_DECORATION
+    "\x1b[0;92m", // KAI_COLOR_TYPE
 };
 
 _file_writer_write_value :: (user: *void, type: u32, value: Value, format: Write_Format)

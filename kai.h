@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250906042032 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250920014414 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -4897,7 +4897,7 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_graph(Kai_Compiler_Context* conte
             return KAI_TRUE;
     }
     if ((context->options).flags&KAI_COMPILE_DEBUG)
-        for (Kai_u32 i = 11; i < (context->nodes).count; ++i)
+        for (Kai_u32 i = 14; i < (context->nodes).count; ++i)
         {
             Kai_Node* node = &((context->nodes).data)[i];
             printf("node (%i) %.*s", i, ((node->location).string).count, ((node->location).string).data);
@@ -4981,7 +4981,7 @@ KAI_INTERNAL Kai_bool kai__generate_compilation_order(Kai_Compiler_Context* cont
     }
     if ((context->options).flags&KAI_COMPILE_DEBUG)
     {
-        for (Kai_u32 i = 22; i < (context->compilation_order).count; ++i)
+        for (Kai_u32 i = 28; i < (context->compilation_order).count; ++i)
         {
             Kai_u32 k = ((context->compilation_order).data)[i];
             Kai_u32 index = k>>1;
@@ -5923,6 +5923,10 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
                 printf("=> ");
                 switch ((node->type)->id)
                 {
+                    break; case KAI_TYPE_ID_NUMBER:
+                    {
+                        kai_write_number(writer, (node->value).number);
+                    }
                     break; case KAI_TYPE_ID_INTEGER:
                     {
                         Kai_Type_Info_Integer* info = (Kai_Type_Info_Integer*)(node->type);
@@ -5961,7 +5965,7 @@ KAI_INTERNAL Kai_bool kai__generate_compiler_ir(Kai_Compiler_Context* context)
 
 KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Program* out_program)
 {
-    Kai_Compiler_Context context = ((Kai_Compiler_Context){.error = info->error, .allocator = info->allocator, .program = out_program, .options = info->options, .imports = info->imports});
+    Kai_Compiler_Context context = ((Kai_Compiler_Context){.error = info->error, .allocator = info->allocator, .program = out_program, .options = info->options, .imports = info->imports, .debug_writer = kai_writer_stdout()});
     kai_arena_create(&context.type_allocator, &info->allocator);
     kai_arena_create(&context.temp_allocator, &info->allocator);
     if (!((info->options).flags&KAI_COMPILE_NO_CODE_GEN))
@@ -6036,8 +6040,8 @@ KAI_INTERNAL FILE* kai__stdc_file_open(char const* path, char const* mode) {
 #    define kai__stdc_file_open fopen
 #endif
 
-static Kai_cstring kai__term_debug_colors[5] = {
-    "\x1b[0;37m", "\x1b[1;97m", "\x1b[1;91m", "\x1b[1;94m", "\x1b[0;90m"
+static Kai_cstring kai__term_debug_colors[6] = {
+    "\x1b[0;37m", "\x1b[1;97m", "\x1b[1;91m", "\x1b[1;94m", "\x1b[0;90m", "\x1b[0;92m"
 };
 
 KAI_INTERNAL void kai__file_writer_write_value(void* user, Kai_u32 type, Kai_Value value, Kai_Write_Format format)

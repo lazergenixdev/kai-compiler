@@ -1672,6 +1672,10 @@ void run_tests(void)
 	minimal_log_level = 0;
 }
 
+bool compile_debug = false;
+
+#define nob_cc_debug(cmd) cmd_append(cmd, "-g")
+
 void compile_command_line_tool(void)
 {
 	set_current_dir("kai");
@@ -1681,6 +1685,7 @@ void compile_command_line_tool(void)
 		const char* output = executable("kai");
 		nob_cc(&cmd);
 		nob_cc_flags(&cmd);
+        if (compile_debug) nob_cc_debug(&cmd);
 		nob_cc_inputs(&cmd, "main.c");
 		nob_cc_output(&cmd, temp_sprintf("../bin/%s", output));
 		exit_on_fail(cmd_run_sync_and_reset(&cmd));
@@ -1912,8 +1917,15 @@ int main(int argc, char** argv)
 	nob_log(INFO, "Generated \"kai.h\"");
 
 	exit_on_fail(mkdir_if_not_exists("bin"));
-	if (argc == 2 && strcmp(argv[1], "test") == 0)
-		run_tests();
+
+    bool want_test = false;
+
+    for (int i = 0; i < argc; ++i)
+    {
+             if (strcmp(argv[i], "test") == 0) want_test = true;
+        else if (strcmp(argv[i], "debug") == 0) compile_debug = true;
+    }
+    if (want_test) run_tests();
 	compile_command_line_tool();
 	compile_playground();
 	return 0;

@@ -788,7 +788,7 @@ _generate_dependency_graph :: (context: *Compiler_Context) -> bool
     }
 
     if context.options.flags & KAI_COMPILE_DEBUG
-    for i: 11..<context.nodes.count {
+    for i: 14..<context.nodes.count {
         node: *Node = *context.nodes.data[i];
         printf("node (%i) %.*s", i, node.location.string.count, node.location.string.data);
         for i: 0..<(32 - node.location.string.count) putchar(#char " ");
@@ -880,7 +880,7 @@ _generate_compilation_order :: (context: *Compiler_Context) -> bool
     }
 
     if context.options.flags & KAI_COMPILE_DEBUG {
-        for i: 22..<context.compilation_order.count {
+        for i: 28..<context.compilation_order.count {
             k: u32 = context.compilation_order.data[i];
             index: u32 = k >> 1;
             ch: u8 = #char "v";
@@ -1793,6 +1793,9 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
             if context.options.flags & KAI_COMPILE_DEBUG {
                 printf("=> ");
                 if node.type.id == {
+                    case KAI_TYPE_ID_NUMBER; {
+                        kai_write_number(writer, node.value.number);
+                    }
                     case KAI_TYPE_ID_INTEGER; {
                         info: *Type_Info_Integer = cast node.type;
                         if info.is_signed _write_s64(node.value.s64);
@@ -1834,7 +1837,7 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         program = out_program,
         options = info.options,
         imports = info.imports,
-    //    debug_writer = writer_stdout(),
+        debug_writer = writer_stdout(),
     };
     arena_create(*context.type_allocator, *info.allocator);
     arena_create(*context.temp_allocator, *info.allocator);

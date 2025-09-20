@@ -22,6 +22,7 @@ const char* join(const char* left, const char* right)
 #define printf(...) (void)sizeof(__VA_ARGS__)
 #define putchar(...) (void)sizeof(__VA_ARGS__)
 #define kai_fatal_error(DESC, MESSAGE) __env_panic(DESC, MESSAGE, __FILE__, __LINE__)
+#define kai_writer_stdout() (Kai_Writer){0}
 #define kai__todo(...) __env_panic("TODO", join(__FUNCTION__, #__VA_ARGS__), __FILE__, __LINE__)
 #define KAI_DONT_USE_WRITER_API
 #define KAI_DONT_USE_MEMORY_API
