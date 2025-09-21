@@ -120,13 +120,52 @@ int parse(int argc, char** argv)
 	return error.result != KAI_SUCCESS;
 }
 
-void write_value_no_code_gen(void* data, Kai_Type type)
+//! TODO: Move this to be part of kai API
+void write_value_no_code_gen(Kai_Writer* writer, void* data, Kai_Type type)
 {
     switch (type->id)
     {
+    case KAI_TYPE_ID_TYPE: {
+        Kai_Type type = *(Kai_Type*)data;
+        kai__write(" = ");
+        kai__set_color(KAI_WRITE_COLOR_TYPE);
+        kai_write_type(writer, type);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write("\n");
+    } break;
+    case KAI_TYPE_ID_BOOLEAN: {
+        Kai_bool value = *(Kai_bool*)data;
+        kai__write(" = ");
+        kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
+        if (value) kai__write("true");
+        else       kai__write("false");
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write(" [");
+        kai__set_color(KAI_WRITE_COLOR_TYPE);
+        kai_write_type(writer, type);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write("]\n");
+    } break;
+    case KAI_TYPE_ID_POINTER: {
+        uintptr_t expr = *(uintptr_t*)data;
+        Kai_Write_Format fmt = {
+            .fill_character = '0',
+            .min_count = 16,
+            .flags = KAI_WRITE_FLAGS_HEXIDECIMAL
+        };
+        kai__write(" = ");
+        kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
+        writer->write_value(writer->user, KAI_U64, (Kai_Value){.u64 = expr}, fmt);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write(" [");
+        kai__set_color(KAI_WRITE_COLOR_TYPE);
+        kai_write_type(writer, type);
+        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        kai__write("]\n");
+    } break;
     case KAI_TYPE_ID_PROCEDURE: {
         Kai_Expr* expr = *(Kai_Expr**)data;
-        printf("\n");
+        kai__write("\n");
         kai_write_expression(writer, expr, 1);
     } break;
     case KAI_TYPE_ID_INTEGER: {
@@ -147,35 +186,35 @@ void write_value_no_code_gen(void* data, Kai_Type type)
         case 32: value.u = *(Kai_u32*)data;
         case 64: value.u = *(Kai_u64*)data;
         }
-        printf(" = ");
+        kai__write(" = ");
         kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
-        if (i->is_signed) printf("%lli", value.s);
-        else              printf("%llu", value.u);
+        if (i->is_signed) kai__write_s64(value.s);
+        else              kai__write_u64(value.u);
         kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        printf(" [");
-        kai__set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        kai__write(" [");
+        kai__set_color(KAI_WRITE_COLOR_TYPE);
         kai_write_type(writer, type);
         kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        printf("]\n");
+        kai__write("]\n");
     } break;
     case KAI_TYPE_ID_FLOAT: {
         Kai_Type_Info_Float* f = (Kai_Type_Info_Float*)type;
-        printf(" = ");
+        kai__write(" = ");
         kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
         switch (f->bits)
         {
-        case 32: printf("%f", *(Kai_f32*)data); break;
-        case 64: printf("%f", *(Kai_f64*)data); break;
+        case 32: kai__write_f64((Kai_f64)(*(Kai_f32*)data)); break;
+        case 64: kai__write_f64(*(Kai_f64*)data); break;
         }
         kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        printf(" [");
-        kai__set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        kai__write(" [");
+        kai__set_color(KAI_WRITE_COLOR_TYPE);
         kai_write_type(writer, type);
         kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        printf("]\n");
+        kai__write("]\n");
     } break;
     default: {
-        printf("[unknown value type]\n");
+        kai__write(" [unknown value type]\n");
     } break;
     }
 }
@@ -209,7 +248,7 @@ int compile(int argc, char** argv)
         .allocator = allocator,
         .error = &error,
         .sources = { .count = 1, .data = &source },
-		.options = { .flags = KAI_COMPILE_NO_CODE_GEN | KAI_COMPILE_DEBUG },
+		.options = { .flags = KAI_COMPILE_NO_CODE_GEN },
     };
     kai_create_program(&info, &program);
 
@@ -232,7 +271,7 @@ int compile(int argc, char** argv)
                 kai_write_type(writer, var.type);
                 printf("\n");
             }
-            else write_value_no_code_gen(program.data.data + var.location, var.type);
+            else write_value_no_code_gen(writer, program.data.data + var.location, var.type);
         }
     }
 	if (error.result != KAI_SUCCESS) {
