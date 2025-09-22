@@ -168,7 +168,7 @@ _mul_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
     }
     
     // Amount of right shift required to fit in 64 bits
-    shift: s32 = 64 - kai_intrinsics_clz(hi)->s32;
+    shift: s32 = 64 - intrinsics_clz64(hi)->s32;
     
     if sub { [exp] -= shift; }
     else   { [exp] += shift; }
@@ -571,8 +571,8 @@ number_to_f64 :: (number: Number) -> f64
 
 number_normalize :: (number: Number) -> Number
 {
-    ns: s32 = intrinsics_ctz(number.n);
-    ds: s32 = intrinsics_ctz(number.d);
+    ns: s32 = intrinsics_ctz64(number.n);
+    ds: s32 = intrinsics_ctz64(number.d);
     ex: s32 = number.e + (ns - ds);
     nu: u64 = number.n >> ns;
     de: u64 = number.d >> ds;
@@ -642,7 +642,7 @@ number_div :: (a: Number, b: Number) -> Number
 number_pow_int :: (a: Number, exp: u32) -> Number
 {
     r: Number = a;
-    i: s32 = 30 - intrinsics_clz(exp) -> s32;
+    i: s32 = 30 - intrinsics_clz32(exp) -> s32;
     if i >= 0 {
         bit: u32 = 1->u32 << i;
         while bit != 0 {
@@ -1711,7 +1711,7 @@ write_number :: (writer: *Writer, number: Number)
     }
 
     // If number fits into u64, write it out as u64
-    if number.e->u32 <= intrinsics_clz(number.n) {
+    if number.e->u32 <= intrinsics_clz64(number.n) {
         _write_u64(number_to_u64(number));
         ret;
     }

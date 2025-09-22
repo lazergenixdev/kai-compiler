@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250920014414 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250922054818 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -1167,7 +1167,31 @@ KAI_API(Kai_u64) kai_memory_usage(Kai_Allocator* allocator);
 #define KAI__PREC_CAST 2304
 #define KAI__PREC_UNARY 4096
 
-static inline Kai_u32 kai_intrinsics_clz(Kai_u64 value)
+static inline Kai_u32 kai_intrinsics_clz32(Kai_u32 value)
+{
+#if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
+    return __builtin_clz(value);
+#elif defined(KAI_COMPILER_MSVC)
+    DWORD index;
+    if (_BitScanReverse(&index, value) == 0)
+        return 32;
+    return (Kai_u32)(31 - index);
+#endif
+}
+
+static inline Kai_u32 kai_intrinsics_ctz32(Kai_u32 value)
+{
+#if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
+    return __builtin_ctz(value);
+#elif defined(KAI_COMPILER_MSVC)
+    DWORD index;
+    if (_BitScanForward(&index, value) == 0)
+        return 32;
+    return (Kai_u32)(index);
+#endif
+}
+
+static inline Kai_u32 kai_intrinsics_clz64(Kai_u64 value)
 {
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
     return __builtin_clzll(value);
@@ -1179,7 +1203,7 @@ static inline Kai_u32 kai_intrinsics_clz(Kai_u64 value)
 #endif
 }
 
-static inline Kai_u32 kai_intrinsics_ctz(Kai_u64 value)
+static inline Kai_u32 kai_intrinsics_ctz64(Kai_u64 value)
 {
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
     return __builtin_ctzll(value);
@@ -1429,7 +1453,7 @@ KAI_INTERNAL Kai_u64 kai__mul_with_shift(Kai_u64 a, Kai_u64 b, Kai_s32* exp, Kai
     {
         return lo;
     }
-    Kai_s32 shift = 64-(Kai_s32)(kai_intrinsics_clz(hi));
+    Kai_s32 shift = 64-(Kai_s32)(kai_intrinsics_clz64(hi));
     if (sub)
     {
         *exp -= shift;
@@ -1697,8 +1721,8 @@ KAI_API(Kai_f64) kai_number_to_f64(Kai_Number number)
 
 KAI_API(Kai_Number) kai_number_normalize(Kai_Number number)
 {
-    Kai_s32 ns = kai_intrinsics_ctz(number.n);
-    Kai_s32 ds = kai_intrinsics_ctz(number.d);
+    Kai_s32 ns = kai_intrinsics_ctz64(number.n);
+    Kai_s32 ds = kai_intrinsics_ctz64(number.d);
     Kai_s32 ex = number.e+(ns-ds);
     Kai_u64 nu = (number.n)>>ns;
     Kai_u64 de = (number.d)>>ds;
@@ -1758,7 +1782,7 @@ KAI_API(Kai_Number) kai_number_div(Kai_Number a, Kai_Number b)
 KAI_API(Kai_Number) kai_number_pow_int(Kai_Number a, Kai_u32 exp)
 {
     Kai_Number r = a;
-    Kai_s32 i = 30-(Kai_s32)(kai_intrinsics_clz(exp));
+    Kai_s32 i = 30-(Kai_s32)(kai_intrinsics_clz32(exp));
     if (i>=0)
     {
         Kai_u32 bit = ((Kai_u32)(1))<<i;
@@ -2777,7 +2801,7 @@ KAI_API(void) kai_write_number(Kai_Writer* writer, Kai_Number number)
     {
         kai__write("-");
     }
-    if ((Kai_u32)(number.e)<=kai_intrinsics_clz(number.n))
+    if ((Kai_u32)(number.e)<=kai_intrinsics_clz64(number.n))
     {
         kai__write_u64(kai_number_to_u64(number));
         return;

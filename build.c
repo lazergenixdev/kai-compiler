@@ -101,7 +101,7 @@ Macro internal_macros[] = {
 char** g_internal_macros = NULL;
 
 const char* intrinsics[] = {
-	"clz", "ctz",
+	"clz32", "ctz32", "clz64", "ctz64",
 	"u128_low", "u128_high", "u128_multiply"
 };
 

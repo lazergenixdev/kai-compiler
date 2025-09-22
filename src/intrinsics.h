@@ -1,4 +1,28 @@
-static inline Kai_u32 kai_intrinsics_clz(Kai_u64 value)
+static inline Kai_u32 kai_intrinsics_clz32(Kai_u32 value)
+{
+#if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
+    return __builtin_clz(value);
+#elif defined(KAI_COMPILER_MSVC)
+    DWORD index;
+    if (_BitScanReverse(&index, value) == 0)
+        return 32;
+    return (Kai_u32)(31 - index);
+#endif
+}
+
+static inline Kai_u32 kai_intrinsics_ctz32(Kai_u32 value)
+{
+#if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
+    return __builtin_ctz(value);
+#elif defined(KAI_COMPILER_MSVC)
+    DWORD index;
+    if (_BitScanForward(&index, value) == 0)
+        return 32;
+    return (Kai_u32)(index);
+#endif
+}
+
+static inline Kai_u32 kai_intrinsics_clz64(Kai_u64 value)
 {
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
     return __builtin_clzll(value);
@@ -10,7 +34,7 @@ static inline Kai_u32 kai_intrinsics_clz(Kai_u64 value)
 #endif
 }
 
-static inline Kai_u32 kai_intrinsics_ctz(Kai_u64 value)
+static inline Kai_u32 kai_intrinsics_ctz64(Kai_u64 value)
 {
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
     return __builtin_ctzll(value);
