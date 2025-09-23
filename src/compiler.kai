@@ -928,7 +928,7 @@ _value_to_number :: (value: Value, type: *Type_Info, out_number: *Number) -> boo
     }
 }
 
-_evalate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) -> Value
+_evaluate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) -> Value
 {
     if type.id == {
         case KAI_TYPE_ID_INTEGER; {
@@ -963,6 +963,9 @@ _evalate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) -> 
                 case #char "-"; ret Value.{number = number_sub(a.number, b.number)};
                 case #char "*"; ret Value.{number = number_mul(a.number, b.number)};
                 case #char "/"; ret Value.{number = number_div(a.number, b.number)};
+                // TODO: OK to treat shift as multiplying by power of 2?
+                case #multi "<<"; ret Value.{number = number_mul(a.number, Number.{1, 1, b.number.n, 0})};
+                case #multi ">>"; ret Value.{number = number_div(a.number, Number.{1, 1, b.number.n, 0})};
             }
             kai__todo("number op = %i", op);
         }
@@ -1325,7 +1328,7 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
                 else _error_fatal(context, STRING("invalid binary expression [todo]"));
             }
 
-            [out_value] = _evalate_binary_operation(b.op, lt, lv, rv);
+            [out_value] = _evaluate_binary_operation(b.op, lt, lv, rv);
             [out_type] = lt;
             ret false;
         }

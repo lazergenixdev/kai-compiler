@@ -394,10 +394,12 @@ inc :: (n: s32) -> s32 {
 			{ regex: /u(?:8|16|32|64)|s(?:8|16|32|64)|f(?:32|64)/, token: "type" },
 			{ regex: /true|false|null/, token: "atom" },
 			{ regex: /\/\/.*/, token: "comment" },
+			{ regex: /\/\*[.]*/, token: "comment" },
 			{ regex: /[\[\]\(\)\{\}:;,]/, token: "bracket" },
 			{ regex: /[-+\/*=\<\>!]+/, token: "operator" },
 			{ regex: /(?:[0-9]*\.[0-9]*(e[+-][0-9]*)|[0-9]+)+/, token: "number" },
 			{ regex: /#[a-zA-Z_]*/, token: "atom" },
+			{ regex: /@[a-zA-Z_]*/, token: "keyword" },
 			{ regex: /[a-zA-Z_][\w$]*/, token: "variable" }
 		],
 		meta: {

@@ -1701,6 +1701,7 @@ void compile_playground(void)
 		Cmd cmd = {0};
 		cmd_append(&cmd, executable("clang"));
 		cmd_append(&cmd, "-Wall", "-Wextra");
+		cmd_append(&cmd, "-O2");
 		cmd_append(&cmd, "--target=wasm32", "-D__WASM__", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic"/* , "-Wl,--allow-undefined" */);
 		cmd_append(&cmd, "lib.c");
 		cmd_append(&cmd, "-o", "lib.wasm");
@@ -1930,3 +1931,13 @@ int main(int argc, char** argv)
 	compile_playground();
 	return 0;
 }
+
+/* TODO: When type checking is complete
+	Kai_Import import;
+	import.name = KAI_STRING("_memory_platform_allocate");
+	import.type = KAI_STRING("(*void, *void, u32, Memory_Command)");
+	import.value.ptr = (void*)"memory_platform_allocate.c";
+	import.name = KAI_STRING("_memory_page_size");
+	import.type = KAI_STRING("() -> u32");
+	import.value.ptr = (void*)"memory_page_size.c";
+*/

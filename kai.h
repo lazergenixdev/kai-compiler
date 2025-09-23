@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250922054818 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250923072353 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -1335,7 +1335,7 @@ KAI_INTERNAL void kai__explore_dependencies(Kai__DFS_Context* dfs, Kai_Node_Refe
 KAI_INTERNAL Kai_bool kai__generate_compilation_order(Kai_Compiler_Context* context);
 KAI_INTERNAL Kai_bool kai__error_fatal(Kai_Compiler_Context* context, Kai_string message);
 KAI_INTERNAL Kai_bool kai__value_to_number(Kai_Value value, Kai_Type_Info* type, Kai_Number* out_number);
-KAI_INTERNAL Kai_Value kai__evalate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b);
+KAI_INTERNAL Kai_Value kai__evaluate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b);
 KAI_INTERNAL Kai_bool kai__type_check(Kai_Compiler_Context* context, Kai_Expr* expr, Kai_Type_Info** out_or_expected);
 KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Kai_Expr* expr, Kai_Value* out_value, Kai_Type* out_type);
 KAI_INTERNAL Kai_Type kai__type_of_expression(Kai_Compiler_Context* context, Kai_Expr* expr);
@@ -5062,7 +5062,7 @@ KAI_INTERNAL Kai_bool kai__value_to_number(Kai_Value value, Kai_Type_Info* type,
     }
 }
 
-KAI_INTERNAL Kai_Value kai__evalate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b)
+KAI_INTERNAL Kai_Value kai__evaluate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b)
 {
     switch (type->id)
     {
@@ -5117,6 +5117,10 @@ KAI_INTERNAL Kai_Value kai__evalate_binary_operation(Kai_u32 op, Kai_Type_Info* 
                 return ((Kai_Value){.number = kai_number_mul(a.number, b.number)});
                 break; case 47:
                 return ((Kai_Value){.number = kai_number_div(a.number, b.number)});
+                break; case 15420:
+                return ((Kai_Value){.number = kai_number_mul(a.number, ((Kai_Number){1, 1, (b.number).n, 0}))});
+                break; case 15934:
+                return ((Kai_Value){.number = kai_number_div(a.number, ((Kai_Number){1, 1, (b.number).n, 0}))});
             }
             kai__todo("number op = %i", op);
         }
@@ -5467,7 +5471,7 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
                 else
                     kai__error_fatal(context, KAI_STRING("invalid binary expression [todo]"));
             }
-            *out_value = kai__evalate_binary_operation(b->op, lt, lv, rv);
+            *out_value = kai__evaluate_binary_operation(b->op, lt, lv, rv);
             *out_type = lt;
             return KAI_FALSE;
         }

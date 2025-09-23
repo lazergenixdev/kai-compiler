@@ -27,28 +27,6 @@
 | `[..] T`    | Dynamic Array of `T`                            |
 | `[K] T`     | Hash Table with key type `K` and value type `T` |
 
-# Variables
-
-There are two kinds of variables, **Constants** and **Non-Constants**.
-More specifically, **Constants** are special *compile-time constants*
-and **Non-Constants** are just regular variables,
-so **Non-Constants** are what you will use most of the time.
-```C
-my_constant     :: 1; // Constants use ':'
-my_non_constant := 2; // Non-Constants use '='
-```
-Variable types are able to be inferred (most of the time) from the context. 
-But to specify the type of a variable, put it's type after the first `:`
-```C
-my_var : u32 : 69; // 'u32' can be replaced with any type!
-```
-
-The value of a variable can be omitted, in which case
-the variable is given the initial value of 'zero'
-```C
-my_var : f32; // same as "my_var : f32 = 0"
-```
-
 ## Value Literals
 ```Javascript
 a :: 123;         // Basic integer
@@ -64,27 +42,6 @@ h :: #multi "->"; // Multi character
 // Floating point values also have special "directives"
 inf :: #infinity;
 nan :: #nan;
-```
-
-## Procedures (Functions)
-```C
-// define a procedure
-add_two :: (num: s32) -> s32 {
-	ret num + 2;
-}
-
-my_var :: add_two(3); // call the procedure we defined
-```
-`(num: s32) -> s32` is the type portion of the procedure,
-and `{ ret num + 2; }` is the *body*.
-
-The general syntax for the procedure type is
-```
-(var1: type1, var2: type2, ...) -> return_type
-```
-But procedures are actually allowed to return more than one value
-```
-(var1: type1, var2: type2, ...) -> (ret1, ret2, ret3, ...)
 ```
 
 ## Type Casting and Type Punning
@@ -110,39 +67,8 @@ a :: b => f32; // now the bytes of b are seen as a floating point
 **Note**: *With type punning, the size of the result type
 <b>must</b> be less than or equal to the size of source type*
 
-# Structures (Structs)
-Most of the time when programming, you want to bundle
-multiple types together into one singular type.
-This can be done with structs!
-```C
-Person :: struct {
-	name          : [] u8;
-	age           : u32;
-	height        : u32;
-	social_credit : s32;
-}
-
-// Now person can be used just like any other type
-me : Person;
-```
-## Struct field access
-Every variable contained in a struct is called a "field",
-and can be accessed with '.'
-```C
-me.name = "John";
-me.age = 100;
-```
-
-## Struct literals
-Structure literals are made by using `{}` with assignment statements
-```C
-person: Person = {
-	name = "John";
-	age  = 100;
-};
-```
-
 # Math Types
+NOT IMPLEMENTED YET
 ```C++
 // Scalar values are casted to vectors by
 // copying it's value to each vector component
@@ -159,9 +85,6 @@ matA : [4,4] f32 = math.translation({1, 2, 3});
 // are also builtin to the language
 vecC := matA * math.cross(vecA, vecB);
 ```
-# Fixed Arrays
-# Array Slices
-# Dynamic Arrays
 
 # Directives
 | Name               | Meaning                                                              |
