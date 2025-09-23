@@ -54,12 +54,18 @@ Expr_Flags :: enum u8 {
     FLAG_DECL_IMPORT   = 1 << 3;
 }
 
+Tag :: struct {
+    name : string;
+    next : *Tag;
+}
+
 Expr :: struct {
     id          : Expr_Id;
     flags       : Expr_Flags;
     source_code : string;
     name        : string;
     next        : *Expr;
+    tag         : *Tag;
     this_type   : *Type_Info;
     line_number : u32;
 }
@@ -279,7 +285,9 @@ Token_Id :: enum u32 {
     TOKEN_IDENTIFIER = 1;
     TOKEN_NUMBER     = 2;
     TOKEN_DIRECTIVE  = 3;
-    TOKEN_STRING     = 4;
+    TOKEN_TAG        = 4;
+    TOKEN_STRING     = 5;
+    // ASCII [33, 126] 
     TOKEN_break      = 0x80;
     TOKEN_case       = 0x81;
     TOKEN_cast       = 0x82;
@@ -312,13 +320,15 @@ write_token :: (writer: *Writer, token: Token)
     symbol: bool = false;
     if token.id == {
         case KAI_TOKEN_IDENTIFIER;
-        _write("Ident");
+            _write("Ident");
         case KAI_TOKEN_STRING;
-        _write("String");
+            _write("String");
         case KAI_TOKEN_NUMBER;
-        _write("Number");
+            _write("Number");
         case KAI_TOKEN_DIRECTIVE;
-        _write("Dir");
+            _write("Dir");
+        case KAI_TOKEN_TAG;
+            _write("Tag");
         case;
         symbol = true;
     }
@@ -348,6 +358,7 @@ token_string :: (id: Token_Id, dst: string) -> string
     case KAI_TOKEN_IDENTIFIER; ret string_copy_from_c(dst, "identifier");
     case KAI_TOKEN_NUMBER; ret string_copy_from_c(dst, "number");
     case KAI_TOKEN_DIRECTIVE; ret string_copy_from_c(dst, "directive");
+    case KAI_TOKEN_TAG; ret string_copy_from_c(dst, "tag");
     case KAI_TOKEN_STRING; ret string_copy_from_c(dst, "string");
     case KAI_TOKEN_break; ret string_copy_from_c(dst, "'break'");
     case KAI_TOKEN_case; ret string_copy_from_c(dst, "'case'");
@@ -510,6 +521,7 @@ _make_multi_token :: (context: *Tokenizer, t: *Token, current: u8) -> bool
 _W :: 1 << 1 | 1; // White space
 _T :: 2 << 1 | 1; // Character Token
 _D :: 3 << 1 | 1; // Directive
+_G :: 4 << 1 | 1; // Tag
 _K :: 1 << 1 | 0; // Keyword
 _N :: 2 << 1 | 0; // Number
 _C :: 5 << 1 | 1; // Comment
@@ -523,11 +535,21 @@ _token_lookup_table: [128] u8 = .{
    _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, _W, // 1
    _W, _T, _S, _D, _T, _T, _T, _T, _T, _T, _T, _T, _T, _T, _Z, _C, // 2
    _N, _N, _N, _N, _N, _N, _N, _N, _N, _N, _T, _T, _T, _T, _T, _T, // 3
-   _T,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 4
+   _G,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 4
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, _T, _T, _T, _T,  0, // 5
    _T,  0, _K, _K, _K, _K, _K,  0,  0, _K,  0,  0, _K,  0,  0,  0, // 6
     0,  0, _K, _K,  0, _K,  0, _K,  0,  0,  0, _T, _T, _T, _T, _W, // 7
 };
+
+_tokenizer_advance_to_identifier_end :: (context: *Tokenizer)
+{
+    while (context.cursor < context.source.count) {
+        c: u8 = context.source.data[context.cursor];
+        if c < 128 && (_token_lookup_table[c]&1)
+            break;
+        context.cursor += 1;
+    }
+}
 
 tokenizer_generate :: (context: *Tokenizer) -> Token
 {
@@ -547,21 +569,6 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
             where = _token_lookup_table[ch];
 
         if where == {
-        /////////////////////////////////////////////////////////////////////////////////
-        // Identifiers
-        case 0; {
-            token.id = KAI_TOKEN_IDENTIFIER;
-            start: u32 = context.cursor;
-            context.cursor += 1;
-            while (context.cursor < context.source.count) {
-                c: u8 = context.source.data[context.cursor];
-                if c < 128 && (_token_lookup_table[c]&1)
-                    break;
-                context.cursor += 1;
-            }
-            token.string.count = context.cursor - start;
-            ret token;
-        }
         /////////////////////////////////////////////////////////////////////////////////
         // Whitespace
         case _W; {
@@ -610,17 +617,35 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
             ret token;
         }
         /////////////////////////////////////////////////////////////////////////////////
+        // Identifiers
+        case 0; {
+            token.id = KAI_TOKEN_IDENTIFIER;
+            start: u32 = context.cursor;
+            context.cursor += 1;
+            _tokenizer_advance_to_identifier_end(context);
+            token.string.count = context.cursor - start;
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
         // Directives
         case _D; {
             token.id = KAI_TOKEN_DIRECTIVE;
             start: u32 = context.cursor;
             context.cursor += 1;
-            while (context.cursor < context.source.count) {
-                c: u8 = context.source.data[context.cursor];
-                if c < 128 && (_token_lookup_table[c]&1)
-                    break;
-                context.cursor += 1;
-            }
+            _tokenizer_advance_to_identifier_end(context);
+            token.string.count = context.cursor - start;
+            token.value.string = token.string;
+            token.value.string.count -= 1;
+            token.value.string.data += 1;
+            ret token;
+        }
+        /////////////////////////////////////////////////////////////////////////////////
+        // Tags
+        case _G; {
+            token.id = KAI_TOKEN_TAG;
+            start: u32 = context.cursor;
+            context.cursor += 1;
+            _tokenizer_advance_to_identifier_end(context);
             token.string.count = context.cursor - start;
             token.value.string = token.string;
             token.value.string.count -= 1;
@@ -1060,7 +1085,7 @@ _parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, expr:
     node.type = type;
     node.expr = expr;
     node.flags = flags;
-    ret node -> *Expr;
+    ret parse_tag_to_expr(parser, node -> *Expr);
 }
 _parser_create_assignment :: (parser: *Parser, op: u32, left: *Expr, expr: *Expr) -> *Expr
 {
@@ -1126,6 +1151,22 @@ _parser_create_compound :: (parser: *Parser, token: Token, body: *Stmt) -> *Expr
     node.line_number = token.line_number;
     node.head = body;
     ret node -> *Expr;
+}
+_parser_create_tag :: (parser: *Parser, token: Token) -> *Tag
+{
+    tag: *Tag = cast arena_allocate(*parser.arena, sizeof(Tag));
+    tag.name = token.value.string;
+    ret tag;
+}
+
+parse_tag_to_expr :: (parser: *Parser, expr: *Expr) -> *Expr
+{
+    peeked: *Token = _peek_token();
+    if peeked.id == KAI_TOKEN_TAG {
+        expr.tag = _parser_create_tag(parser, [peeked]);
+        _next_token(); // advance to tag
+    }
+    ret expr;
 }
 
 _is_procedure_next :: (parser: *Parser) -> bool

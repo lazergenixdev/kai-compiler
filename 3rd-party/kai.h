@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250906025136 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250923073346 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -1167,7 +1167,31 @@ KAI_API(Kai_u64) kai_memory_usage(Kai_Allocator* allocator);
 #define KAI__PREC_CAST 2304
 #define KAI__PREC_UNARY 4096
 
-static inline Kai_u32 kai_intrinsics_clz(Kai_u64 value)
+static inline Kai_u32 kai_intrinsics_clz32(Kai_u32 value)
+{
+#if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
+    return __builtin_clz(value);
+#elif defined(KAI_COMPILER_MSVC)
+    DWORD index;
+    if (_BitScanReverse(&index, value) == 0)
+        return 32;
+    return (Kai_u32)(31 - index);
+#endif
+}
+
+static inline Kai_u32 kai_intrinsics_ctz32(Kai_u32 value)
+{
+#if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
+    return __builtin_ctz(value);
+#elif defined(KAI_COMPILER_MSVC)
+    DWORD index;
+    if (_BitScanForward(&index, value) == 0)
+        return 32;
+    return (Kai_u32)(index);
+#endif
+}
+
+static inline Kai_u32 kai_intrinsics_clz64(Kai_u64 value)
 {
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
     return __builtin_clzll(value);
@@ -1179,7 +1203,7 @@ static inline Kai_u32 kai_intrinsics_clz(Kai_u64 value)
 #endif
 }
 
-static inline Kai_u32 kai_intrinsics_ctz(Kai_u64 value)
+static inline Kai_u32 kai_intrinsics_ctz64(Kai_u64 value)
 {
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
     return __builtin_ctzll(value);
@@ -1311,7 +1335,7 @@ KAI_INTERNAL void kai__explore_dependencies(Kai__DFS_Context* dfs, Kai_Node_Refe
 KAI_INTERNAL Kai_bool kai__generate_compilation_order(Kai_Compiler_Context* context);
 KAI_INTERNAL Kai_bool kai__error_fatal(Kai_Compiler_Context* context, Kai_string message);
 KAI_INTERNAL Kai_bool kai__value_to_number(Kai_Value value, Kai_Type_Info* type, Kai_Number* out_number);
-KAI_INTERNAL Kai_Value kai__evalate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b);
+KAI_INTERNAL Kai_Value kai__evaluate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b);
 KAI_INTERNAL Kai_bool kai__type_check(Kai_Compiler_Context* context, Kai_Expr* expr, Kai_Type_Info** out_or_expected);
 KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Kai_Expr* expr, Kai_Value* out_value, Kai_Type* out_type);
 KAI_INTERNAL Kai_Type kai__type_of_expression(Kai_Compiler_Context* context, Kai_Expr* expr);
@@ -1429,7 +1453,7 @@ KAI_INTERNAL Kai_u64 kai__mul_with_shift(Kai_u64 a, Kai_u64 b, Kai_s32* exp, Kai
     {
         return lo;
     }
-    Kai_s32 shift = 64-(Kai_s32)(kai_intrinsics_clz(hi));
+    Kai_s32 shift = 64-(Kai_s32)(kai_intrinsics_clz64(hi));
     if (sub)
     {
         *exp -= shift;
@@ -1697,8 +1721,8 @@ KAI_API(Kai_f64) kai_number_to_f64(Kai_Number number)
 
 KAI_API(Kai_Number) kai_number_normalize(Kai_Number number)
 {
-    Kai_s32 ns = kai_intrinsics_ctz(number.n);
-    Kai_s32 ds = kai_intrinsics_ctz(number.d);
+    Kai_s32 ns = kai_intrinsics_ctz64(number.n);
+    Kai_s32 ds = kai_intrinsics_ctz64(number.d);
     Kai_s32 ex = number.e+(ns-ds);
     Kai_u64 nu = (number.n)>>ns;
     Kai_u64 de = (number.d)>>ds;
@@ -1758,7 +1782,7 @@ KAI_API(Kai_Number) kai_number_div(Kai_Number a, Kai_Number b)
 KAI_API(Kai_Number) kai_number_pow_int(Kai_Number a, Kai_u32 exp)
 {
     Kai_Number r = a;
-    Kai_s32 i = 30-(Kai_s32)(kai_intrinsics_clz(exp));
+    Kai_s32 i = 30-(Kai_s32)(kai_intrinsics_clz32(exp));
     if (i>=0)
     {
         Kai_u32 bit = ((Kai_u32)(1))<<i;
@@ -2698,7 +2722,10 @@ KAI_INTERNAL void kai__write_tree(Kai__Tree_Traversal_Context* context, Kai_Expr
         break; case KAI_STMT_IF:
         {
             Kai_Stmt_If* i = (Kai_Stmt_If*)(expr);
-            kai__write_expr_id_with_name(writer, KAI_STRING("if"), expr);
+            Kai_string name = KAI_STRING("if");
+            if (i->flags&KAI_FLAG_IF_CASE)
+                name = KAI_STRING("if-case");
+            kai__write_expr_id_with_name(writer, name, expr);
             kai__write("\n");
             context->prefix = KAI_STRING("expr");
             kai__explore(i->expr, KAI_FALSE);
@@ -2774,7 +2801,7 @@ KAI_API(void) kai_write_number(Kai_Writer* writer, Kai_Number number)
     {
         kai__write("-");
     }
-    if ((Kai_u32)(number.e)<=kai_intrinsics_clz(number.n))
+    if ((Kai_u32)(number.e)<=kai_intrinsics_clz64(number.n))
     {
         kai__write_u64(kai_number_to_u64(number));
         return;
@@ -4894,7 +4921,7 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_graph(Kai_Compiler_Context* conte
             return KAI_TRUE;
     }
     if ((context->options).flags&KAI_COMPILE_DEBUG)
-        for (Kai_u32 i = 11; i < (context->nodes).count; ++i)
+        for (Kai_u32 i = 14; i < (context->nodes).count; ++i)
         {
             Kai_Node* node = &((context->nodes).data)[i];
             printf("node (%i) %.*s", i, ((node->location).string).count, ((node->location).string).data);
@@ -4978,7 +5005,7 @@ KAI_INTERNAL Kai_bool kai__generate_compilation_order(Kai_Compiler_Context* cont
     }
     if ((context->options).flags&KAI_COMPILE_DEBUG)
     {
-        for (Kai_u32 i = 22; i < (context->compilation_order).count; ++i)
+        for (Kai_u32 i = 28; i < (context->compilation_order).count; ++i)
         {
             Kai_u32 k = ((context->compilation_order).data)[i];
             Kai_u32 index = k>>1;
@@ -5035,7 +5062,7 @@ KAI_INTERNAL Kai_bool kai__value_to_number(Kai_Value value, Kai_Type_Info* type,
     }
 }
 
-KAI_INTERNAL Kai_Value kai__evalate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b)
+KAI_INTERNAL Kai_Value kai__evaluate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b)
 {
     switch (type->id)
     {
@@ -5090,6 +5117,10 @@ KAI_INTERNAL Kai_Value kai__evalate_binary_operation(Kai_u32 op, Kai_Type_Info* 
                 return ((Kai_Value){.number = kai_number_mul(a.number, b.number)});
                 break; case 47:
                 return ((Kai_Value){.number = kai_number_div(a.number, b.number)});
+                break; case 15420:
+                return ((Kai_Value){.number = kai_number_mul(a.number, ((Kai_Number){1, 1, (b.number).n, 0}))});
+                break; case 15934:
+                return ((Kai_Value){.number = kai_number_div(a.number, ((Kai_Number){1, 1, (b.number).n, 0}))});
             }
             kai__todo("number op = %i", op);
         }
@@ -5440,7 +5471,7 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
                 else
                     kai__error_fatal(context, KAI_STRING("invalid binary expression [todo]"));
             }
-            *out_value = kai__evalate_binary_operation(b->op, lt, lv, rv);
+            *out_value = kai__evaluate_binary_operation(b->op, lt, lv, rv);
             *out_type = lt;
             return KAI_FALSE;
         }
@@ -5920,6 +5951,10 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
                 printf("=> ");
                 switch ((node->type)->id)
                 {
+                    break; case KAI_TYPE_ID_NUMBER:
+                    {
+                        kai_write_number(writer, (node->value).number);
+                    }
                     break; case KAI_TYPE_ID_INTEGER:
                     {
                         Kai_Type_Info_Integer* info = (Kai_Type_Info_Integer*)(node->type);
@@ -5958,7 +5993,7 @@ KAI_INTERNAL Kai_bool kai__generate_compiler_ir(Kai_Compiler_Context* context)
 
 KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Program* out_program)
 {
-    Kai_Compiler_Context context = ((Kai_Compiler_Context){.error = info->error, .allocator = info->allocator, .program = out_program, .options = info->options, .imports = info->imports});
+    Kai_Compiler_Context context = ((Kai_Compiler_Context){.error = info->error, .allocator = info->allocator, .program = out_program, .options = info->options, .imports = info->imports, .debug_writer = kai_writer_stdout()});
     kai_arena_create(&context.type_allocator, &info->allocator);
     kai_arena_create(&context.temp_allocator, &info->allocator);
     if (!((info->options).flags&KAI_COMPILE_NO_CODE_GEN))
@@ -6033,8 +6068,8 @@ KAI_INTERNAL FILE* kai__stdc_file_open(char const* path, char const* mode) {
 #    define kai__stdc_file_open fopen
 #endif
 
-static Kai_cstring kai__term_debug_colors[5] = {
-    "\x1b[0;37m", "\x1b[1;97m", "\x1b[1;91m", "\x1b[1;94m", "\x1b[0;90m"
+static Kai_cstring kai__term_debug_colors[6] = {
+    "\x1b[0;37m", "\x1b[1;97m", "\x1b[1;91m", "\x1b[1;94m", "\x1b[0;90m", "\x1b[0;92m"
 };
 
 KAI_INTERNAL void kai__file_writer_write_value(void* user, Kai_u32 type, Kai_Value value, Kai_Write_Format format)

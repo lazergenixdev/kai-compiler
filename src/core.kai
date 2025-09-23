@@ -1375,10 +1375,9 @@ _write_assignment_operator_name :: (writer: *Writer, op: u32)
     }
 }
 
-_write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
+_write_tree_branches :: (context: *_Tree_Traversal_Context)
 {
     writer: *Writer = context.writer;
-
     _set_color(KAI_WRITE_COLOR_DECORATION);
     last: u32 = context.stack_count - 1;
     for i: 0..<context.stack_count {
@@ -1387,19 +1386,26 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         b: u32 = i == last;
         _write_string(_tree_branches[(a << 1) | b]);
     }
-
     if context.prefix.count > 0 {
         _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
         _write_string(context.prefix);
         _write(" ");
         context.prefix = string.{0};
     }
+}
+
+_write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
+{
+    writer: *Writer = context.writer;
+
+    _write_tree_branches(context);
     if expr == null {
         _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
         _write("null\n");
         _set_color(KAI_WRITE_COLOR_PRIMARY);
         ret;
     }
+    has_tag: bool = expr.tag != null;
     if expr.id == {
         case KAI_EXPR_IDENTIFIER; {
             _write_expr_id_with_name(writer, STRING("identifier"), expr);
@@ -1582,15 +1588,15 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         case KAI_STMT_DECLARATION; {
             d: *Stmt_Declaration = cast expr;
             _write_expr_id_with_name(writer, STRING("declaration"), expr);
-            if d.flags & KAI_FLAG_DECL_CONST _write(" CONST");
+            if d.flags & KAI_FLAG_DECL_CONST _write(" const");
             if d.flags & KAI_FLAG_DECL_EXPORT {
                 _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-                _write(" EXPORT");
+                _write(" export");
                 _set_color(KAI_WRITE_COLOR_PRIMARY);
             }
             if d.flags & KAI_FLAG_DECL_IMPORT {
                 _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-                _write(" IMPORT");
+                _write(" import");
                 _set_color(KAI_WRITE_COLOR_PRIMARY);
             }
             _write("\n");
@@ -1602,7 +1608,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
                 _explore(d.type, !has_expr);
             }
 
-            if has_expr _explore(d.expr, true);
+            if has_expr _explore(d.expr, !has_tag);
         }
         case KAI_STMT_ASSIGNMENT; {
             a: *Stmt_Assignment = cast expr;
@@ -1680,6 +1686,16 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write_u32(expr.id);
             _write(")\n");
         }
+    }
+    if has_tag {
+        _tree_traversal_push(context, true);
+        context.prefix = STRING("tag");
+        _write_tree_branches(context);
+        _set_color(KAI_WRITE_COLOR_SECONDARY);
+        _write_string(expr.tag.name);
+        _write("\n");
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _tree_traversal_pop(context);
     }
 }
 
