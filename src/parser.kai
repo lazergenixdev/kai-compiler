@@ -42,20 +42,21 @@ Control_Kind :: enum u8 {
 }
 
 Expr_Flags :: enum u8 {
-    FLAG_DECL_CONST    = 1 << 0;
-    FLAG_DECL_USING    = 1 << 1;
-    FLAG_EXPR_USING    = 1 << 1;
-    FLAG_PROC_USING    = 1 << 1;
-    FLAG_DECL_EXPORT   = 1 << 2;
-    FLAG_STRUCT_UNION  = 1 << 2;
-    FLAG_IF_CASE       = 1 << 2;
-    FLAG_FOR_LESS_THAN = 1 << 2;
-    FLAG_ARRAY_DYNAMIC = 1 << 2;
-    FLAG_DECL_IMPORT   = 1 << 3;
+    FLAG_DECL_CONST       = 1 << 0;
+    FLAG_DECL_USING       = 1 << 1;
+    FLAG_EXPR_USING       = 1 << 1;
+    FLAG_PROC_USING       = 1 << 1;
+    FLAG_DECL_EXPORT      = 1 << 2;
+    FLAG_STRUCT_UNION     = 1 << 2;
+    FLAG_IF_CASE          = 1 << 2;
+    FLAG_FOR_LESS_THAN    = 1 << 2;
+    FLAG_ARRAY_DYNAMIC    = 1 << 2;
+    FLAG_DECL_HOST_IMPORT = 1 << 3;
 }
 
 Tag :: struct {
     name : string;
+    expr : *Expr;
     next : *Tag;
 }
 
@@ -1152,19 +1153,53 @@ _parser_create_compound :: (parser: *Parser, token: Token, body: *Stmt) -> *Expr
     node.head = body;
     ret node -> *Expr;
 }
-_parser_create_tag :: (parser: *Parser, token: Token) -> *Tag
+_parser_create_tag :: (parser: *Parser, token: Token, expr: *Expr) -> *Tag
 {
     tag: *Tag = cast arena_allocate(*parser.arena, sizeof(Tag));
     tag.name = token.value.string;
+    tag.expr = expr;
     ret tag;
+}
+
+parse_procedure_call_arguments :: (parser: *Parser, arg_count: *u32) -> *Expr
+{
+    current: *Token = *parser.tokenizer.current_token;
+    args: Expr_List;
+
+    while current.id != #char ")"
+    {
+        expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+        _expect(expr, "in argument list", "an expression");
+        _linked_list_append(args, expr);
+        _expect([arg_count] < 255, "in argument list", "too many arguments");
+        [arg_count] += 1;
+        _next_token(); // skip expr
+        if current.id == #char ","
+            _next_token(); // skip ','
+        else if current.id != #char ")"
+            ret _unexpected("in argument list", "',' or ')' expected here");
+    }
+
+    ret args.head;
 }
 
 parse_tag_to_expr :: (parser: *Parser, expr: *Expr) -> *Expr
 {
     peeked: *Token = _peek_token();
     if peeked.id == KAI_TOKEN_TAG {
-        expr.tag = _parser_create_tag(parser, [peeked]);
+        token: Token = [peeked];
         _next_token(); // advance to tag
+
+        tag_expr: *Expr;
+        _peek_token();
+        if peeked.id == #char "(" {
+            _next_token(); // advance to '('
+            _next_token(); // skip '('
+            arg_count: u32;
+            tag_expr = parse_procedure_call_arguments(parser, *arg_count);
+        }
+
+        expr.tag = _parser_create_tag(parser, token, tag_expr);
     }
     ret expr;
 }
@@ -1460,24 +1495,9 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             left = _parser_create_binary(parser, left, right, op);
         }
         case KAI__OPERATOR_TYPE_PROCEDURE_CALL; {
-            args: Expr_List;
-            arg_count: u8;
-
-            while current.id != #char ")"
-            {
-                expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
-                _expect(expr, "in procedure call", "an expression");
-                _linked_list_append(args, expr);
-                _expect(arg_count != 255, "in procedure call", "too many inputs to procedure");
-                arg_count += 1;
-                _next_token(); // skip expr
-                if current.id == #char ","
-                    _next_token(); // skip ','
-                else if current.id != #char ")"
-                    ret _unexpected("in procedure call", "',' or ')' expected here");
-            }
-
-            left = _parser_create_procedure_call(parser, left, args.head, arg_count);
+            arg_count: u32;
+            args: *Expr = parse_procedure_call_arguments(parser, *arg_count);
+            left = _parser_create_procedure_call(parser, left, args, arg_count -> u8);
         }
         }
 
@@ -1723,11 +1743,11 @@ parse_declaration :: (parser: *Parser) -> *Stmt
     }
     _next_token(); // skip '=', ':', or ';'
 
-    // structs and procedures do not require semicolon
+    // enums, structs, procedures do not require semicolon
     require_semicolon: bool = false;
 
     if current.id == KAI_TOKEN_DIRECTIVE && string_equals(current.value.string, STRING("host_import")) {
-        flags |= KAI_FLAG_DECL_IMPORT;
+        flags |= KAI_FLAG_DECL_HOST_IMPORT;
         require_semicolon = true;
     }
     else if current.id == #char "(" && _is_procedure_next(parser) {

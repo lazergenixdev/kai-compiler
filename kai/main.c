@@ -22,7 +22,6 @@ typedef struct {
 Kai_Writer stdout_writer = {0};
 Kai_Writer* writer = &stdout_writer;
 Kai_Allocator allocator = {0};
-const char* program_name = "kai";
 
 static inline Kai_Source load_source_file(const char* path)
 {
@@ -40,11 +39,49 @@ static inline Kai_Source load_source_file(const char* path)
 	};
 }
 
+#define PARSE_NO_PRINT (1<<0)
+void help_parse()
+{
+    printf(
+        "Usage: kai parse [FLAGS] <files...>\n"
+        "\n"
+        "FLAGS:\n"
+        "   -p, --no-print   Do not print AST\n"
+        "\n"
+    );
+}
+
+#define COMPILE_NO_PRINT     (1<<0)
+#define COMPILE_SHOW_EXPORTS (1<<1)
+#define COMPILE_NO_CODE_GEN  (1<<2)
+void help_compile()
+{
+    printf(
+        "Usage: kai compile [FLAGS] <files...>\n"
+        "\n"
+        "FLAGS:\n"
+        "   -p, --no-print       Do not print compilation results\n"
+        "   -e, --show-exports   List all exported variables/procedures\n"
+        "   -c, --no-code-gen    Do not generate machine code\n"
+        "\n"
+    );
+}
+
 int help(int argc, char** argv)
 {
-    (void)argc, (void)argv;
+    if (argc > 0)
+    {
+        for (int i = 0; i < argc; ++i)
+        {
+            if (argv[i][0] == '-') continue;
+            if (strcmp(argv[i], "parse") == 0)   { help_parse(); continue; }
+            if (strcmp(argv[i], "compile") == 0) { help_compile(); continue; }
+            printf("no help info for \"%s\"\n", argv[i]);
+        }
+        return 1;
+    }
     printf(
-        "Usage: %s command [arguments...]\n"
+        "Usage: kai command [arguments...]\n"
         "\n"
         "   Commands:\n"
         "      help      Print help and exit (-h, --help, -?)\n"
@@ -53,7 +90,9 @@ int help(int argc, char** argv)
         "      parse     Parse file\n"
         "      bind      Generate host language bindings\n"
         "\n"
-    ,   program_name
+        "Examples:\n"
+        "    kai help <command>\n"
+        "\n"
     );
     return 1;
 }
@@ -85,8 +124,6 @@ int token(int argc, char** argv)
     }
     return 0;
 }
-
-#define PARSE_NO_PRINT (1<<0) // -p
 
 int parse(int argc, char** argv)
 {
@@ -219,10 +256,6 @@ void write_value_no_code_gen(Kai_Writer* writer, void* data, Kai_Type type)
     }
 }
 
-#define COMPILE_NO_PRINT     (1<<0) // -p
-#define COMPILE_SHOW_EXPORTS (1<<1) // -e
-#define COMPILE_NO_CODE_GEN  (1<<2) // -c
-
 int compile(int argc, char** argv)
 {
     if (argc == 0) return error_no_source_provided();
@@ -254,12 +287,6 @@ int compile(int argc, char** argv)
 
     if (!(parse_options & COMPILE_NO_PRINT))
     {
-        if (parse_options & COMPILE_SHOW_EXPORTS)
-        {
-            printf("\x1b[1;97mName");
-            space(32 - 4);
-            printf("Type\x1b[0m\n");
-        }
         hash_table_iterate(program.variable_table, i)
         {
             Kai_string name = program.variable_table.keys[i];
@@ -268,7 +295,9 @@ int compile(int argc, char** argv)
             if (parse_options & COMPILE_SHOW_EXPORTS)
             {
                 space(32 - name.count);
+                kai__set_color(KAI_WRITE_COLOR_TYPE);
                 kai_write_type(writer, var.type);
+                kai__set_color(KAI_WRITE_COLOR_PRIMARY);
                 printf("\n");
             }
             else write_value_no_code_gen(writer, program.data.data + var.location, var.type);
@@ -309,7 +338,7 @@ int bind(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    if (argc <= 1) return help(argc, argv);
+    if (argc <= 1) return help(0, 0);
     argc -= 2;
     argv += 2;
     stdout_writer = kai_writer_stdout();
@@ -328,5 +357,5 @@ int main(int argc, char** argv)
         printf("\x1b[1;97mKai v%.*s\x1b[0;90m (build %s)\x1b[0m\n", version.count, version.data, S2(KAI_BUILD_DATE));
         exit(0);
     }
-    return help(argc, argv);
+    return help(0, 0);
 }

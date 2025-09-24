@@ -551,6 +551,7 @@ Number :: struct {
     is_neg : u32;
 }
 
+// NOTE: Number must be normalized
 number_to_u64 :: (number: Number) -> u64
 {
     ret number.n << number.e;
@@ -1594,9 +1595,9 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
                 _write(" export");
                 _set_color(KAI_WRITE_COLOR_PRIMARY);
             }
-            if d.flags & KAI_FLAG_DECL_IMPORT {
+            if d.flags & KAI_FLAG_DECL_HOST_IMPORT {
                 _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-                _write(" import");
+                _write(" host_import");
                 _set_color(KAI_WRITE_COLOR_PRIMARY);
             }
             _write("\n");
@@ -1694,7 +1695,12 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         _set_color(KAI_WRITE_COLOR_SECONDARY);
         _write_string(expr.tag.name);
         _write("\n");
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+
+        current: *Expr = expr.tag.expr;
+        while current {
+            _explore(current, current.next == null);
+            current = current.next;
+        }
         _tree_traversal_pop(context);
     }
 }

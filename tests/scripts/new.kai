@@ -1,0 +1,29 @@
+
+#export BUILD_DATE     :: #host_import; @ignore
+#export VERSION_STRING :: #host_import; @ignore
+#export VERSION_MAJOR  :: #host_import; @ignore
+#export VERSION_MINOR  :: #host_import; @ignore
+#export VERSION_PATCH  :: #host_import; @ignore
+
+#export
+version_major :: () -> u32
+{
+    ret VERSION_MAJOR;
+}
+@doc_short ("Get version as string (includes extra version info)")
+
+// #export _write_u32 :: #host_import
+
+/*
+Memory :: struct {
+    size : u32;
+    data : *void;
+}
+*/
+
+//#export
+//version :: () -> [3] u32
+//{
+//    ret .{VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
+//}
+//@doc_short ("Get version as number")

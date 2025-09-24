@@ -1,20 +1,16 @@
 # TODO
-- [x] expression parser
-- [x] type parser
-- [x] procedure parser
-- [x] statement parser
-- [x] declaration parser
-- [x] module/file parser (top level)
-- [x] dependency graph generation (with small visualizer) (use stack of scopes)
-- [ ] option for saving AST in `Kai_Program`
+- [x] add tags (notes) to language parser
+- [x] add expression tags ()
+- [ ] add statement tags {}
+- [ ] add struct type generation to compiler
+- [ ] add multi-line string literals
+- [ ] create function to parse function call arguments (for use in parsing tags)
+- [ ] option for AST output in `Kai_Program` (need to place ast's somewhere)
 - [ ] add `#optional_export` and `#require_export` directives
-- [ ] type checker + code generation (nothing for now, so just type checker)
 - [ ] `#char` needs to do a utf8 decode and evaluate to the codepoint value
 - [ ] add `then` keyword
 - [ ] utility (function + commandline) to generate C/C++ bindings from script
 - [ ] measure performance impact of `occupied` in hash table
-- [ ] add multi-line string literals
-- [ ] add tags (notes) to language parser
 - [ ] figure out how to do multi declaration statements `a, b, c: int;`
 - [ ] need some kind of import handler from host
 - [ ] remove `;` from case statements?

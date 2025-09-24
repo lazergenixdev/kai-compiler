@@ -46,8 +46,11 @@ Variable :: struct {
 }
 
 Program :: struct {
-    data            : [..] u8;
-    code            : [] u8;
+    data            : [..] u8; // All exported program variables are stored here
+    code: union {
+        machine     : [] u8; // Machine code
+        trees       : [] Syntax_Tree;
+    };
     procedure_table : [string] u32;
     variable_table  : [string] Variable;
     type_table      : [string] Type;
@@ -137,7 +140,6 @@ Compiler_Context :: struct {
     allocator:           Allocator;
     program:            *Program;
     options:             Compile_Options;
-    trees:               [] Syntax_Tree;
     scopes:              [..] Scope;
     nodes:               [..] Node;
     local_nodes:         [..] Local_Node;
@@ -156,15 +158,15 @@ Compiler_Context :: struct {
 _create_syntax_trees :: (context: *Compiler_Context, sources: [] Source) -> bool
 {
     allocator: *Allocator = *context.allocator;
-    context.trees.data = _allocate(null, sources.count * sizeof(Syntax_Tree), 0) -> *Syntax_Tree;
-    context.trees.count = sources.count;
+    context.program.code.trees.data = _allocate(null, sources.count * sizeof(Syntax_Tree), 0) -> *Syntax_Tree;
+    context.program.code.trees.count = sources.count;
     for i: 0..<sources.count {
         info: Syntax_Tree_Create_Info = Syntax_Tree_Create_Info.{
             source = sources[i],
             allocator = context.allocator,
             error = context.error,
         };
-        if create_syntax_tree(*info, *array_last(*context.trees)) != KAI_SUCCESS
+        if create_syntax_tree(*info, *array_last(*context.program.code.trees)) != KAI_SUCCESS
             ret true;
     }
     ret false;
@@ -317,7 +319,7 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
             reference: Node_Reference = Node_Reference.{index = context.nodes.count};
             node: Node = Node.{location = location, expr = d.expr, type_expr = d.type};
 
-            if d.flags & KAI_FLAG_DECL_IMPORT
+            if d.flags & KAI_FLAG_DECL_HOST_IMPORT
                 node.flags |= KAI_NODE_IMPORT;
 
             if d.flags & KAI_FLAG_DECL_EXPORT
@@ -754,8 +756,8 @@ _generate_dependency_graph :: (context: *Compiler_Context) -> bool
         ret true;
 
     // Insert nodes from syntax tree
-    for i: 0..<context.trees.count {
-        tree: *Syntax_Tree = *context.trees.data[i];
+    for i: 0..<context.program.code.trees.count {
+        tree: *Syntax_Tree = *context.program.code.trees.data[i];
         context.current_source = tree.source;
 
         current: *Stmt = tree.root.head;
