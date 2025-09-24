@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250924011934 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250924080332 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -304,7 +304,6 @@ typedef KAI_SLICE(Kai_Type) Kai_Type_Slice;
 typedef KAI_SLICE(Kai_Struct_Field) Kai_Struct_Field_Slice;
 typedef KAI_DYNAMIC_ARRAY(Kai_u8) Kai_u8_DynArray;
 typedef KAI_SLICE(Kai_Source) Kai_Source_Slice;
-typedef KAI_SLICE(Kai_Native_Procedure) Kai_Native_Procedure_Slice;
 typedef KAI_SLICE(Kai_Import) Kai_Import_Slice;
 typedef KAI_SLICE(Kai_u8) Kai_u8_Slice;
 typedef KAI_SLICE(Kai_Syntax_Tree) Kai_Syntax_Tree_Slice;
@@ -982,8 +981,8 @@ enum {
 };
 
 struct Kai_Compile_Options {
-    Kai_u32 Interpreter_Max_Step_Count;
-    Kai_u32 Interpreter_Max_Call_Depth;
+    Kai_u32 interpreter_max_step_count;
+    Kai_u32 interpreter_max_call_depth;
     Kai_Compile_Flags flags;
 };
 
@@ -1001,10 +1000,9 @@ struct Kai_Import {
 
 struct Kai_Program_Create_Info {
     Kai_Source_Slice sources;
+    Kai_Import_Slice imports;
     Kai_Allocator allocator;
     Kai_Error* error;
-    Kai_Native_Procedure_Slice native_procedures;
-    Kai_Import_Slice imports;
     Kai_Compile_Options options;
 };
 
@@ -2284,6 +2282,8 @@ KAI_API(void) kai_write_type(Kai_Writer* writer, Kai_Type_Info* type)
             kai__write("id = ");
             kai__write_u32(type->id);
         }
+        break; case KAI_TYPE_ID_VOID:
+        kai__write("void");
         break; case KAI_TYPE_ID_TYPE:
         kai__write("#Type");
         break; case KAI_TYPE_ID_NUMBER:
@@ -2329,6 +2329,21 @@ KAI_API(void) kai_write_type(Kai_Writer* writer, Kai_Type_Info* type)
                     kai__write(", ");
             }
             kai__write(")");
+        }
+        break; case KAI_TYPE_ID_STRUCT:
+        {
+            Kai_Type_Info_Struct* info = (Kai_Type_Info_Struct*)(type);
+            kai__write("struct {");
+            for (Kai_u32 i = 0; i < (info->fields).count; ++i)
+            {
+                Kai_Struct_Field field = ((info->fields).data)[i];
+                kai__write_string(field.name);
+                kai__write(":");
+                kai_write_type(writer, field.type);
+                if (i!=(info->fields).count-1)
+                    kai__write("; ");
+            }
+            kai__write("}");
         }
     }
 }
@@ -4913,6 +4928,18 @@ KAI_INTERNAL Kai_bool kai__insert_type_dependencies(Kai_Compiler_Context* contex
                 current = current->next;
             }
         }
+        break; case KAI_EXPR_STRUCT:
+        {
+            Kai_Expr_Struct* s = (Kai_Expr_Struct*)(expr);
+            Kai_Stmt* current = s->head;
+            while (current)
+            {
+                if (kai__insert_value_dependencies(context, current))
+                    return KAI_TRUE;
+                current = current->next;
+            }
+            return KAI_FALSE;
+        }
         break; case KAI_EXPR_PROCEDURE_TYPE:
         {
             return KAI_FALSE;
@@ -4993,7 +5020,6 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_builtin_types(Kai_Compiler_Contex
 KAI_INTERNAL Kai_bool kai__generate_dependency_graph(Kai_Compiler_Context* context)
 {
     Kai_Allocator* allocator = &context->allocator;
-    (void)(allocator);
     kai_array_push(&context->scopes, ((Kai_Scope){.is_proc_scope = KAI_FALSE}));
     if (kai__generate_dependency_builtin_types(context))
         return KAI_TRUE;
@@ -5025,8 +5051,11 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_graph(Kai_Compiler_Context* conte
                 return KAI_TRUE;
         }
         (context->current_node).flags = KAI_NODE_TYPE;
-        if (node->type_expr!=NULL&&kai__insert_value_dependencies(context, node->type_expr))
-            return KAI_TRUE;
+        if (node->type_expr!=NULL)
+        {
+            if (kai__insert_value_dependencies(context, node->type_expr))
+                return KAI_TRUE;
+        }
     }
     if ((context->options).flags&KAI_COMPILE_DEBUG)
         for (Kai_u32 i = 14; i < (context->nodes).count; ++i)
@@ -5591,6 +5620,31 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
             out_value->ptr = expr;
             return KAI_FALSE;
         }
+        break; case KAI_EXPR_STRUCT:
+        {
+            Kai_Expr_Struct* s = (Kai_Expr_Struct*)(expr);
+            Kai_Type_Info_Struct* st = (Kai_Type_Info_Struct*)(kai_arena_allocate(&context->type_allocator, sizeof(Kai_Type_Info_Struct)));
+            st->id = KAI_TYPE_ID_STRUCT;
+            (st->fields).count = s->field_count;
+            (st->fields).data = (Kai_Struct_Field*)(kai_arena_allocate(&context->type_allocator, sizeof(Kai_Struct_Field)*(st->fields).count));
+            Kai_Expr* current = s->head;
+            for (Kai_u32 i = 0; i < s->field_count; ++i)
+            {
+                kai_assert(current->id==KAI_STMT_DECLARATION);
+                Kai_Stmt_Declaration* d = (Kai_Stmt_Declaration*)(current);
+                Kai_Type_Info* type = 0;
+                Kai_Value value = {0};
+                if (kai__value_of_expression(context, d->type, &value, &type))
+                    return KAI_TRUE;
+                if (type->id!=KAI_TYPE_ID_TYPE)
+                    return KAI_TRUE;
+                ((st->fields).data)[i] = ((Kai_Struct_Field){.name = d->name, .offset = 0, .type = value.type});
+                current = current->next;
+            }
+            out_value->type = (Kai_Type)(st);
+            *out_type = context->type_type;
+            return KAI_FALSE;
+        }
         break; case KAI_EXPR_PROCEDURE_TYPE:
         {
             Kai_Expr_Procedure_Type* p = (Kai_Expr_Procedure_Type*)(expr);
@@ -5762,7 +5816,8 @@ KAI_INTERNAL Kai_Type kai__type_of_expression(Kai_Compiler_Context* context, Kai
             }
             return (Kai_Type)(pt);
         }
-        break; case KAI_EXPR_PROCEDURE_TYPE:
+        break; case KAI_EXPR_STRUCT:
+        case KAI_EXPR_PROCEDURE_TYPE:
         {
             return context->type_type;
         }
@@ -5932,6 +5987,17 @@ KAI_INTERNAL Kai_u32 kai__type_size(Kai_Type_Info* type)
         {
             return sizeof(void*);
         }
+        break; case KAI_TYPE_ID_STRUCT:
+        {
+            Kai_Type_Info_Struct* info = (Kai_Type_Info_Struct*)(type);
+            Kai_u32 size = {0};
+            for (Kai_u32 i = 0; i < (info->fields).count; ++i)
+            {
+                Kai_Struct_Field field = ((info->fields).data)[i];
+                size += kai__type_size(field.type);
+            }
+            return size;
+        }
     }
     kai__todo("type.id = %i", type->id);
     return 0;
@@ -5996,6 +6062,9 @@ KAI_INTERNAL void kai__copy_value(Kai_u8* out, Kai_Type_Info* type, Kai_Value va
         case KAI_TYPE_ID_PROCEDURE:
         {
             *((void**)(out)) = value.ptr;
+        }
+        break; case KAI_TYPE_ID_STRUCT:
+        {
         }
         break; default:
         {

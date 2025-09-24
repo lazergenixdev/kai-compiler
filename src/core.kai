@@ -1226,6 +1226,7 @@ write_type :: (writer: *Writer, type: *Type_Info)
         _write("id = ");
         _write_u32(type.id);
     }
+    case KAI_TYPE_ID_VOID;    _write("void");
     case KAI_TYPE_ID_TYPE;    _write("#Type");
     case KAI_TYPE_ID_NUMBER;  _write("#Number");
     case KAI_TYPE_ID_BOOLEAN; _write("bool");
@@ -1259,23 +1260,19 @@ write_type :: (writer: *Writer, type: *Type_Info)
         }
         kai__write(")");
     }
-/*  
-    case KAI_TYPE_ID_STRUCT: {
-        Kai_Type_Info_Struct* info = void_Type;
-        kai__write("struct {");
-        for (Kai_u32 i = 0;;) {
-            kai__write_string(info->field_names[i]);
-            kai__write(":");
-            kai_write_type(writer, info->field_types[i]);
-            if (++i < info->field_count)
-            {
+    case KAI_TYPE_ID_STRUCT; {
+        info: *Type_Info_Struct = cast type;
+        _write("struct {");
+        for i: 0..<info.fields.count {
+            field: Struct_Field = info.fields.data[i];
+            _write_string(field.name);
+            _write(":");
+            write_type(writer, field.type);
+            if (i != info.fields.count - 1)
                 kai__write("; ");
-            }
-            else break;
         }
-        kai__write("}");
+        _write("}");
     }
-*/
     }
 }
 

@@ -35,4 +35,12 @@ int main()
     {
         write_expression((Kai_Expr*)&program.code.trees.data[i].root);
     }
+
+    Kai_Type type = {0};
+    kai_find_variable(&program, KAI_STRING("a"), &type);
+
+    default_writer()->set_color(0, KAI_WRITE_COLOR_TYPE);
+    kai_write_type(default_writer(), type);
+    printf("\n");
+    default_writer()->set_color(0, KAI_WRITE_COLOR_PRIMARY);
 }

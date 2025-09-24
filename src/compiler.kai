@@ -6,9 +6,9 @@ Compile_Flags :: enum u32 {
 }
 
 Compile_Options :: struct {
-    Interpreter_Max_Step_Count : u32; // default = 1000000
-    Interpreter_Max_Call_Depth : u32; // default = 1024
-    flags : Compile_Flags;
+    interpreter_max_step_count : u32; // default(0) => 1000000
+    interpreter_max_call_depth : u32; // default(0) => 1024
+    flags                      : Compile_Flags;
 }
 
 Native_Procedure :: struct {
@@ -33,10 +33,9 @@ P_Resolve_Import :: #proc (user: *void, name: string, out_source: *Source) -> Re
 
 Program_Create_Info :: struct {
     sources           : [] Source;
+    imports           : [] Import;
     allocator         : Allocator;
     error             : *Error;
-    native_procedures : [] Native_Procedure;
-    imports           : [] Import;
     options           : Compile_Options;
 }
 
@@ -383,6 +382,8 @@ add_dependency :: (context: *Compiler_Context, ref: Node_Reference)
     array_push(deps, ref);
 }
 
+// Insert dependency for the value of an expression.
+// In other words, the current_node will depend on the VALUE of `expr`
 _insert_value_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
 {
     allocator: *Allocator = *context.allocator;
@@ -562,6 +563,9 @@ _insert_value_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
 
     ret false;
 }
+
+// Insert dependency for the type of an expression.
+// In other words, the current_node will depend on the TYPE of `expr`
 _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
 {
     if expr == null { kai__todo("null expression\n"); }
@@ -605,13 +609,23 @@ _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
     
     case KAI_EXPR_PROCEDURE; {
         p: *Expr_Procedure = cast expr;
-
         current: *Expr = p.in_out_expr;
         while current != null {
             // Depend on the value of each type in procedure type
             if _insert_value_dependencies(context, current) ret true;
             current = current.next;
         }
+    }
+
+    case KAI_EXPR_STRUCT; {
+        s: *Expr_Struct = cast expr;
+        current: *Stmt = s.head;
+        while current {
+            // Depend on the value of each type in struct
+            if _insert_value_dependencies(context, current) ret true;
+            current = current.next;
+        }
+        ret false;
     }
     
     case KAI_EXPR_PROCEDURE_TYPE; {
@@ -747,7 +761,6 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
 _generate_dependency_graph :: (context: *Compiler_Context) -> bool
 {
     allocator: *Allocator = *context.allocator;
-    allocator->void;
     
     // Initialize Global Scope
     array_push(*context.scopes, Scope.{ is_proc_scope = false });
@@ -785,8 +798,10 @@ _generate_dependency_graph :: (context: *Compiler_Context) -> bool
         }
 
         context.current_node.flags = KAI_NODE_TYPE;
-        if node.type_expr != null && _insert_value_dependencies(context, node.type_expr)
-            ret true;
+        if node.type_expr != null {
+            if _insert_value_dependencies(context, node.type_expr)
+                ret true;
+        }
     }
 
     if context.options.flags & KAI_COMPILE_DEBUG
@@ -1343,6 +1358,38 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             out_value.ptr = expr;
             ret false;
         }
+
+        case KAI_EXPR_STRUCT; {
+            s: *Expr_Struct = cast expr;
+            st: *Type_Info_Struct = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Struct));
+            st.id = KAI_TYPE_ID_STRUCT;
+            // TODO: need to calculate real field count
+            st.fields.count = s.field_count;
+            st.fields.data = arena_allocate(*context.type_allocator, sizeof(Struct_Field) * st.fields.count) -> *Struct_Field;
+
+            current: *Expr = s.head;
+            for i: 0..<s.field_count {
+                assert(current.id == KAI_STMT_DECLARATION);
+                d: *Stmt_Declaration = cast current;
+
+                type: *Type_Info;
+                value: Value;
+                if _value_of_expression(context, d.type, *value, *type)
+                    ret true;
+                if type.id != KAI_TYPE_ID_TYPE
+                    ret true;
+                st.fields.data[i] = Struct_Field.{
+                    name = d.name,
+                    offset = 0, // TODO
+                    type = value.type,
+                };
+                current = current.next;
+            }
+
+            out_value.type = st -> Type;
+            [out_type] = context.type_type;
+            ret false;
+        }
         
         case KAI_EXPR_PROCEDURE_TYPE; {
             p: *Expr_Procedure_Type = cast expr;
@@ -1516,6 +1563,7 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
             ret pt -> Type;
         }
         
+        case KAI_EXPR_STRUCT; #through;
         case KAI_EXPR_PROCEDURE_TYPE; {
             ret context.type_type;
         }
@@ -1696,6 +1744,15 @@ _type_size :: (type: *Type_Info) -> u32
         case KAI_TYPE_ID_PROCEDURE; {
             ret sizeof(*void);
         }
+        case KAI_TYPE_ID_STRUCT; {
+            info: *Type_Info_Struct = cast type;
+            size: u32;
+            for i: 0..<info.fields.count {
+                field: Struct_Field = info.fields.data[i];
+                size += _type_size(field.type);
+            }
+            ret size;
+        }
     }
 
     kai__todo("type.id = %i", type.id);
@@ -1740,6 +1797,9 @@ _copy_value :: (out: *u8, type: *Type_Info, value: Value)
         case KAI_TYPE_ID_POINTER; #through;
         case KAI_TYPE_ID_PROCEDURE; {
             [out -> **void] = value.ptr;
+        }
+        case KAI_TYPE_ID_STRUCT; {
+            // TODO: need to copy from pointer here
         }
         case; {
             kai__todo("type.id = %i", type.id);

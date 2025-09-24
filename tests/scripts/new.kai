@@ -14,12 +14,25 @@ version_major :: () -> u32
 
 // #export _write_u32 :: #host_import
 
-/*
+Range :: struct {
+    start: u32;
+    count: u32;
+}
+
 Memory :: struct {
     size : u32;
     data : *void;
 }
-*/
+
+string :: struct {
+    count: u32;
+    data: *u8;
+}
+
+_range_to_string :: (range: Range, memory: Memory) -> string
+{
+    //ret 0;
+}
 
 //#export
 //version :: () -> [3] u32
