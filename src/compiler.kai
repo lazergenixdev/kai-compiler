@@ -149,6 +149,7 @@ Compiler_Context :: struct {
     current_source:      Source;
     current_node:        Node_Reference;
     number_type:        *Type_Info;
+    string_type:        *Type_Info;
     type_type:          *Type_Info;
     bool_type:          *Type_Info;
     debug_writer:        Writer;
@@ -351,6 +352,19 @@ _lookup_node :: (context: *Compiler_Context, name: string) -> Node_Reference
     for i: 0..<context.scopes.count {
         ri: u32 = context.scopes.count - 1 - i;
         scope: *Scope = *context.scopes.data[ri];
+
+        // TODO: fix hash tables
+        /*printf("\x1b[92mLooking in scope %i for (%.*s), capacity: %i\x1b[0m\n", ri, name.count->s32, name.data, scope.identifiers.capacity->s32);
+        for i: 0..<scope.identifiers.capacity {
+            occupied: u64 = scope.identifiers.occupied[i/64];
+            if occupied & (1->u64 << (i % 64))
+            {
+                key: string = scope.identifiers.keys[i];
+                ref: Node_Reference = scope.identifiers.values[i];
+                printf("(%.*s) %02i : %i\n", key.count->s32, key.data, i->s32, ref.index->s32);
+            }
+        }*/
+
         k: int = table_find(*scope.identifiers, name);
         if k == -1 continue;
         ret scope.identifiers.values[k];
@@ -778,6 +792,7 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
     string_type.fields.data[0] = Struct_Field.{name = STRING("count"), offset = 0, type = uint_type};
     string_type.fields.data[1] = Struct_Field.{name = STRING("data"), offset = sizeof(uint), type = pu8_type->Type};
     array_push(*context.nodes, Node.{type = type_type, value = Value.{type = string_type->Type}, flags = KAI_NODE_EVALUATED});
+    context.string_type = string_type -> Type;
     ret false;
 }
 
@@ -1299,11 +1314,23 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             ret false;
         }
 
+        case KAI_EXPR_STRING; {
+            s: *Expr_String = cast expr;
+            [out_value] = Value.{string = s.value};
+            [out_type] = context.string_type;
+            ret false;
+        }
+
         case KAI_EXPR_SPECIAL; {
             s: *Expr_Special = cast expr;
             if s.kind == {
                 case KAI_SPECIAL_TYPE; {
                     out_value.type = context.type_type;
+                    [out_type] = context.type_type;
+                    ret false;
+                }
+                case KAI_SPECIAL_NUMBER; {
+                    out_value.type = context.number_type;
                     [out_type] = context.type_type;
                     ret false;
                 }
@@ -1500,12 +1527,13 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
         }
 
         case KAI_EXPR_STRING; {
-            kai__todo("strings");
+            ret context.string_type;
         }
 
         case KAI_EXPR_SPECIAL; {
             s: *Expr_Special = cast expr;
             if s.kind == {
+                case KAI_SPECIAL_NUMBER; #through;
                 case KAI_SPECIAL_TYPE; {
                     ret context.type_type;
                 }

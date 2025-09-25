@@ -1,9 +1,9 @@
 
-#export BUILD_DATE     :: #host_import; @macro(ignore)
-#export VERSION_STRING :: #host_import; @macro(ignore)
-#export VERSION_MAJOR  :: #host_import; @macro(ignore)
-#export VERSION_MINOR  :: #host_import; @macro(ignore)
-#export VERSION_PATCH  :: #host_import; @macro(ignore)
+BUILD_DATE     :: #host_import; @ignore
+VERSION_STRING :: #host_import; @ignore
+VERSION_MAJOR  :: #host_import; @ignore
+VERSION_MINOR  :: #host_import; @ignore
+VERSION_PATCH  :: #host_import; @ignore
 
 #export
 version_string :: () -> string
@@ -47,7 +47,6 @@ version :: () -> /* [3] */ u32
     name:     string;
     contents: string;
 }
-
 /*
 #export Location :: struct {
     source : Source; // source code for this file // TODO: *u8 -> string

@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250925035302 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250925054050 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -1077,6 +1077,7 @@ struct Kai_Compiler_Context {
     Kai_Source current_source;
     Kai_Node_Reference current_node;
     Kai_Type_Info* number_type;
+    Kai_Type_Info* string_type;
     Kai_Type_Info* type_type;
     Kai_Type_Info* bool_type;
     Kai_Writer debug_writer;
@@ -2340,7 +2341,7 @@ KAI_API(void) kai_write_type(Kai_Writer* writer, Kai_Type_Info* type)
         break; case KAI_TYPE_ID_STRUCT:
         {
             Kai_Type_Info_Struct* info = (Kai_Type_Info_Struct*)(type);
-            kai__write("struct {");
+            kai__write("{");
             for (Kai_u32 i = 0; i < (info->fields).count; ++i)
             {
                 Kai_Struct_Field field = ((info->fields).data)[i];
@@ -5145,6 +5146,7 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_builtin_types(Kai_Compiler_Contex
     ((string_type->fields).data)[0] = ((Kai_Struct_Field){.name = KAI_STRING("count"), .offset = 0, .type = uint_type});
     ((string_type->fields).data)[1] = ((Kai_Struct_Field){.name = KAI_STRING("data"), .offset = sizeof(Kai_uint), .type = (Kai_Type)(pu8_type)});
     kai_array_push(&context->nodes, ((Kai_Node){.type = type_type, .value = ((Kai_Value){.type = (Kai_Type)(string_type)}), .flags = KAI_NODE_EVALUATED}));
+    context->string_type = (Kai_Type)(string_type);
     return KAI_FALSE;
 }
 
@@ -5671,6 +5673,13 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
             *out_type = context->number_type;
             return KAI_FALSE;
         }
+        break; case KAI_EXPR_STRING:
+        {
+            Kai_Expr_String* s = (Kai_Expr_String*)(expr);
+            *out_value = ((Kai_Value){.string = s->value});
+            *out_type = context->string_type;
+            return KAI_FALSE;
+        }
         break; case KAI_EXPR_SPECIAL:
         {
             Kai_Expr_Special* s = (Kai_Expr_Special*)(expr);
@@ -5679,6 +5688,12 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
                 break; case KAI_SPECIAL_TYPE:
                 {
                     out_value->type = context->type_type;
+                    *out_type = context->type_type;
+                    return KAI_FALSE;
+                }
+                break; case KAI_SPECIAL_NUMBER:
+                {
+                    out_value->type = context->number_type;
                     *out_type = context->type_type;
                     return KAI_FALSE;
                 }
@@ -5858,14 +5873,15 @@ KAI_INTERNAL Kai_Type kai__type_of_expression(Kai_Compiler_Context* context, Kai
         }
         break; case KAI_EXPR_STRING:
         {
-            kai__todo("strings");
+            return context->string_type;
         }
         break; case KAI_EXPR_SPECIAL:
         {
             Kai_Expr_Special* s = (Kai_Expr_Special*)(expr);
             switch (s->kind)
             {
-                break; case KAI_SPECIAL_TYPE:
+                break; case KAI_SPECIAL_NUMBER:
+                case KAI_SPECIAL_TYPE:
                 {
                     return context->type_type;
                 }

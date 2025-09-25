@@ -100,6 +100,10 @@ WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)
     return (result != KAI_SUCCESS);
 }
 
+static Kai_Import imports[] = {
+    {.name = KAI_STRING("print"), .type = KAI_STRING("s32"), .value = {}},
+};
+
 WASM_EXPORT int compile_show_typed_ast(Kai_u8* data, Kai_u32 count)
 {
 	Kai_Writer* writer = &div_writer;
@@ -111,6 +115,7 @@ WASM_EXPORT int compile_show_typed_ast(Kai_u8* data, Kai_u32 count)
         .allocator = allocator,
         .error = &error,
         .sources = { .count = 1, .data = &source },
+        .imports = { .count = 1, .data = imports },
 		.options = { .flags = KAI_COMPILE_NO_CODE_GEN },
     };
     kai_create_program(&info, &program);
@@ -139,6 +144,7 @@ WASM_EXPORT int compile_show_exports(Kai_u8* data, Kai_u32 count)
         .allocator = allocator,
         .error = &error,
         .sources = { .count = 1, .data = &source },
+        .imports = { .count = 1, .data = imports },
 		.options = { .flags = KAI_COMPILE_NO_CODE_GEN },
     };
     kai_create_program(&info, &program);
@@ -149,7 +155,9 @@ WASM_EXPORT int compile_show_exports(Kai_u8* data, Kai_u32 count)
         {
             Kai_string name = program.variable_table.keys[i];
             Kai_Variable var = program.variable_table.values[i];
+            kai__set_color(KAI_WRITE_COLOR_SECONDARY);
             kai__write_string(name);
+            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
             kai__write(" = ");
             kai_write_value(writer, program.data.data + var.location, var.type);
             kai__set_color(KAI_WRITE_COLOR_PRIMARY);
