@@ -304,7 +304,7 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
 
         scope: *Scope = *array_last(*context.scopes);
 
-        // Does this declaration already exist for this Scope?
+        // Check redefinition
         {
             index: int = table_find(*scope.identifiers, d.name);
             if index != -1 {
@@ -313,7 +313,7 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
                 ret _error_redefinition(context, location, reference.index);
             }
         }
-
+        // Push node onto scope
         {
             reference: Node_Reference = Node_Reference.{index = context.nodes.count};
             node: Node = Node.{location = location, expr = d.expr, type_expr = d.type};
@@ -327,10 +327,6 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
             array_push(*node.value_dependencies, Node_Reference.{flags = KAI_NODE_TYPE, index = reference.index});
             array_push(*context.nodes, node);
             table_set(*scope.identifiers, d.name, reference);
-        }
-
-        if d.expr != null {
-            ret _create_nodes(context, d.expr);
         }
         ret false;
     }
@@ -688,12 +684,18 @@ _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
 
 _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
 {
+    //
+    // TODO: There must be a better solution than this.
+    // I think it would probably be better to have all
+    // this pre-setup in static memory.
+    //
+
     allocator: *Allocator = *context.allocator;
     scope: *Scope = *array_last(*context.scopes);
     ref: Node_Reference;
     ref.index = context.nodes.count;
 
-//  table_set(*scope.identifiers, STRING("Type"),     Node_Reference.{index = context.nodes.count});
+    // #Type
     table_set(*scope.identifiers, STRING("void"),     Node_Reference.{index = context.nodes.count+1});
     table_set(*scope.identifiers, STRING("s8"),       Node_Reference.{index = context.nodes.count+2});
     table_set(*scope.identifiers, STRING("s16"),      Node_Reference.{index = context.nodes.count+3});
@@ -706,7 +708,8 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
     table_set(*scope.identifiers, STRING("f32"),      Node_Reference.{index = context.nodes.count+10});
     table_set(*scope.identifiers, STRING("f64"),      Node_Reference.{index = context.nodes.count+11});
     table_set(*scope.identifiers, STRING("bool"),     Node_Reference.{index = context.nodes.count+12});
-//  table_set(*scope.identifiers, STRING("$Number"),  Node_Reference.{index = context.nodes.count+13}); // Compiler Internal
+    // #Number
+    table_set(*scope.identifiers, STRING("string"),   Node_Reference.{index = context.nodes.count+14});
 
     type_type: *Type_Info = cast arena_allocate(*context.type_allocator, sizeof(Type_Info));
     type_type.id = KAI_TYPE_ID_TYPE;
@@ -727,12 +730,20 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
         bits *= 2;
     }
 
+    u8_type: Type;
+    u32_type: Type;
     bits = 8;
     while bits <= 64 {
         type: *Type_Info_Integer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Integer));
         type.id = KAI_TYPE_ID_INTEGER;
         type.is_signed = false;
         type.bits = bits;
+        if bits == 32 {
+            u32_type = type->Type;
+        }
+        if bits == 8 {
+            u8_type = type->Type;
+        }
         array_push(*context.nodes, Node.{type = type_type, value = Value.{type = type->Type}, flags = KAI_NODE_EVALUATED});
         bits *= 2;
     }
@@ -755,6 +766,18 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
     number_type.id = KAI_TYPE_ID_NUMBER;
     array_push(*context.nodes, Node.{type = type_type, value = Value.{type = number_type}, flags = KAI_NODE_EVALUATED});
     context.number_type = number_type;
+
+    pu8_type: *Type_Info_Pointer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Pointer));
+    pu8_type.id = KAI_TYPE_ID_POINTER;
+    pu8_type.sub_type = u8_type;
+    string_type: *Type_Info_Struct = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Struct));
+    string_type.id = KAI_TYPE_ID_STRUCT;
+    string_type.size = sizeof(u32) + sizeof(*u8);
+    string_type.fields.count = 2;
+    string_type.fields.data = arena_allocate(*context.type_allocator, string_type.fields.count * sizeof(Struct_Field)) -> *Struct_Field;
+    string_type.fields.data[0] = Struct_Field.{name = STRING("count"), offset = 0, type = u32_type};
+    string_type.fields.data[1] = Struct_Field.{name = STRING("data"), offset = 4, type = pu8_type->Type};
+    array_push(*context.nodes, Node.{type = type_type, value = Value.{type = string_type->Type}, flags = KAI_NODE_EVALUATED});
     ret false;
 }
 
@@ -1366,6 +1389,7 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             // TODO: need to calculate real field count
             st.fields.count = s.field_count;
             st.fields.data = arena_allocate(*context.type_allocator, sizeof(Struct_Field) * st.fields.count) -> *Struct_Field;
+            st.size = 0;
 
             current: *Expr = s.head;
             for i: 0..<s.field_count {
@@ -1378,11 +1402,13 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
                     ret true;
                 if type.id != KAI_TYPE_ID_TYPE
                     ret true;
+
                 st.fields.data[i] = Struct_Field.{
                     name = d.name,
-                    offset = 0, // TODO
+                    offset = st.size,
                     type = value.type,
                 };
+                st.size += _type_size(value.type);
                 current = current.next;
             }
 
@@ -1746,12 +1772,7 @@ _type_size :: (type: *Type_Info) -> u32
         }
         case KAI_TYPE_ID_STRUCT; {
             info: *Type_Info_Struct = cast type;
-            size: u32;
-            for i: 0..<info.fields.count {
-                field: Struct_Field = info.fields.data[i];
-                size += _type_size(field.type);
-            }
-            ret size;
+            ret info.size;
         }
     }
 
@@ -1799,7 +1820,11 @@ _copy_value :: (out: *u8, type: *Type_Info, value: Value)
             [out -> **void] = value.ptr;
         }
         case KAI_TYPE_ID_STRUCT; {
-            // TODO: need to copy from pointer here
+            info: *Type_Info_Struct = cast type;
+            if info.size <= sizeof(Value)
+                memcpy(out, value.inline_struct, info.size);
+            else
+                memcpy(out, value.ptr, info.size);
         }
         case; {
             kai__todo("type.id = %i", type.id);

@@ -1,14 +1,14 @@
 
-#export BUILD_DATE     :: #host_import; @ignore
-#export VERSION_STRING :: #host_import; @ignore
-#export VERSION_MAJOR  :: #host_import; @ignore
-#export VERSION_MINOR  :: #host_import; @ignore
-#export VERSION_PATCH  :: #host_import; @ignore
+#export BUILD_DATE     :: #host_import; @macro(ignore)
+#export VERSION_STRING :: #host_import; @macro(ignore)
+#export VERSION_MAJOR  :: #host_import; @macro(ignore)
+#export VERSION_MINOR  :: #host_import; @macro(ignore)
+#export VERSION_PATCH  :: #host_import; @macro(ignore)
 
 #export
-version_major :: () -> u32
+version_string :: () -> string
 {
-    ret VERSION_MAJOR;
+    ret VERSION_STRING;
 }
 @doc_short ("Get version as string (includes extra version info)")
 
@@ -22,16 +22,6 @@ Range :: struct {
 Memory :: struct {
     size : u32;
     data : *void;
-}
-
-string :: struct {
-    count: u32;
-    data: *u8;
-}
-
-_range_to_string :: (range: Range, memory: Memory) -> string
-{
-    //ret 0;
 }
 
 //#export

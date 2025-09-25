@@ -535,6 +535,7 @@ Struct_Field :: struct {
 
 Type_Info_Struct :: struct {
     using Type_Info;
+    size: u32;
     fields: [] Struct_Field;
 }
 
@@ -829,6 +830,8 @@ Value :: union {
     type: *Type_Info;
     procedure: *void;
     number: Number;
+    string: string;
+    inline_struct: [24] u8; // NOTE: make sure this matches union size
 }
 
 
@@ -1273,6 +1276,83 @@ write_type :: (writer: *Writer, type: *Type_Info)
         }
         _write("}");
     }
+    }
+}
+
+write_value :: (writer: *Writer, data: *void, type: *Type_Info)
+{
+    if type.id == {
+        case KAI_TYPE_ID_TYPE; {
+            t: *Type = cast data;
+            _set_color(KAI_WRITE_COLOR_TYPE);
+            kai_write_type(writer, [t]);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+        }
+        case KAI_TYPE_ID_VOID; _write("nothing");
+        case KAI_TYPE_ID_BOOLEAN; {
+            value: bool = [data->*bool];
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            if (value) _write("true");
+            else       _write("false");
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+        }
+        case KAI_TYPE_ID_INTEGER; {
+            value: union { u: u64; s: s64; };
+            i: *Type_Info_Integer = cast type;
+            if i.bits == {
+                case 8;  value.u = [data->*u8];
+                case 16; value.u = [data->*u16];
+                case 32; value.u = [data->*u32];
+                case 64; value.u = [data->*u64];
+            }
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            if (i.is_signed) _write_s64(value.s);
+            else             _write_u64(value.u);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+        }
+        case KAI_TYPE_ID_FLOAT; {
+            f: *Type_Info_Float = cast type;
+            kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
+            if f.bits == {
+                case 32; _write_f64([data->*f32]->f64);
+                case 64; _write_f64([data->*f64]);
+            }
+            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+        }
+        case KAI_TYPE_ID_POINTER; #through;
+        case KAI_TYPE_ID_PROCEDURE; {
+            value: uint = [data->*uint];
+            fmt: Write_Format = Write_Format.{
+                fill_character = #char "0",
+                min_count = 2 * sizeof(uint),
+                flags = KAI_WRITE_FLAGS_HEXIDECIMAL,
+            };
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            _write("0x");
+            writer.write_value(writer.user, KAI_U64, Value.{u64 = value->u64}, fmt);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+        }
+        case KAI_TYPE_ID_ARRAY; {
+            _write("[todo array]");
+        }
+        case KAI_TYPE_ID_STRUCT; {
+            s: *Type_Info_Struct = cast type;
+            _write("{");
+            for i: 0..<s.fields.count {
+                field: Struct_Field = s.fields.data[i];
+                _write_string(field.name);
+                _write(" = ");
+                write_value(writer, data + field.offset, field.type);
+                if i != s.fields.count - 1 {
+                    _write(", ");
+                }
+            }
+            _write("}");
+        }
+        case KAI_TYPE_ID_NUMBER; #through;
+        case; {
+            _write("[todo]");
+        }
     }
 }
 
