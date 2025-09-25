@@ -16,6 +16,8 @@ void check_procedure(Kai_Program* program, Kai_string name)
 
 int main()
 {
+    Kai_Writer* writer = default_writer();
+
     Kai_Program program = {0};
     Kai_Source sources[] = { load_source_file("scripts/new.kai") };
     Kai_Import imports[] = {
@@ -25,6 +27,7 @@ int main()
         {.name = KAI_CONST_STRING("VERSION_MINOR"),  .type = KAI_CONST_STRING("u32"), .value = {.u32 = 1}},
         {.name = KAI_CONST_STRING("VERSION_PATCH"),  .type = KAI_CONST_STRING("u32"), .value = {.u32 = 0}},
     };
+    //printf("(%p)", imports[1].value.string.data);
     Kai_Program_Create_Info info = {
         .allocator = default_allocator(),
         .error = default_error(),
@@ -42,13 +45,11 @@ int main()
     }
 */
 
-    Kai_Writer* writer = default_writer();
-
     hash_table_iterate(program.variable_table, i)
     {
         Kai_string name = program.variable_table.keys[i];
         Kai_Variable var = program.variable_table.values[i];
-        printf("%.*s = ", name.count, name.data);
+        printf("%.*s = ", (int)(name.count), name.data);
         kai_write_value(writer, program.data.data + var.location, var.type);
         kai__write(" [");
         kai__set_color(KAI_WRITE_COLOR_TYPE);

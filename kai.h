@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250925015600 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250925022612 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -200,7 +200,7 @@ enum {
 };
 typedef  intptr_t Kai_int;
 typedef uintptr_t Kai_uint;
-typedef struct { Kai_u32 count; Kai_u8* data; } Kai_string;
+typedef struct { Kai_uint count; Kai_u8* data; } Kai_string;
 typedef const char* Kai_cstring;
 
 typedef Kai_u32 Kai_Primitive_Type;
@@ -427,7 +427,8 @@ enum {
     KAI_TYPE_ID_PROCEDURE = 6,
     KAI_TYPE_ID_ARRAY = 7,
     KAI_TYPE_ID_STRUCT = 8,
-    KAI_TYPE_ID_NUMBER = 9,
+    KAI_TYPE_ID_STRING = 9,
+    KAI_TYPE_ID_NUMBER = 10,
 };
 
 struct Kai_Type_Info {
@@ -2334,6 +2335,8 @@ KAI_API(void) kai_write_type(Kai_Writer* writer, Kai_Type_Info* type)
             }
             kai__write(")");
         }
+        break; case KAI_TYPE_ID_STRING:
+        kai__write("string");
         break; case KAI_TYPE_ID_STRUCT:
         {
             Kai_Type_Info_Struct* info = (Kai_Type_Info_Struct*)(type);
@@ -2423,6 +2426,15 @@ KAI_API(void) kai_write_value(Kai_Writer* writer, void* data, Kai_Type_Info* typ
         break; case KAI_TYPE_ID_ARRAY:
         {
             kai__write("[todo array]");
+        }
+        break; case KAI_TYPE_ID_STRING:
+        {
+            Kai_string value = *((Kai_string*)(data));
+            kai__write("\"");
+            kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
+            kai__write_string(value);
+            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+            kai__write("\"");
         }
         break; case KAI_TYPE_ID_STRUCT:
         {
@@ -5086,7 +5098,7 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_builtin_types(Kai_Compiler_Contex
         bits *= 2;
     }
     Kai_Type u8_type = {0};
-    Kai_Type u32_type = {0};
+    Kai_Type uint_type = {0};
     bits = 8;
     while (bits<=64)
     {
@@ -5094,9 +5106,9 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_builtin_types(Kai_Compiler_Contex
         type->id = KAI_TYPE_ID_INTEGER;
         type->is_signed = KAI_FALSE;
         type->bits = bits;
-        if (bits==32)
+        if (bits==8*sizeof(Kai_uint))
         {
-            u32_type = (Kai_Type)(type);
+            uint_type = (Kai_Type)(type);
         }
         if (bits==8)
         {
@@ -5126,12 +5138,12 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_builtin_types(Kai_Compiler_Contex
     pu8_type->id = KAI_TYPE_ID_POINTER;
     pu8_type->sub_type = u8_type;
     Kai_Type_Info_Struct* string_type = (Kai_Type_Info_Struct*)(kai_arena_allocate(&context->type_allocator, sizeof(Kai_Type_Info_Struct)));
-    string_type->id = KAI_TYPE_ID_STRUCT;
-    string_type->size = sizeof(Kai_u32)+sizeof(Kai_u8*);
+    string_type->id = KAI_TYPE_ID_STRING;
+    string_type->size = sizeof(Kai_uint)+sizeof(Kai_u8*);
     (string_type->fields).count = 2;
     (string_type->fields).data = (Kai_Struct_Field*)(kai_arena_allocate(&context->type_allocator, (string_type->fields).count*sizeof(Kai_Struct_Field)));
-    ((string_type->fields).data)[0] = ((Kai_Struct_Field){.name = KAI_STRING("count"), .offset = 0, .type = u32_type});
-    ((string_type->fields).data)[1] = ((Kai_Struct_Field){.name = KAI_STRING("data"), .offset = 4, .type = (Kai_Type)(pu8_type)});
+    ((string_type->fields).data)[0] = ((Kai_Struct_Field){.name = KAI_STRING("count"), .offset = 0, .type = uint_type});
+    ((string_type->fields).data)[1] = ((Kai_Struct_Field){.name = KAI_STRING("data"), .offset = sizeof(Kai_uint), .type = (Kai_Type)(pu8_type)});
     kai_array_push(&context->nodes, ((Kai_Node){.type = type_type, .value = ((Kai_Value){.type = (Kai_Type)(string_type)}), .flags = KAI_NODE_EVALUATED}));
     return KAI_FALSE;
 }
@@ -5180,7 +5192,7 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_graph(Kai_Compiler_Context* conte
         for (Kai_u32 i = 14; i < (context->nodes).count; ++i)
         {
             Kai_Node* node = &((context->nodes).data)[i];
-            printf("node (%i) %.*s", i, ((node->location).string).count, ((node->location).string).data);
+            printf("node (%i) %.*s", i, (Kai_s32)(((node->location).string).count), ((node->location).string).data);
             for (Kai_u32 i = 0; i < 32-((node->location).string).count; ++i)
                 putchar(32);
             printf(" V{ ");
@@ -6108,7 +6120,8 @@ KAI_INTERNAL Kai_u32 kai__type_size(Kai_Type_Info* type)
         {
             return sizeof(void*);
         }
-        break; case KAI_TYPE_ID_STRUCT:
+        break; case KAI_TYPE_ID_STRING:
+        case KAI_TYPE_ID_STRUCT:
         {
             Kai_Type_Info_Struct* info = (Kai_Type_Info_Struct*)(type);
             return info->size;
@@ -6178,6 +6191,10 @@ KAI_INTERNAL void kai__copy_value(Kai_u8* out, Kai_Type_Info* type, Kai_Value va
         {
             *((void**)(out)) = value.ptr;
         }
+        break; case KAI_TYPE_ID_STRING:
+        {
+            *((Kai_string*)(out)) = value.string;
+        }
         break; case KAI_TYPE_ID_STRUCT:
         {
             Kai_Type_Info_Struct* info = (Kai_Type_Info_Struct*)(type);
@@ -6221,7 +6238,7 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
         {
             if ((context->options).flags&KAI_COMPILE_DEBUG)
             {
-                printf("compiling typeof(%.*s)\n", ((node->location).string).count, ((node->location).string).data);
+                printf("compiling typeof(%.*s)\n", (Kai_s32)(((node->location).string).count), ((node->location).string).data);
             }
             if (kai__compile_node_type(context, node))
                 return KAI_TRUE;
@@ -6236,7 +6253,7 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
         {
             if ((context->options).flags&KAI_COMPILE_DEBUG)
             {
-                printf("compiling (%.*s)\n", ((node->location).string).count, ((node->location).string).data);
+                printf("compiling (%.*s)\n", (Kai_s32)(((node->location).string).count), ((node->location).string).data);
             }
             if (!(node->flags&KAI_NODE_IMPORT))
             {

@@ -473,7 +473,7 @@ void generate_all_primitive_types(String_Builder* builder)
 	shput(g_identifier_map, "uint", Identifier_Type_Type);
 
 	// String
-	sb_appendf(builder, STRUCT_TEMPLATE, "Kai_u32 count; Kai_u8* data;", "string");
+	sb_appendf(builder, STRUCT_TEMPLATE, "Kai_uint count; Kai_u8* data;", "string");
 	shput(g_identifier_map, "string", Identifier_Type_Struct);
 	shput(g_struct_map, "string", NULL);
 	
@@ -1220,7 +1220,7 @@ void generate_all_struct_definitions(String_Builder* builder, Kai_Stmt_Compound*
 					sb_append(builder, "KAI_");
 				else
 					sb_appendf(builder, "KAI_%s_", temp_cstr_upper(decl->name));
-				generate_expression(builder, ass->left, TOP_PRECEDENCE, NONE);
+				generate_expression(builder, ass->left, TOP_PRECEDENCE, NO_RENAME);
 				ASSERT(ass->op == '=');
 				sb_append(builder, " = ");
 				generate_expression(builder, ass->expr, TOP_PRECEDENCE, NONE);

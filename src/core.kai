@@ -488,8 +488,9 @@ Type_Id :: enum u8 {
     PROCEDURE = 6;
     ARRAY     = 7;
     STRUCT    = 8;
+    STRING    = 9;
     // compiler internal only
-    NUMBER    = 9;
+    NUMBER    = 10;
 }
 
 Type :: *Type_Info;
@@ -1263,6 +1264,7 @@ write_type :: (writer: *Writer, type: *Type_Info)
         }
         kai__write(")");
     }
+    case KAI_TYPE_ID_STRING; _write("string");
     case KAI_TYPE_ID_STRUCT; {
         info: *Type_Info_Struct = cast type;
         _write("struct {");
@@ -1334,6 +1336,14 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
         }
         case KAI_TYPE_ID_ARRAY; {
             _write("[todo array]");
+        }
+        case KAI_TYPE_ID_STRING;  {
+            value: string = [data->*string];
+            _write("\"");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            _write_string(value); // TODO: print with escapes
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write("\"");
         }
         case KAI_TYPE_ID_STRUCT; {
             s: *Type_Info_Struct = cast type;

@@ -731,15 +731,15 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
     }
 
     u8_type: Type;
-    u32_type: Type;
+    uint_type: Type;
     bits = 8;
     while bits <= 64 {
         type: *Type_Info_Integer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Integer));
         type.id = KAI_TYPE_ID_INTEGER;
         type.is_signed = false;
         type.bits = bits;
-        if bits == 32 {
-            u32_type = type->Type;
+        if bits == 8*sizeof(uint) {
+            uint_type = type->Type;
         }
         if bits == 8 {
             u8_type = type->Type;
@@ -771,12 +771,12 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
     pu8_type.id = KAI_TYPE_ID_POINTER;
     pu8_type.sub_type = u8_type;
     string_type: *Type_Info_Struct = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Struct));
-    string_type.id = KAI_TYPE_ID_STRUCT;
-    string_type.size = sizeof(u32) + sizeof(*u8);
+    string_type.id = KAI_TYPE_ID_STRING;
+    string_type.size = sizeof(uint) + sizeof(*u8);
     string_type.fields.count = 2;
     string_type.fields.data = arena_allocate(*context.type_allocator, string_type.fields.count * sizeof(Struct_Field)) -> *Struct_Field;
-    string_type.fields.data[0] = Struct_Field.{name = STRING("count"), offset = 0, type = u32_type};
-    string_type.fields.data[1] = Struct_Field.{name = STRING("data"), offset = 4, type = pu8_type->Type};
+    string_type.fields.data[0] = Struct_Field.{name = STRING("count"), offset = 0, type = uint_type};
+    string_type.fields.data[1] = Struct_Field.{name = STRING("data"), offset = sizeof(uint), type = pu8_type->Type};
     array_push(*context.nodes, Node.{type = type_type, value = Value.{type = string_type->Type}, flags = KAI_NODE_EVALUATED});
     ret false;
 }
@@ -830,7 +830,7 @@ _generate_dependency_graph :: (context: *Compiler_Context) -> bool
     if context.options.flags & KAI_COMPILE_DEBUG
     for i: 14..<context.nodes.count {
         node: *Node = *context.nodes.data[i];
-        printf("node (%i) %.*s", i, node.location.string.count, node.location.string.data);
+        printf("node (%i) %.*s", i, node.location.string.count->s32, node.location.string.data);
         for i: 0..<(32 - node.location.string.count) putchar(#char " ");
         printf(" V{ ");
         for j: 0..<node.value_dependencies.count {
@@ -1770,6 +1770,7 @@ _type_size :: (type: *Type_Info) -> u32
         case KAI_TYPE_ID_PROCEDURE; {
             ret sizeof(*void);
         }
+        case KAI_TYPE_ID_STRING; #through;
         case KAI_TYPE_ID_STRUCT; {
             info: *Type_Info_Struct = cast type;
             ret info.size;
@@ -1819,6 +1820,9 @@ _copy_value :: (out: *u8, type: *Type_Info, value: Value)
         case KAI_TYPE_ID_PROCEDURE; {
             [out -> **void] = value.ptr;
         }
+        case KAI_TYPE_ID_STRING; {
+            [out -> *string] = value.string;   
+        }
         case KAI_TYPE_ID_STRUCT; {
             info: *Type_Info_Struct = cast type;
             if info.size <= sizeof(Value)
@@ -1862,7 +1866,7 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
 
         if ref.flags & KAI_NODE_TYPE {
             if context.options.flags & KAI_COMPILE_DEBUG {
-                printf("compiling typeof(%.*s)\n", node.location.string.count, node.location.string.data);
+                printf("compiling typeof(%.*s)\n", node.location.string.count->s32, node.location.string.data);
             }
             if _compile_node_type(context, node)
                 ret true;
@@ -1874,7 +1878,7 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
         }
         else {
             if context.options.flags & KAI_COMPILE_DEBUG {
-                printf("compiling (%.*s)\n", node.location.string.count, node.location.string.data);
+                printf("compiling (%.*s)\n", node.location.string.count->s32, node.location.string.data);
             }
             if !(node.flags & KAI_NODE_IMPORT) {
                 if _compile_node_value(context, node)
