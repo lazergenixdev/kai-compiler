@@ -13,7 +13,7 @@
 
 // Detect Platform
 
-#if defined(__WASM__)
+#if defined(__wasm__)
 #   define KAI_PLATFORM_WASM
 #elif defined(_WIN32)
 #	define KAI_PLATFORM_WINDOWS
@@ -28,7 +28,7 @@
 
 // Detect Architecture
 
-#if defined(__WASM__)
+#if defined(__wasm__)
 #	define KAI_MACHINE_WASM// God bless your soul 🙏
 #elif defined(__x86_64__) || defined(_M_X64)
 #	define KAI_MACHINE_X86_64

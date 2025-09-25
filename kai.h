@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250925022612 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250925035302 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -42,7 +42,7 @@ extern "C" {
 
 // Detect Platform
 
-#if defined(__WASM__)
+#if defined(__wasm__)
 #   define KAI_PLATFORM_WASM
 #elif defined(_WIN32)
 #	define KAI_PLATFORM_WINDOWS
@@ -57,7 +57,7 @@ extern "C" {
 
 // Detect Architecture
 
-#if defined(__WASM__)
+#if defined(__wasm__)
 #	define KAI_MACHINE_WASM// God bless your soul 🙏
 #elif defined(__x86_64__) || defined(_M_X64)
 #	define KAI_MACHINE_X86_64
@@ -1252,7 +1252,7 @@ static inline Kai_u32 kai_intrinsics_ctz64(Kai_u64 value)
 // 128 bit integers (unsigned)
 
 // Always use fallback when compiling for WASM
-#if defined(__WASM__) && !defined(KAI_NO_INTRINSIC_128)
+#if defined(__wasm__) && !defined(KAI_NO_INTRINSIC_128)
 #	define KAI_NO_INTRINSIC_128
 #endif
 
@@ -2430,11 +2430,11 @@ KAI_API(void) kai_write_value(Kai_Writer* writer, void* data, Kai_Type_Info* typ
         break; case KAI_TYPE_ID_STRING:
         {
             Kai_string value = *((Kai_string*)(data));
-            kai__write("\"");
             kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
-            kai__write_string(value);
-            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
             kai__write("\"");
+            kai__write_string(value);
+            kai__write("\"");
+            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
         }
         break; case KAI_TYPE_ID_STRUCT:
         {

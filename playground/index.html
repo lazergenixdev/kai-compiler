@@ -148,8 +148,9 @@
 </body>
 
 	<script type="module">
-		const SYNTAX_TREE        = 0;
-		const COMPILE_NO_CODEGEN = 1;
+		const SYNTAX_TREE  = 0;
+		const TYPED_AST    = 1;
+		const SHOW_EXPORTS = 2;
 		
 		let c = null; // functions we defined in C!
 		let c_memory = null;
@@ -451,8 +452,11 @@ inc :: (n: s32) -> s32 {
 					case SYNTAX_TREE:
 						result = c.create_syntax_tree(scratch_buffer, encodedString.byteLength);
 					break;
-					case COMPILE_NO_CODEGEN:
-						result = c.compile_no_code_gen(scratch_buffer, encodedString.byteLength);
+					case TYPED_AST:
+						result = c.compile_show_typed_ast(scratch_buffer, encodedString.byteLength);
+					break;
+					case SHOW_EXPORTS:
+						result = c.compile_show_exports(scratch_buffer, encodedString.byteLength);
 					break;
 					default:
 						throw new Error(`unknown casse (${mode.value})`);

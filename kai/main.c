@@ -52,8 +52,7 @@ void help_parse()
 }
 
 #define COMPILE_NO_PRINT     (1<<0)
-#define COMPILE_SHOW_EXPORTS (1<<1)
-#define COMPILE_NO_CODE_GEN  (1<<2)
+#define COMPILE_NO_CODE_GEN  (1<<1)
 void help_compile()
 {
     printf(
@@ -61,7 +60,6 @@ void help_compile()
         "\n"
         "FLAGS:\n"
         "   -p, --no-print       Do not print compilation results\n"
-        "   -e, --show-exports   List all exported variables/procedures\n"
         "   -c, --no-code-gen    Do not generate machine code\n"
         "\n"
     );
@@ -157,105 +155,6 @@ int parse(int argc, char** argv)
 	return error.result != KAI_SUCCESS;
 }
 
-//! TODO: Move this to be part of kai API
-void write_value_no_code_gen(Kai_Writer* writer, void* data, Kai_Type type)
-{
-    switch (type->id)
-    {
-    case KAI_TYPE_ID_TYPE: {
-        Kai_Type type = *(Kai_Type*)data;
-        kai__write(" = ");
-        kai__set_color(KAI_WRITE_COLOR_TYPE);
-        kai_write_type(writer, type);
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write("\n");
-    } break;
-    case KAI_TYPE_ID_BOOLEAN: {
-        Kai_bool value = *(Kai_bool*)data;
-        kai__write(" = ");
-        kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
-        if (value) kai__write("true");
-        else       kai__write("false");
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write(" [");
-        kai__set_color(KAI_WRITE_COLOR_TYPE);
-        kai_write_type(writer, type);
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write("]\n");
-    } break;
-    case KAI_TYPE_ID_POINTER: {
-        uintptr_t expr = *(uintptr_t*)data;
-        Kai_Write_Format fmt = {
-            .fill_character = '0',
-            .min_count = 16,
-            .flags = KAI_WRITE_FLAGS_HEXIDECIMAL
-        };
-        kai__write(" = ");
-        kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
-        writer->write_value(writer->user, KAI_U64, (Kai_Value){.u64 = expr}, fmt);
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write(" [");
-        kai__set_color(KAI_WRITE_COLOR_TYPE);
-        kai_write_type(writer, type);
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write("]\n");
-    } break;
-    case KAI_TYPE_ID_PROCEDURE: {
-        Kai_Expr* expr = *(Kai_Expr**)data;
-        kai__write("\n");
-        kai_write_expression(writer, expr, 1);
-    } break;
-    case KAI_TYPE_ID_INTEGER: {
-        union { Kai_u64 u; Kai_s64 s; } value;
-        Kai_Type_Info_Integer* i = (Kai_Type_Info_Integer*)type;
-        if (i->is_signed)
-        switch (i->bits)
-        {
-        case 8:  value.s = *(Kai_s8*)data;
-        case 16: value.s = *(Kai_s16*)data;
-        case 32: value.s = *(Kai_s32*)data;
-        case 64: value.s = *(Kai_s64*)data;
-        }
-        else switch (i->bits)
-        {
-        case 8:  value.u = *(Kai_u8*)data;
-        case 16: value.u = *(Kai_u16*)data;
-        case 32: value.u = *(Kai_u32*)data;
-        case 64: value.u = *(Kai_u64*)data;
-        }
-        kai__write(" = ");
-        kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
-        if (i->is_signed) kai__write_s64(value.s);
-        else              kai__write_u64(value.u);
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write(" [");
-        kai__set_color(KAI_WRITE_COLOR_TYPE);
-        kai_write_type(writer, type);
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write("]\n");
-    } break;
-    case KAI_TYPE_ID_FLOAT: {
-        Kai_Type_Info_Float* f = (Kai_Type_Info_Float*)type;
-        kai__write(" = ");
-        kai__set_color(KAI_WRITE_COLOR_IMPORTANT);
-        switch (f->bits)
-        {
-        case 32: kai__write_f64((Kai_f64)(*(Kai_f32*)data)); break;
-        case 64: kai__write_f64(*(Kai_f64*)data); break;
-        }
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write(" [");
-        kai__set_color(KAI_WRITE_COLOR_TYPE);
-        kai_write_type(writer, type);
-        kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-        kai__write("]\n");
-    } break;
-    default: {
-        kai__write(" [unknown value type]\n");
-    } break;
-    }
-}
-
 int compile(int argc, char** argv)
 {
     if (argc == 0) return error_no_source_provided();
@@ -266,8 +165,6 @@ int compile(int argc, char** argv)
             // -> Possible Flag
             if (strcmp(argv[i]+1, "p") == 0)
                 parse_options |= COMPILE_NO_PRINT;
-            else if (strcmp(argv[i]+1, "e") == 0)
-                parse_options |= COMPILE_SHOW_EXPORTS;
         }
         else {
             source_start = i;
@@ -291,16 +188,15 @@ int compile(int argc, char** argv)
         {
             Kai_string name = program.variable_table.keys[i];
             Kai_Variable var = program.variable_table.values[i];
-            printf("%.*s", name.count, name.data);
-            if (parse_options & COMPILE_SHOW_EXPORTS)
-            {
-                space(32 - name.count);
-                kai__set_color(KAI_WRITE_COLOR_TYPE);
-                kai_write_type(writer, var.type);
-                kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-                printf("\n");
-            }
-            else write_value_no_code_gen(writer, program.data.data + var.location, var.type);
+            kai__write_string(name);
+            kai__write(" = ");
+            kai_write_value(writer, program.data.data + var.location, var.type);
+            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+            kai__write(" [");
+            kai__set_color(KAI_WRITE_COLOR_TYPE);
+            kai_write_type(writer, var.type);
+            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+            kai__write("]\n");
         }
     }
 	if (error.result != KAI_SUCCESS) {
@@ -354,7 +250,8 @@ int main(int argc, char** argv)
     if (strcmp(argv[-1], "version") == 0)
     {
         Kai_string version = kai_version_string();
-        printf("\x1b[1;97mKai v%.*s\x1b[0;90m (build %s)\x1b[0m\n", version.count, version.data, S2(KAI_BUILD_DATE));
+        printf("\x1b[1;97mKai v%.*s\x1b[0;90m (build %s)\x1b[0m\n",
+            (int)(version.count), version.data, S2(KAI_BUILD_DATE));
         exit(0);
     }
     return help(0, 0);

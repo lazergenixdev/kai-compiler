@@ -477,7 +477,7 @@ void generate_all_primitive_types(String_Builder* builder)
 	shput(g_identifier_map, "string", Identifier_Type_Struct);
 	shput(g_struct_map, "string", NULL);
 	
-	// String
+	// C String
 	sb_appendf(builder, "typedef const char* Kai_%s;\n", "cstring");
 	shput(g_identifier_map, "cstring", Identifier_Type_Type);
 	
@@ -1702,7 +1702,7 @@ void compile_playground(void)
 		cmd_append(&cmd, executable("clang"));
 		cmd_append(&cmd, "-Wall", "-Wextra");
 		cmd_append(&cmd, "-O2");
-		cmd_append(&cmd, "--target=wasm32", "-D__WASM__", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic"/* , "-Wl,--allow-undefined" */);
+		cmd_append(&cmd, "--target=wasm32", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic");
 		cmd_append(&cmd, "lib.c");
 		cmd_append(&cmd, "-o", "lib.wasm");
 		exit_on_fail(cmd_run_sync_and_reset(&cmd));

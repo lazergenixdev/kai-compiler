@@ -17,7 +17,6 @@ void check_procedure(Kai_Program* program, Kai_string name)
 int main()
 {
     Kai_Writer* writer = default_writer();
-
     Kai_Program program = {0};
     Kai_Source sources[] = { load_source_file("scripts/new.kai") };
     Kai_Import imports[] = {

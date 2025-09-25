@@ -21,13 +21,47 @@ version :: () -> /* [3] */ u32
 
 // #export _write_u32 :: #host_import
 
-Range :: struct {
+#export Result :: u32;
+//{
+//    SUCCESS        = 0;
+//    ERROR_MEMORY   = 1; // allocator failed
+//    ERROR_SYNTAX   = 2;
+//    ERROR_SEMANTIC = 3;
+//    ERROR_INFO     = 4;
+//    ERROR_FATAL    = 5; // means compiler bug probably
+//    ERROR_INTERNAL = 6; // means compiler error unrelated to source code (e.g. out of memory)
+//    RESULT_COUNT   = 7;
+//}
+
+#export Range :: struct {
     start: u32;
     count: u32;
 }
 
-Memory :: struct {
+#export Memory :: struct {
     size : u32;
     data : *void;
 }
 
+#export Source :: struct {
+    name:     string;
+    contents: string;
+}
+
+/*
+#export Location :: struct {
+    source : Source; // source code for this file // TODO: *u8 -> string
+    string : string;
+    line   : u32;
+}
+
+/*
+#export Error :: struct {
+    result    : Result;
+    location  : Location;
+    message   : string;
+    context   : string;
+    memory    : Memory;
+    next      : *Error;
+}
+*/

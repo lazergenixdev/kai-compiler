@@ -1339,11 +1339,11 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
         }
         case KAI_TYPE_ID_STRING;  {
             value: string = [data->*string];
-            _write("\"");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
-            _write_string(value); // TODO: print with escapes
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
             _write("\"");
+            _write_string(value); // TODO: print with escapes
+            _write("\"");
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
         }
         case KAI_TYPE_ID_STRUCT; {
             s: *Type_Info_Struct = cast type;

@@ -49,7 +49,7 @@ static inline Kai_u32 kai_intrinsics_ctz64(Kai_u64 value)
 // 128 bit integers (unsigned)
 
 // Always use fallback when compiling for WASM
-#if defined(__WASM__) && !defined(KAI_NO_INTRINSIC_128)
+#if defined(__wasm__) && !defined(KAI_NO_INTRINSIC_128)
 #	define KAI_NO_INTRINSIC_128
 #endif
 
