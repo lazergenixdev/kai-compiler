@@ -69,7 +69,7 @@ Source :: struct {
 }
 
 Location :: struct {
-    source : Source; // source code for this file // TODO: *u8 -> string
+    source : Source; // source code for this file
     string : string;
     line   : u32;
 }
@@ -336,6 +336,7 @@ Hash_Table_Size :: struct {
     total    : u32;
 }
 
+// Calculate size required for hash table
 raw_hash_table_size :: (capacity: u32, elem_size: u32) -> Hash_Table_Size
 {
     r: Hash_Table_Size;
@@ -681,7 +682,7 @@ number_add_same_exp :: (a: Number, b: Number) -> Number
     de: u64 = _mul_with_shift(a.d, b.d, *ex, 1);
     nu: u64;
 
-    // Handle resulting sign, TODO: simplify
+    // Handle resulting sign
     is_neg: u32 = a.is_neg & b.is_neg;
     if a.is_neg && !b.is_neg {
         if t0 > t1 { nu = t0 - t1; is_neg = 1; } // -5 + 1
@@ -1264,6 +1265,13 @@ write_type :: (writer: *Writer, type: *Type_Info)
         }
         kai__write(")");
     }
+    case KAI_TYPE_ID_ARRAY; {
+        info: *Type_Info_Array = cast type;
+        _write("[");
+        _write_u32(info.rows);
+        _write("] ");
+        write_type(writer, info.sub_type);
+    }
     case KAI_TYPE_ID_STRING; _write("string");
     case KAI_TYPE_ID_STRUCT; {
         info: *Type_Info_Struct = cast type;
@@ -1271,7 +1279,7 @@ write_type :: (writer: *Writer, type: *Type_Info)
         for i: 0..<info.fields.count {
             field: Struct_Field = info.fields.data[i];
             _write_string(field.name);
-            _write(":");
+            _write(": ");
             write_type(writer, field.type);
             if (i != info.fields.count - 1)
                 kai__write("; ");
@@ -1359,7 +1367,12 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
             }
             _write("}");
         }
-        case KAI_TYPE_ID_NUMBER; #through;
+        case KAI_TYPE_ID_NUMBER; {
+            value: Number = [data->*Number];
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            kai_write_number(writer, value);
+            _set_color(KAI_WRITE_COLOR_PRIMARY);
+        }
         case; {
             _write("[todo]");
         }

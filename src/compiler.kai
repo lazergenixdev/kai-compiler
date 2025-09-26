@@ -641,34 +641,18 @@ _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
     case KAI_EXPR_PROCEDURE_TYPE; {
         ret false; // always a type
     }
-/*
-    break; case KAI_EXPR_PROCEDURE_CALL: {
-        Kai_Expr_Procedure_Call* node = base;
 
-        result = kai__dg_insert_type_dependencies(
-            Context,
-            out_Dependency_Array,
-            Scope_Index,
-            node->proc
-        );
-        if (result != KAI_SUCCESS)
-            return result;
-
-        Kai_Expr current = node->arg_head;
-        while (current != NULL) {
-            result = kai__dg_insert_value_dependencies(
-                Context,
-                out_Dependency_Array,
-                Scope_Index,
-                current,
-                KAI_FALSE // TODO: possible bug here ??
-            );
-            if (result != KAI_SUCCESS)
-                return result;
-            current = current->next;
+    case KAI_EXPR_PROCEDURE_CALL; {
+        p: *Expr_Procedure_Call = cast expr;
+        if _insert_type_dependencies(context, p.proc) ret true;
+        current: *Expr = p.arg_head;
+        while current {
+            // Depend on the value of each type in struct
+            if _insert_value_dependencies(context, current) ret true;
+            current = current.next;
         }
     }
-
+/*
     break; case KAI_STMT_DECLARATION: {
         // What do we do here exactly?
         kai__todo("declaration\n");
@@ -1321,6 +1305,43 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             ret false;
         }
 
+        case KAI_EXPR_ARRAY; {
+            a: *Expr_Array = cast expr;
+
+            type: *Type_Info;
+            ev: Value;
+            et: *Type_Info;
+            if _value_of_expression(context, a.expr, *ev, *et)
+                ret true;
+
+            assert(et.id == KAI_TYPE_ID_TYPE);
+                
+            rv: Value;
+            if a.rows != null {
+                rt: *Type_Info;
+                if _value_of_expression(context, a.rows, *rv, *rt)
+                    ret true;
+                
+                if rt.id == KAI_TYPE_ID_NUMBER {
+                    ai: *Type_Info_Array = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Array));
+                    ai.id = KAI_TYPE_ID_ARRAY;
+                    assert(number_is_integer(rv.number));
+                    ai.rows = number_to_u64(rv.number) -> u32;
+                    ai.cols = 0;
+                    ai.sub_type = ev.type;
+                    type = ai -> Type;
+                }
+                else {
+                    // map type (hash table) is implemented as struct of arrays
+                    kai__todo("array type, type inside rows");
+                }
+            }
+            // TODO: use cols for matrices
+            [out_value] = Value.{type = type};
+            [out_type] = context.type_type;
+            ret false;
+        }
+        
         case KAI_EXPR_SPECIAL; {
             s: *Expr_Special = cast expr;
             if s.kind == {
@@ -1486,6 +1507,26 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             ret false;
         }
 
+        case KAI_EXPR_PROCEDURE_CALL; {
+            // TODO: do proper thing here
+            p: *Expr_Procedure_Call = cast expr;
+            current: *Expr = p.arg_head;
+
+            type: *Type_Info;
+            value: Value;
+            if _value_of_expression(context, current, *value, *type)
+                ret true;
+
+            assert(type.id == KAI_TYPE_ID_TYPE);
+
+            ref: Node_Reference = _lookup_node(context, STRING("u32"));
+            u32_node: *Node = *context.nodes.data[ref.index];
+            size: u32 = _type_size(value.type);
+            out_value.u32 = size;
+            [out_type] = u32_node.value.type;
+            ret false;
+        }
+
         case; {
             kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
         }
@@ -1620,6 +1661,13 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
         case KAI_EXPR_STRUCT; #through;
         case KAI_EXPR_PROCEDURE_TYPE; {
             ret context.type_type;
+        }
+
+        case KAI_EXPR_PROCEDURE_CALL; {
+            // TODO: HACK
+            ref: Node_Reference = _lookup_node(context, STRING("u32"));
+            u32_node: *Node = *context.nodes.data[ref.index];
+            ret u32_node.value.type;
         }
 
         case; {
@@ -1803,6 +1851,9 @@ _type_size :: (type: *Type_Info) -> u32
             info: *Type_Info_Struct = cast type;
             ret info.size;
         }
+        case KAI_TYPE_ID_NUMBER; {
+            ret sizeof(Number);
+        }
     }
 
     kai__todo("type.id = %i", type.id);
@@ -1857,6 +1908,9 @@ _copy_value :: (out: *u8, type: *Type_Info, value: Value)
                 memcpy(out, value.inline_struct, info.size);
             else
                 memcpy(out, value.ptr, info.size);
+        }
+        case KAI_TYPE_ID_NUMBER; {
+            [out -> *Number] = value.number;
         }
         case; {
             kai__todo("type.id = %i", type.id);

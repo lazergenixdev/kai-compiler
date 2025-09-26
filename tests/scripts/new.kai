@@ -13,25 +13,25 @@ version_string :: () -> string
 @doc_short ("Get version as string (includes extra version info)")
 
 #export
-version :: () -> /* [3] */ u32
+version :: () -> [3] u32
 {
-//    ret .{VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
+    //ret .{VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
 }
 @doc_short ("Get version as number")
 
-// #export _write_u32 :: #host_import
+// #export write_u32 :: #host_import @internal
 
 #export Result :: u32;
-//{
-//    SUCCESS        = 0;
-//    ERROR_MEMORY   = 1; // allocator failed
-//    ERROR_SYNTAX   = 2;
-//    ERROR_SEMANTIC = 3;
-//    ERROR_INFO     = 4;
-//    ERROR_FATAL    = 5; // means compiler bug probably
-//    ERROR_INTERNAL = 6; // means compiler error unrelated to source code (e.g. out of memory)
-//    RESULT_COUNT   = 7;
-//}
+//enum u32 {
+//    SUCCESS        :: 0;
+//    ERROR_MEMORY   :: 1; // allocator failed
+//    ERROR_SYNTAX   :: 2;
+//    ERROR_SEMANTIC :: 3;
+//    ERROR_INFO     :: 4;
+//    ERROR_FATAL    :: 5; // means compiler bug probably
+//    ERROR_INTERNAL :: 6; // means compiler error unrelated to source code (e.g. out of memory)
+//    RESULT_COUNT   :: 7;
+//} @short_names
 
 #export Range :: struct {
     start: u32;
@@ -49,7 +49,7 @@ version :: () -> /* [3] */ u32
 }
 /*
 #export Location :: struct {
-    source : Source; // source code for this file // TODO: *u8 -> string
+    source : Source; // source code for this file
     string : string;
     line   : u32;
 }
@@ -64,3 +64,6 @@ version :: () -> /* [3] */ u32
     next      : *Error;
 }
 */
+*/
+
+// ldexp :: #host_import; @internal

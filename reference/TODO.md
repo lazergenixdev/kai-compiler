@@ -1,11 +1,11 @@
 # TODO
 - [x] add tags (notes) to language parser
 - [x] option for AST output in `Kai_Program` (need to place ast's somewhere)
+- [x] create function to parse function call arguments (for use in parsing tags)
 - [x] add expression tags ()
 - [x] add struct type generation to compiler
 - [ ] add statement tags {}
 - [ ] pass in `debug_writer` to program_create to enable internal debug printing
-- [ ] create function to parse function call arguments (for use in parsing tags)
 - [ ] add `#optional_export` and `#require_export` directives
 - [ ] `#char` needs to do a utf8 decode and evaluate to the codepoint value
 - [ ] need some kind of import handler from host
@@ -26,3 +26,4 @@
 - [ ] measure performance impact of `occupied` in hash table
 - [ ] add `then` keyword
 - [ ] add multi-line string literals
+- [ ] parser needs a recovery mode for syntax highlighting only??
