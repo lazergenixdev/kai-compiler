@@ -398,32 +398,13 @@
 		mode: "mylang",
 		theme: "material-ocean"
 	});
-	let save = true;
 	codemirror.on("change", () => {
 		const code = codemirror.getValue();
-		if (save) {
+		if (files.value == "My Code") {
 			localStorage.setItem("kai-compiler.playground.code", code);
-			if (files.value != "My Code")
-				files.value = "My Code";
 		}
 		compile(code);
 	});
-		/*require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.53.0/min/vs' }});
-		require(['vs/editor/editor.main'], function () {
-			const editor = monaco.editor.create(document.getElementById('editor'), {
-				value: SOURCE,
-				language: 'c',
-				theme: 'vs-dark',
-				automaticLayout: true
-			});
-			
-			// Run this function when the code changes
-			editor.onDidChangeModelContent(() => {
-				const code = editor.getValue();
-				localStorage.setItem("playground.code", code);
-				compile(code);
-			});
-		});*/
 		
 		const allocator = new ArenaAllocator();
 
@@ -501,9 +482,7 @@
 					SOURCE = localStorage.getItem("kai-compiler.playground.code");
 				else
 					SOURCE = await fetch(files.value).then(r => r.text());
-				save = false;
 				codemirror.setValue(SOURCE);
-				save = true;
 			});
 
 			compile(SOURCE);
