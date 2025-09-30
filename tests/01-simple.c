@@ -9,6 +9,7 @@ int main()
         .error = default_error(),
         .sources = MAKE_SLICE(sources),
 		.options = { .flags = KAI_COMPILE_NO_CODE_GEN },
+        .debug_writer = default_writer(),
     };
     kai_create_program(&info, &program);
     assert_no_error();

@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20250930202932 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20250930232302 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -288,8 +288,8 @@ typedef struct Kai_Node_Reference Kai_Node_Reference;
 typedef struct Kai_Node Kai_Node;
 typedef struct Kai_Local_Node Kai_Local_Node;
 typedef struct Kai_Scope Kai_Scope;
+typedef struct Kai_Node_Wait Kai_Node_Wait;
 typedef struct Kai_Compiler_Context Kai_Compiler_Context;
-typedef struct Kai__DFS_Context Kai__DFS_Context;
 
 typedef void* Kai_P_Memory_Heap_Allocate(void* user, void* ptr, Kai_u32 new_size, Kai_u32 old_size);
 typedef void* Kai_P_Memory_Platform_Allocate(void* user, void* ptr, Kai_u32 size, Kai_Memory_Command op);
@@ -315,12 +315,12 @@ typedef KAI_SLICE(Kai_Syntax_Tree) Kai_Syntax_Tree_Slice;
 typedef KAI_HASH_TABLE(Kai_u32) Kai_u32_HashTable;
 typedef KAI_HASH_TABLE(Kai_Variable) Kai_Variable_HashTable;
 typedef KAI_HASH_TABLE(Kai_Type) Kai_Type_HashTable;
-typedef KAI_DYNAMIC_ARRAY(Kai_Node_Reference) Kai_Node_Reference_DynArray;
 typedef KAI_HASH_TABLE(Kai_Node_Reference) Kai_Node_Reference_HashTable;
+typedef KAI_DYNAMIC_ARRAY(Kai_Node_Reference) Kai_Node_Reference_DynArray;
 typedef KAI_DYNAMIC_ARRAY(Kai_Scope) Kai_Scope_DynArray;
 typedef KAI_DYNAMIC_ARRAY(Kai_Node) Kai_Node_DynArray;
 typedef KAI_DYNAMIC_ARRAY(Kai_Local_Node) Kai_Local_Node_DynArray;
-typedef KAI_SLICE(Kai_u32) Kai_u32_Slice;
+typedef KAI_DYNAMIC_ARRAY(Kai_Node_Wait) Kai_Node_Wait_DynArray;
 
 // Type: Kai_Primitive_Type
 enum {
@@ -998,7 +998,6 @@ enum {
 enum {
     KAI_COMPILE_NO_CODE_GEN = 1,
     KAI_COMPILE_ALLOW_UNDEFINED = 2,
-    KAI_COMPILE_DEBUG = 32768,
 };
 
 struct Kai_Compile_Options {
@@ -1025,6 +1024,7 @@ struct Kai_Program_Create_Info {
     Kai_Allocator allocator;
     Kai_Error* error;
     Kai_Compile_Options options;
+    Kai_Writer* debug_writer;
 };
 
 struct Kai_Variable {
@@ -1043,7 +1043,7 @@ struct Kai_Program {
 
 // Type: Kai_Node_Flags
 enum {
-    KAI_NODE_TYPE = 1,
+    KAI_NODE_VALUE = 1,
     KAI_NODE_TYPE_EVALUATED = 2,
     KAI_NODE_VALUE_EVALUATED = 4,
     KAI_NODE_EVALUATED = 6,
@@ -1064,8 +1064,6 @@ struct Kai_Node {
     Kai_Location location;
     Kai_Expr* expr;
     Kai_Expr* type_expr;
-    Kai_Node_Reference_DynArray value_dependencies;
-    Kai_Node_Reference_DynArray type_dependencies;
     Kai_Node_Flags flags;
 };
 
@@ -1079,6 +1077,11 @@ struct Kai_Scope {
     Kai_bool is_proc_scope;
 };
 
+struct Kai_Node_Wait {
+    Kai_Node_Reference ref;
+    Kai_Node_Reference_DynArray wait;
+};
+
 struct Kai_Compiler_Context {
     Kai_Error* error;
     Kai_Allocator allocator;
@@ -1087,8 +1090,8 @@ struct Kai_Compiler_Context {
     Kai_Scope_DynArray scopes;
     Kai_Node_DynArray nodes;
     Kai_Local_Node_DynArray local_nodes;
+    Kai_Node_Wait_DynArray wait_nodes;
     Kai_Import_Slice imports;
-    Kai_u32_Slice compilation_order;
     Kai_Arena_Allocator type_allocator;
     Kai_Arena_Allocator temp_allocator;
     Kai_Source current_source;
@@ -1097,15 +1100,7 @@ struct Kai_Compiler_Context {
     Kai_Type_Info* string_type;
     Kai_Type_Info* type_type;
     Kai_Type_Info* bool_type;
-    Kai_Writer debug_writer;
-};
-
-struct Kai__DFS_Context {
-    Kai_Compiler_Context* context;
-    Kai_u32* post;
-    Kai_u32* prev;
-    Kai_bool* visited;
-    Kai_u32 next;
+    Kai_Writer* debug_writer;
 };
 
 KAI_API(Kai_string) kai_version_string(void);
@@ -1167,7 +1162,6 @@ KAI_API(Kai_Stmt*) kai_parse_statement(Kai_Parser* parser);
 KAI_API(Kai_Result) kai_create_syntax_tree(Kai_Syntax_Tree_Create_Info* info, Kai_Syntax_Tree* out_tree);
 KAI_API(void) kai_destroy_syntax_tree(Kai_Syntax_Tree* tree);
 
-KAI_API(void) kai_add_dependency(Kai_Compiler_Context* context, Kai_Node_Reference ref);
 KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Program* out_program);
 KAI_API(void) kai_destroy_program(Kai_Program* program);
 KAI_API(void*) kai_find_variable(Kai_Program* program, Kai_string name, Kai_Type* out_type);
@@ -1405,13 +1399,9 @@ KAI_INTERNAL Kai_bool kai__error_redefinition(Kai_Compiler_Context* context, Kai
 KAI_INTERNAL Kai_bool kai__error_not_declared(Kai_Compiler_Context* context, Kai_Location location);
 KAI_INTERNAL Kai_bool kai__error_host_import_not_found(Kai_Compiler_Context* context, Kai_Location location);
 KAI_INTERNAL Kai_bool kai__create_nodes(Kai_Compiler_Context* context, Kai_Expr* expr);
+KAI_INTERNAL Kai_bool kai__generate_nodes(Kai_Compiler_Context* context);
 KAI_INTERNAL Kai_Node_Reference kai__lookup_node(Kai_Compiler_Context* context, Kai_string name);
-KAI_INTERNAL Kai_bool kai__insert_value_dependencies(Kai_Compiler_Context* context, Kai_Expr* expr);
-KAI_INTERNAL Kai_bool kai__insert_type_dependencies(Kai_Compiler_Context* context, Kai_Expr* expr);
-KAI_INTERNAL Kai_bool kai__generate_dependency_builtin_types(Kai_Compiler_Context* context);
-KAI_INTERNAL Kai_bool kai__generate_dependency_graph(Kai_Compiler_Context* context);
-KAI_INTERNAL void kai__explore_dependencies(Kai__DFS_Context* dfs, Kai_Node_Reference ref);
-KAI_INTERNAL Kai_bool kai__generate_compilation_order(Kai_Compiler_Context* context);
+KAI_INTERNAL Kai_bool kai__generate_builtin_types(Kai_Compiler_Context* context);
 KAI_INTERNAL Kai_bool kai__error_fatal(Kai_Compiler_Context* context, Kai_string message);
 KAI_INTERNAL Kai_bool kai__value_to_number(Kai_Value value, Kai_Type_Info* type, Kai_Number* out_number);
 KAI_INTERNAL Kai_Value kai__evaluate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b);
@@ -4882,15 +4872,6 @@ KAI_INTERNAL Kai_bool kai__create_nodes(Kai_Compiler_Context* context, Kai_Expr*
     (void)(allocator);
     switch (expr->id)
     {
-        break; case KAI_EXPR_PROCEDURE:
-        {
-        }
-        break; case KAI_STMT_IF:
-        {
-        }
-        break; case KAI_STMT_FOR:
-        {
-        }
         break; case KAI_STMT_DECLARATION:
         {
             Kai_Stmt_Declaration* d = (Kai_Stmt_Declaration*)(expr);
@@ -4914,26 +4895,46 @@ KAI_INTERNAL Kai_bool kai__create_nodes(Kai_Compiler_Context* context, Kai_Expr*
                     node.flags |= KAI_NODE_IMPORT;
                 if (d->flags&KAI_FLAG_DECL_EXPORT)
                     node.flags |= KAI_NODE_EXPORT;
-                kai_array_push(&node.value_dependencies, ((Kai_Node_Reference){.flags = KAI_NODE_TYPE, .index = reference.index}));
+                Kai_Writer* writer = context->debug_writer;
+                if (writer!=NULL)
+                {
+                    kai__write("inserting node for \"");
+                    kai__write_string(d->name);
+                    kai__write("\"\n");
+                }
                 kai_array_push(&context->nodes, node);
                 kai_table_set(&scope->identifiers, d->name, reference);
             }
             return KAI_FALSE;
         }
-        break; case KAI_STMT_COMPOUND:
+    }
+    return KAI_FALSE;
+}
+
+KAI_INTERNAL Kai_bool kai__generate_nodes(Kai_Compiler_Context* context)
+{
+    Kai_Allocator* allocator = &context->allocator;
+    kai_array_push(&context->scopes, ((Kai_Scope){.is_proc_scope = KAI_FALSE}));
+    if (kai__generate_builtin_types(context))
+        return KAI_TRUE;
+    for (Kai_u32 i = 0; i < (((context->program)->code).trees).count; ++i)
+    {
+        Kai_Syntax_Tree* tree = &((((context->program)->code).trees).data)[i];
+        context->current_source = tree->source;
+        Kai_Stmt* current = (tree->root).head;
+        while (current)
         {
-            Kai_Stmt_Compound* c = (Kai_Stmt_Compound*)(expr);
-            kai_array_push(&context->scopes, ((Kai_Scope){0}));
-            Kai_Stmt* current = c->head;
-            while (current)
-            {
-                if (kai__create_nodes(context, current))
-                    return KAI_TRUE;
-                current = current->next;
-            }
-            kai_array_pop(&context->scopes);
-            return KAI_FALSE;
+            if (kai__create_nodes(context, current))
+                return KAI_TRUE;
+            current = current->next;
         }
+    }
+    Kai_Writer* writer = context->debug_writer;
+    if (writer!=NULL)
+    {
+        kai__write("there are ");
+        kai__write_u32((context->nodes).count);
+        kai__write(" nodes\n");
     }
     return KAI_FALSE;
 }
@@ -4952,197 +4953,7 @@ KAI_INTERNAL Kai_Node_Reference kai__lookup_node(Kai_Compiler_Context* context, 
     return ((Kai_Node_Reference){.flags = KAI_NODE_NOT_FOUND});
 }
 
-KAI_API(void) kai_add_dependency(Kai_Compiler_Context* context, Kai_Node_Reference ref)
-{
-    Kai_Allocator* allocator = &context->allocator;
-    Kai_Node_Reference_DynArray* deps = 0;
-    Kai_Node* node = &((context->nodes).data)[(context->current_node).index];
-    if ((context->current_node).flags&KAI_NODE_TYPE)
-        deps = &node->type_dependencies;
-    else
-        deps = &node->value_dependencies;
-    for (Kai_u32 i = 0; i < deps->count; ++i)
-    {
-        Kai_Node_Reference other = (deps->data)[i];
-        if (ref.index==other.index&&ref.flags==other.flags)
-            return;
-    }
-    kai_array_push(deps, ref);
-}
-
-KAI_INTERNAL Kai_bool kai__insert_value_dependencies(Kai_Compiler_Context* context, Kai_Expr* expr)
-{
-    Kai_Allocator* allocator = &context->allocator;
-    if (expr==NULL)
-    {
-        kai__todo("null expression\n");
-    }
-    switch (expr->id)
-    {
-        break; case KAI_EXPR_IDENTIFIER:
-        {
-            Kai_Node_Reference ref = kai__lookup_node(context, expr->source_code);
-            if (ref.flags&KAI_NODE_NOT_FOUND)
-            {
-                Kai_Node* node = &((context->nodes).data)[(context->current_node).index];
-                Kai_Location location = ((Kai_Location){.source = (node->location).source, .string = expr->source_code, .line = expr->line_number});
-                return kai__error_not_declared(context, location);
-            }
-            if (ref.flags&KAI_NODE_LOCAL)
-                break;
-            kai_add_dependency(context, ref);
-        }
-        break; case KAI_EXPR_UNARY:
-        {
-            Kai_Expr_Unary* u = (Kai_Expr_Unary*)(expr);
-            return kai__insert_value_dependencies(context, u->expr);
-        }
-        break; case KAI_EXPR_BINARY:
-        {
-            Kai_Expr_Binary* b = (Kai_Expr_Binary*)(expr);
-            if (kai__insert_value_dependencies(context, b->left))
-                return KAI_TRUE;
-            if (kai__insert_value_dependencies(context, b->right))
-                return KAI_TRUE;
-        }
-        break; case KAI_EXPR_PROCEDURE:
-        {
-            Kai_Expr_Procedure* p = (Kai_Expr_Procedure*)(expr);
-            kai_array_push(&context->scopes, ((Kai_Scope){0}));
-            Kai_Scope* scope = &kai_array_last(&context->scopes);
-            Kai_Expr* current = p->in_out_expr;
-            while (current)
-            {
-                if ((current->name).count!=0)
-                {
-                    Kai_Node_Reference ref = ((Kai_Node_Reference){.flags = KAI_NODE_LOCAL});
-                    kai_table_set(&scope->identifiers, current->name, ref);
-                }
-                current = current->next;
-            }
-            if (p->body!=NULL&&kai__insert_value_dependencies(context, p->body))
-                return KAI_TRUE;
-            kai_array_pop(&context->scopes);
-        }
-        break; case KAI_STMT_RETURN:
-        {
-            Kai_Stmt_Return* r = (Kai_Stmt_Return*)(expr);
-            return kai__insert_value_dependencies(context, r->expr);
-        }
-        break; case KAI_STMT_IF:
-        {
-            Kai_Stmt_If* i = (Kai_Stmt_If*)(expr);
-            if (kai__insert_value_dependencies(context, i->expr))
-                return KAI_TRUE;
-            if (i->then_body!=NULL&&kai__insert_value_dependencies(context, i->then_body))
-                return KAI_TRUE;
-            if (i->else_body!=NULL&&kai__insert_value_dependencies(context, i->else_body))
-                return KAI_TRUE;
-        }
-        break; case KAI_STMT_COMPOUND:
-        {
-            Kai_Stmt_Compound* c = (Kai_Stmt_Compound*)(expr);
-            Kai_Expr* current = c->head;
-            while (current!=NULL)
-            {
-                if (kai__insert_value_dependencies(context, current))
-                    return KAI_TRUE;
-                current = current->next;
-            }
-        }
-    }
-    return KAI_FALSE;
-}
-
-KAI_INTERNAL Kai_bool kai__insert_type_dependencies(Kai_Compiler_Context* context, Kai_Expr* expr)
-{
-    if (expr==NULL)
-    {
-        kai__todo("null expression\n");
-    }
-    switch (expr->id)
-    {
-        break; case KAI_EXPR_IDENTIFIER:
-        {
-            Kai_Node_Reference ref = kai__lookup_node(context, expr->source_code);
-            if (ref.flags&KAI_NODE_NOT_FOUND)
-            {
-                Kai_Node* node = &((context->nodes).data)[(context->current_node).index];
-                Kai_Location location = ((Kai_Location){.source = (node->location).source, .string = expr->source_code, .line = expr->line_number});
-                return kai__error_not_declared(context, location);
-            }
-            if (ref.flags&KAI_NODE_LOCAL)
-                break;
-            ref.flags |= KAI_NODE_TYPE;
-            kai_add_dependency(context, ref);
-        }
-        break; case KAI_EXPR_NUMBER:
-        break; case KAI_EXPR_STRING:
-        break; case KAI_EXPR_SPECIAL:
-        break; case KAI_EXPR_UNARY:
-        {
-            Kai_Expr_Unary* u = (Kai_Expr_Unary*)(expr);
-            return kai__insert_type_dependencies(context, u->expr);
-        }
-        break; case KAI_EXPR_BINARY:
-        {
-            Kai_Expr_Binary* b = (Kai_Expr_Binary*)(expr);
-            if (kai__insert_type_dependencies(context, b->left))
-                return KAI_TRUE;
-            if (b->op==15917)
-            {
-                if (kai__insert_value_dependencies(context, b->right))
-                    return KAI_TRUE;
-            }
-            else
-            {
-                if (kai__insert_type_dependencies(context, b->right))
-                    return KAI_TRUE;
-            }
-        }
-        break; case KAI_EXPR_PROCEDURE:
-        {
-            Kai_Expr_Procedure* p = (Kai_Expr_Procedure*)(expr);
-            Kai_Expr* current = p->in_out_expr;
-            while (current!=NULL)
-            {
-                if (kai__insert_value_dependencies(context, current))
-                    return KAI_TRUE;
-                current = current->next;
-            }
-        }
-        break; case KAI_EXPR_STRUCT:
-        {
-            return KAI_FALSE;
-        }
-        break; case KAI_EXPR_ENUM:
-        {
-        }
-        break; case KAI_EXPR_PROCEDURE_TYPE:
-        {
-        }
-        break; case KAI_EXPR_PROCEDURE_CALL:
-        {
-            Kai_Expr_Procedure_Call* p = (Kai_Expr_Procedure_Call*)(expr);
-            if (kai__insert_type_dependencies(context, p->proc))
-                return KAI_TRUE;
-            Kai_Expr* current = p->arg_head;
-            while (current)
-            {
-                if (kai__insert_value_dependencies(context, current))
-                    return KAI_TRUE;
-                current = current->next;
-            }
-        }
-        break; default:
-        {
-            kai__todo("need to implement id = %i", expr->id);
-        }
-    }
-    return KAI_FALSE;
-}
-
-KAI_INTERNAL Kai_bool kai__generate_dependency_builtin_types(Kai_Compiler_Context* context)
+KAI_INTERNAL Kai_bool kai__generate_builtin_types(Kai_Compiler_Context* context)
 {
     Kai_Allocator* allocator = &context->allocator;
     Kai_Scope* scope = &kai_array_last(&context->scopes);
@@ -5227,147 +5038,6 @@ KAI_INTERNAL Kai_bool kai__generate_dependency_builtin_types(Kai_Compiler_Contex
     ((string_type->fields).data)[1] = ((Kai_Struct_Field){.name = KAI_STRING("data"), .offset = sizeof(Kai_uint), .type = (Kai_Type)(pu8_type)});
     kai_array_push(&context->nodes, ((Kai_Node){.type = type_type, .value = ((Kai_Value){.type = (Kai_Type)(string_type)}), .flags = KAI_NODE_EVALUATED}));
     context->string_type = (Kai_Type)(string_type);
-    return KAI_FALSE;
-}
-
-KAI_INTERNAL Kai_bool kai__generate_dependency_graph(Kai_Compiler_Context* context)
-{
-    Kai_Allocator* allocator = &context->allocator;
-    kai_array_push(&context->scopes, ((Kai_Scope){.is_proc_scope = KAI_FALSE}));
-    if (kai__generate_dependency_builtin_types(context))
-        return KAI_TRUE;
-    for (Kai_u32 i = 0; i < (((context->program)->code).trees).count; ++i)
-    {
-        Kai_Syntax_Tree* tree = &((((context->program)->code).trees).data)[i];
-        context->current_source = tree->source;
-        Kai_Stmt* current = (tree->root).head;
-        while (current)
-        {
-            if (kai__create_nodes(context, current))
-                return KAI_TRUE;
-            current = current->next;
-        }
-    }
-    for (Kai_u32 i = 0; i < (context->nodes).count; ++i)
-    {
-        Kai_Node* node = &((context->nodes).data)[i];
-        (context->current_node).index = i;
-        if (node->flags&KAI_NODE_EVALUATED||node->flags&KAI_NODE_IMPORT)
-            continue;
-        if (node->expr!=NULL)
-        {
-            (context->current_node).flags = 0;
-            if (kai__insert_value_dependencies(context, node->expr))
-                return KAI_TRUE;
-            (context->current_node).flags = KAI_NODE_TYPE;
-            if (kai__insert_type_dependencies(context, node->expr))
-                return KAI_TRUE;
-        }
-        (context->current_node).flags = KAI_NODE_TYPE;
-        if (node->type_expr!=NULL)
-        {
-            if (kai__insert_value_dependencies(context, node->type_expr))
-                return KAI_TRUE;
-        }
-    }
-    if ((context->options).flags&KAI_COMPILE_DEBUG)
-        for (Kai_u32 i = 14; i < (context->nodes).count; ++i)
-        {
-            Kai_Node* node = &((context->nodes).data)[i];
-            printf("node (%i) %.*s", i, (Kai_s32)(((node->location).string).count), ((node->location).string).data);
-            for (Kai_u32 i = 0; i < 32-((node->location).string).count; ++i)
-                putchar(32);
-            printf(" V{ ");
-            for (Kai_u32 j = 0; j < (node->value_dependencies).count; ++j)
-            {
-                Kai_Node_Reference ref = ((node->value_dependencies).data)[j];
-                Kai_u8 id = 118;
-                if (ref.flags&KAI_NODE_TYPE)
-                    id = 116;
-                printf("%i%c", ref.index, id);
-                if (j+1<(node->value_dependencies).count)
-                    printf(", ");
-            }
-            printf(" } T{ ");
-            for (Kai_u32 j = 0; j < (node->type_dependencies).count; ++j)
-            {
-                Kai_Node_Reference ref = ((node->type_dependencies).data)[j];
-                Kai_u8 id = 118;
-                if (ref.flags&KAI_NODE_TYPE)
-                    id = 116;
-                printf("%i%c", ref.index, id);
-                if (j+1<(node->type_dependencies).count)
-                    printf(", ");
-            }
-            printf(" }\n");
-        }
-    return KAI_FALSE;
-}
-
-KAI_INTERNAL void kai__explore_dependencies(Kai__DFS_Context* dfs, Kai_Node_Reference ref)
-{
-    Kai_u32 index = (ref.index)<<1|(ref.flags&KAI_NODE_TYPE);
-    (dfs->visited)[index] = KAI_TRUE;
-    Kai_Node* node = &(((dfs->context)->nodes).data)[ref.index];
-    Kai_Node_Reference_DynArray* deps = 0;
-    if (ref.flags&KAI_NODE_TYPE)
-        deps = &node->type_dependencies;
-    else
-        deps = &node->value_dependencies;
-    for (Kai_u32 d = 0; d < deps->count; ++d)
-    {
-        Kai_Node_Reference dep = (deps->data)[d];
-        Kai_u32 d_index = (dep.index)<<1|(dep.flags&KAI_NODE_TYPE);
-        if (!(dfs->visited)[d_index])
-        {
-            (dfs->prev)[d_index] = index;
-            kai__explore_dependencies(dfs, dep);
-        }
-    }
-    (dfs->post)[index] = dfs->next;
-    dfs->next += 1;
-}
-
-KAI_INTERNAL Kai_bool kai__generate_compilation_order(Kai_Compiler_Context* context)
-{
-    Kai_Allocator* allocator = &context->allocator;
-    Kai__DFS_Context dfs = ((Kai__DFS_Context){.context = context, .next = 0});
-    dfs.post = (Kai_u32*)(kai__allocate(NULL, ((context->nodes).count*2)*sizeof(Kai_u32), 0));
-    dfs.prev = (Kai_u32*)(kai__allocate(NULL, ((context->nodes).count*2)*sizeof(Kai_u32), 0));
-    dfs.visited = (Kai_bool*)(kai__allocate(NULL, ((context->nodes).count*2)*sizeof(Kai_bool), 0));
-    kai__memory_fill(dfs.prev, 255, ((context->nodes).count*2)*sizeof(Kai_u32));
-    for (Kai_u32 i = 0; i < (context->nodes).count; ++i)
-    {
-        Kai_Node_Reference ref = ((Kai_Node_Reference){.index = i});
-        Kai_u32 v = (ref.index)<<1|(ref.flags&KAI_NODE_TYPE);
-        if (!(dfs.visited)[v])
-            kai__explore_dependencies(&dfs, ref);
-        ref.flags = KAI_NODE_TYPE;
-        Kai_u32 t = (ref.index)<<1|(ref.flags&KAI_NODE_TYPE);
-        if (!(dfs.visited)[t])
-            kai__explore_dependencies(&dfs, ref);
-    }
-    (context->compilation_order).count = (context->nodes).count*2;
-    (context->compilation_order).data = (Kai_u32*)(kai__allocate(NULL, (context->compilation_order).count*sizeof(Kai_u32), 0));
-    for (Kai_u32 i = 0; i < (context->compilation_order).count; ++i)
-    {
-        ((context->compilation_order).data)[(dfs.post)[i]] = i;
-    }
-    if ((context->options).flags&KAI_COMPILE_DEBUG)
-    {
-        for (Kai_u32 i = 28; i < (context->compilation_order).count; ++i)
-        {
-            Kai_u32 k = ((context->compilation_order).data)[i];
-            Kai_u32 index = k>>1;
-            Kai_u8 ch = 118;
-            if (k&1)
-            {
-                ch = 116;
-            }
-            printf("%i%c ", index, ch);
-        }
-        printf("\n");
-    }
     return KAI_FALSE;
 }
 
@@ -6222,6 +5892,7 @@ KAI_INTERNAL Kai_bool kai__compile_node_value(Kai_Compiler_Context* context, Kai
         node->value = value;
         return KAI_FALSE;
     }
+    kai_assert(node->type!=NULL);
     if (type!=node->type)
     {
         if (type->id==KAI_TYPE_ID_NUMBER)
@@ -6481,43 +6152,27 @@ KAI_INTERNAL Kai_u32 kai__push_value(Kai_Compiler_Context* context, Kai_Type_Inf
 KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
 {
     Kai_Allocator* allocator = &context->allocator;
-    for (Kai_u32 i = 0; i < (context->compilation_order).count; ++i)
+    for (Kai_u32 i = 0; i < ((context->nodes).count)<<1; ++i)
     {
-        Kai_u32 k = ((context->compilation_order).data)[i];
-        Kai_Node_Reference ref = ((Kai_Node_Reference){.index = k>>1, .flags = k&1});
+        Kai_Node_Reference ref = ((Kai_Node_Reference){.index = i>>1, .flags = i&1});
         Kai_Node* node = &((context->nodes).data)[ref.index];
         if ((node->flags&KAI_NODE_EVALUATED)==KAI_NODE_EVALUATED)
             continue;
         context->current_source = (node->location).source;
         context->current_node = ref;
-        Kai_Writer* writer = &context->debug_writer;
-        if (ref.flags&KAI_NODE_TYPE)
+        Kai_Writer* writer = context->debug_writer;
+        if (ref.flags&KAI_NODE_VALUE)
         {
-            if ((context->options).flags&KAI_COMPILE_DEBUG)
+            if (writer!=NULL)
             {
-                printf("compiling typeof(%.*s)\n", (Kai_s32)(((node->location).string).count), ((node->location).string).data);
-            }
-            if (kai__compile_node_type(context, node))
-                return KAI_TRUE;
-            if ((context->options).flags&KAI_COMPILE_DEBUG)
-            {
-                printf("=> ");
-                kai_write_type(&context->debug_writer, node->type);
-                printf("\n");
-            }
-        }
-        else
-        {
-            if ((context->options).flags&KAI_COMPILE_DEBUG)
-            {
-                printf("compiling (%.*s)\n", (Kai_s32)(((node->location).string).count), ((node->location).string).data);
+                printf("compiling V(%.*s)\n", (Kai_s32)(((node->location).string).count), ((node->location).string).data);
             }
             if (!(node->flags&KAI_NODE_IMPORT))
             {
                 if (kai__compile_node_value(context, node))
                     return KAI_TRUE;
             }
-            if ((context->options).flags&KAI_COMPILE_DEBUG)
+            if (writer!=NULL)
             {
                 printf("=> ");
                 switch ((node->type)->id)
@@ -6541,7 +6196,7 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
                     break; case KAI_TYPE_ID_PROCEDURE:
                     {
                         kai__write("0x");
-                        (context->debug_writer).write_value((context->debug_writer).user, KAI_U64, ((Kai_Value){.u64 = (node->value).u64}), ((Kai_Write_Format){.flags = KAI_WRITE_FLAGS_HEXIDECIMAL}));
+                        (context->debug_writer)->write_value((context->debug_writer)->user, KAI_U64, ((Kai_Value){.u64 = (node->value).u64}), ((Kai_Write_Format){.flags = KAI_WRITE_FLAGS_HEXIDECIMAL}));
                     }
                 }
                 printf("\n");
@@ -6550,6 +6205,21 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
             {
                 Kai_u32 location = kai__push_value(context, node->type, node->value);
                 kai_table_set(&(context->program)->variable_table, (node->location).string, ((Kai_Variable){.type = node->type, .location = location}));
+            }
+        }
+        else
+        {
+            if (writer!=NULL)
+            {
+                printf("compiling T(%.*s)\n", (Kai_s32)(((node->location).string).count), ((node->location).string).data);
+            }
+            if (kai__compile_node_type(context, node))
+                return KAI_TRUE;
+            if (writer!=NULL)
+            {
+                printf("=> ");
+                kai_write_type(writer, node->type);
+                printf("\n");
             }
         }
     }
@@ -6564,7 +6234,7 @@ KAI_INTERNAL Kai_bool kai__generate_compiler_ir(Kai_Compiler_Context* context)
 
 KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Program* out_program)
 {
-    Kai_Compiler_Context context = ((Kai_Compiler_Context){.error = info->error, .allocator = info->allocator, .program = out_program, .options = info->options, .imports = info->imports, .debug_writer = kai_writer_stdout()});
+    Kai_Compiler_Context context = ((Kai_Compiler_Context){.error = info->error, .allocator = info->allocator, .program = out_program, .options = info->options, .imports = info->imports, .debug_writer = info->debug_writer});
     kai_arena_create(&context.type_allocator, &info->allocator);
     kai_arena_create(&context.temp_allocator, &info->allocator);
     if (!((info->options).flags&KAI_COMPILE_NO_CODE_GEN))
@@ -6577,9 +6247,7 @@ KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Progra
     {
         if (kai__create_syntax_trees(&context, info->sources))
             break;
-        if (kai__generate_dependency_graph(&context))
-            break;
-        if (kai__generate_compilation_order(&context))
+        if (kai__generate_nodes(&context))
             break;
         if (kai__compile_all_nodes(&context))
             break;

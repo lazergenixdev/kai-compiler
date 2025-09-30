@@ -2,7 +2,6 @@
 Compile_Flags :: enum u32 {
     COMPILE_NO_CODE_GEN      = 0x0001; // "type-check" only
     COMPILE_ALLOW_UNDEFINED  = 0x0002; // allow host imports that are not given a value
-    COMPILE_DEBUG            = 0x8000; // enable debug printing
 }
 
 Compile_Options :: struct {
@@ -37,6 +36,7 @@ Program_Create_Info :: struct {
     allocator         : Allocator;
     error             : *Error;
     options           : Compile_Options;
+    debug_writer      : *Writer;
 }
 
 Variable :: struct {
@@ -57,7 +57,7 @@ Program :: struct {
 }
 
 Node_Flags :: enum u32 {
-    NODE_TYPE            = 0x01;
+    NODE_VALUE           = 0x01;
     NODE_TYPE_EVALUATED  = 0x02;
     NODE_VALUE_EVALUATED = 0x04;
     NODE_EVALUATED       = 0x06;
@@ -83,8 +83,6 @@ Node :: struct {
     location:                Location;
     expr:                   *Expr;
     type_expr:              *Expr;
-    value_dependencies: [..] Node_Reference;
-    type_dependencies:  [..] Node_Reference; // This can be arena??????
     flags:                   Node_Flags;
 }
 
@@ -134,6 +132,11 @@ IrNode :: struct {
 }
 */
 
+Node_Wait :: struct {
+    ref: Node_Reference;
+    wait: [..] Node_Reference; // what needs to be compiled
+}
+
 Compiler_Context :: struct {
     error:              *Error;
     allocator:           Allocator;
@@ -141,9 +144,9 @@ Compiler_Context :: struct {
     options:             Compile_Options;
     scopes:              [..] Scope;
     nodes:               [..] Node;
-    local_nodes:         [..] Local_Node;
+    local_nodes:         [..] Local_Node; // what is this?
+    wait_nodes:          [..] Node_Wait;
     imports:             [] Import;
-    compilation_order:   [] u32;
     type_allocator:      Arena_Allocator;
     temp_allocator:      Arena_Allocator;
     current_source:      Source;
@@ -152,7 +155,7 @@ Compiler_Context :: struct {
     string_type:        *Type_Info;
     type_type:          *Type_Info;
     bool_type:          *Type_Info;
-    debug_writer:        Writer;
+    debug_writer:       *Writer;
 }
 
 _create_syntax_trees :: (context: *Compiler_Context, sources: [] Source) -> bool
@@ -260,57 +263,21 @@ _error_host_import_not_found :: (context: *Compiler_Context, location: Location)
     ret true;
 }
 
-// TODO: do not generate a dependency graph, because it will not work for
-// procedures, I would need to parse the entire procedure first to look
-// for constant declarations inside the procedure, then look for redefinitions.
-// Is this too inefficient?
 _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
 {
+    //
+    // NOTE: Create node for each declaration in this scope
+    //
+
     allocator: *Allocator = *context.allocator;
     allocator->void;
 
     if expr.id == {
-    case KAI_EXPR_PROCEDURE; {
-        /*
-        Kai_Expr_Procedure* node = base;
-
-        Kai_u32 new_scope_index = Context->scopes.count;
-        kai__array_append(&Context->scopes, (Kai__DG_Scope) {
-            .parent = Scope_Index,
-            .is_proc_scope = KAI_TRUE,
-        });
-        //kai__hash_table_create(&Context->scopes.elements[new_scope_index].identifiers);
-
-        node->_scope = new_scope_index;
-        if (node->body) {
-            return kai__dg_create_nodes_from_statement(Context, node->body, new_scope_index, KAI_TRUE, KAI_TRUE);
-        }
-        else {
-            kai__todo("Native Functions not implemented!");
-        }
-        */
-    }
-    case KAI_STMT_IF; {
-        /*
-        Kai_Stmt_If* node = base;
-
-        result = kai__dg_create_nodes_from_statement(Context, node->then_body, Scope_Index, In_Procedure, KAI_FALSE);
-        if (result != KAI_SUCCESS)
-            return result;
-
-        if (node->else_body) {
-            result = kai__dg_create_nodes_from_statement(Context, node->else_body, Scope_Index, In_Procedure, KAI_FALSE);
-            if (result != KAI_SUCCESS)
-                return result;
-        }
-        */
-    }
-    case KAI_STMT_FOR; {
-        /*
-        Kai_Stmt_For* node = base;
-        return kai__dg_create_nodes_from_statement(Context, node->body, Scope_Index, In_Procedure, KAI_FALSE);
-        */
-    }
+    /* case KAI_EXPR_PROCEDURE; {
+        p: *Expr_Procedure = cast expr;
+        // Create new scope
+        // Insert nodes for scope
+    } */
     case KAI_STMT_DECLARATION; {
         d: *Stmt_Declaration = cast expr;
 
@@ -346,12 +313,20 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
             if d.flags & KAI_FLAG_DECL_EXPORT
                 node.flags |= KAI_NODE_EXPORT;
 
-            array_push(*node.value_dependencies, Node_Reference.{flags = KAI_NODE_TYPE, index = reference.index});
+        //    array_push(*node.value_dependencies, Node_Reference.{flags = KAI_NODE_TYPE, index = reference.index});
+
+            writer: *Writer = context.debug_writer;
+            if writer != null {
+                _write("inserting node for \"");
+                _write_string(d.name);
+                _write("\"\n");
+            }
+
             array_push(*context.nodes, node);
             table_set(*scope.identifiers, d.name, reference);
         }
         ret false;
-    }
+    }/* 
     case KAI_STMT_COMPOUND; {
         c: *Stmt_Compound = cast expr;
         array_push(*context.scopes, Scope.{0});
@@ -363,8 +338,42 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
         }
         array_pop(*context.scopes);
         ret false;
+    } */
     }
+    ret false;
+}
+
+_generate_nodes :: (context: *Compiler_Context) -> bool
+{
+    allocator: *Allocator = *context.allocator;
+    
+    // Initialize Global Scope
+    array_push(*context.scopes, Scope.{ is_proc_scope = false });
+
+    if _generate_builtin_types(context)
+        ret true;
+
+    // Insert nodes from syntax tree
+    for i: 0..<context.program.code.trees.count {
+        tree: *Syntax_Tree = *context.program.code.trees.data[i];
+        context.current_source = tree.source;
+
+        current: *Stmt = tree.root.head;
+        while current {
+            if _create_nodes(context, current)
+                ret true;
+            current = current.next;
+        }
     }
+
+    writer: *Writer = context.debug_writer;
+
+    if writer != null {
+        _write("there are ");
+        _write_u32(context.nodes.count);
+        _write(" nodes\n");
+    }
+
     ret false;
 }
 
@@ -394,319 +403,7 @@ _lookup_node :: (context: *Compiler_Context, name: string) -> Node_Reference
     ret Node_Reference.{flags = KAI_NODE_NOT_FOUND};
 }
 
-add_dependency :: (context: *Compiler_Context, ref: Node_Reference)
-{
-    allocator: *Allocator = *context.allocator;
-    deps: *[..] Node_Reference;
-    node: *Node = *context.nodes.data[context.current_node.index];
-
-    if context.current_node.flags & KAI_NODE_TYPE
-        deps = *node.type_dependencies;
-    else
-        deps = *node.value_dependencies;
-
-    for i: 0..<deps.count {
-        other: Node_Reference = deps.data[i];
-        if ref.index == other.index && ref.flags == other.flags
-            ret;
-    }
-    array_push(deps, ref);
-}
-
-// Insert dependency for the value of an expression.
-// In other words, the current_node will depend on the VALUE of `expr`
-_insert_value_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
-{
-    allocator: *Allocator = *context.allocator;
-    if expr == null { kai__todo("null expression\n"); }
-
-    if expr.id == {
-    case KAI_EXPR_IDENTIFIER; {
-        ref: Node_Reference = _lookup_node(context, expr.source_code);
-
-        if ref.flags & KAI_NODE_NOT_FOUND {
-            node: *Node = *context.nodes.data[context.current_node.index];
-            location: Location = Location.{source = node.location.source, string = expr.source_code, line = expr.line_number};
-            ret _error_not_declared(context, location);
-        }
-
-        if ref.flags & KAI_NODE_LOCAL break;
-        
-        add_dependency(context, ref);
-    }
-    case KAI_EXPR_UNARY; {
-        u: *Expr_Unary = cast expr;
-        ret _insert_value_dependencies(context, u.expr);
-    }
-    case KAI_EXPR_BINARY; {
-        b: *Expr_Binary = cast expr;
-        if _insert_value_dependencies(context, b.left) ret true;
-        if _insert_value_dependencies(context, b.right) ret true;
-    }
-    case KAI_EXPR_PROCEDURE; {
-        p: *Expr_Procedure = cast expr;
-
-        // TODO: special case compound statement as body
-        array_push(*context.scopes, Scope.{0});
-        scope: *Scope = *array_last(*context.scopes);
-        
-        current: *Expr = p.in_out_expr;
-        while current {
-            // TODO: check repeat variables (redefinition)
-            if current.name.count != 0 {
-                ref: Node_Reference = Node_Reference.{flags = KAI_NODE_LOCAL};
-                table_set(*scope.identifiers, current.name, ref);
-            }
-            current = current.next;
-        }
-        
-        if p.body != null && _insert_value_dependencies(context, p.body)
-            ret true;
-
-        array_pop(*context.scopes);
-    }
-    case KAI_STMT_RETURN; {
-        r: *Stmt_Return = cast expr;
-        ret _insert_value_dependencies(context, r.expr);
-    }
-    case KAI_STMT_IF; {
-        i: *Stmt_If = cast expr;
-        if _insert_value_dependencies(context, i.expr) ret true;
-        if i.then_body != null && _insert_value_dependencies(context, i.then_body) ret true;
-        if i.else_body != null && _insert_value_dependencies(context, i.else_body) ret true;
-    }
-    case KAI_STMT_COMPOUND; {
-        c: *Stmt_Compound = cast expr;
-        current: *Expr = c.head;
-        // TODO: add scopes
-        while current != null {
-            if _insert_value_dependencies(context, current)
-                ret true;
-            current = current.next;
-        }
-    }
-/*
-    case KAI_EXPR_PROCEDURE_CALL: {
-        Kai_Expr_Procedure_Call* node = base;
-
-        // Procedure calls in procedures are fine, we only need to know the type to generate the bytecode
-        // TODO: possible bug for nested procedures
-        if (In_Procedure) {
-            result = kai__dg_insert_type_dependencies(
-                Context,
-                out_Dependency_Array,
-                Scope_Index,
-                node->proc
-            );
-        }
-        else {
-            result = kai__dg_insert_value_dependencies(
-                Context,
-                out_Dependency_Array,
-                Scope_Index,
-                node->proc,
-                In_Procedure
-            );
-        }
-        if (result != KAI_SUCCESS)
-            return result;
-
-        Kai_Expr current = node->arg_head;
-        while (current != NULL) {
-            result = kai__dg_insert_value_dependencies(
-                Context,
-                out_Dependency_Array,
-                Scope_Index,
-                current,
-                In_Procedure
-            );
-            if (result != KAI_SUCCESS)
-                return result;
-            current = current->next;
-        }
-    }
-    break; case KAI_STMT_DECLARATION: {
-        if (In_Procedure) {
-            Kai_Stmt_Declaration* node = base;
-            // Already has a dependency node
-            if (node->flags & KAI_DECL_FLAG_CONST)
-                return KAI_SUCCESS;
-            Kai__DG_Scope* scope = Context->scopes.elements + Scope_Index;
-            // Insert into local scope (if not already defined)
-            Kai__DG_Node_Index* node_index = kai__hash_table_find(scope->identifiers, node->name);
-            if (node_index != NULL && node_index->flags != KAI__DG_NODE_LOCAL_VARIABLE) {
-                Kai__DG_Node* original = &Context->nodes.elements[node_index->value];
-                return kai__error_redefinition(
-                    Context->error,
-                    allocator,
-                    node->name,
-                    node->line_number,
-                    original->name,
-                    original->line_number
-                );
-            }
-
-            kai__hash_table_emplace(scope->identifiers,
-                node->name,
-                (Kai__DG_Node_Index) {
-                    .flags = KAI__DG_NODE_LOCAL_VARIABLE,
-                }
-            );
-
-            // Look into it's definition to find possible dependencies
-            return kai__dg_insert_value_dependencies(
-                Context,
-                out_Dependency_Array,
-                Scope_Index,
-                node->expr,
-                KAI_TRUE
-            );
-        }
-        else kai__todo("invalid declaration\n");
-    }
-
-    break; case KAI_STMT_ASSIGNMENT: {
-        if (In_Procedure) {
-            Kai_Stmt_Assignment* node = base;
-            return kai__dg_insert_value_dependencies(
-                Context,
-                out_Dependency_Array,
-                Scope_Index,
-                node->expr,
-                KAI_TRUE
-            );
-        }
-        else kai__todo("invalid assignment\n");
-    }
-
-    break; case KAI_STMT_FOR: {
-        Kai_Stmt_For* node = base;
-        return kai__dg_insert_value_dependencies(
-            Context,
-            out_Dependency_Array,
-            Scope_Index,
-            node->body,
-            In_Procedure
-        );
-    }
-*/
-    }
-
-    ret false;
-}
-
-// Insert dependency for the type of an expression.
-// In other words, the current_node will depend on the TYPE of `expr`
-_insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
-{
-    if expr == null { kai__todo("null expression\n"); }
-
-    if expr.id == {
-    case KAI_EXPR_IDENTIFIER; {
-        ref: Node_Reference = _lookup_node(context, expr.source_code);
-
-        if ref.flags & KAI_NODE_NOT_FOUND {
-            node: *Node = *context.nodes.data[context.current_node.index];
-            location: Location = Location.{source = node.location.source, string = expr.source_code, line = expr.line_number};
-            ret _error_not_declared(context, location);
-        }
-
-        if ref.flags & KAI_NODE_LOCAL break;
-        
-        ref.flags |= KAI_NODE_TYPE;
-        add_dependency(context, ref);
-    }
-
-    // no dependency
-    case KAI_EXPR_NUMBER;
-    case KAI_EXPR_STRING;
-    case KAI_EXPR_SPECIAL;
-
-    case KAI_EXPR_UNARY; {
-        u: *Expr_Unary = cast expr;
-        ret _insert_type_dependencies(context, u.expr);
-    }
-
-    case KAI_EXPR_BINARY; {
-        b: *Expr_Binary = cast expr;
-        if _insert_type_dependencies(context, b.left) ret true;
-        if b.op == #multi "->" {
-            if _insert_value_dependencies(context, b.right) ret true;
-        }
-        else {
-            if _insert_type_dependencies(context, b.right) ret true;
-        }
-    }
-    
-    case KAI_EXPR_PROCEDURE; {
-        p: *Expr_Procedure = cast expr;
-        current: *Expr = p.in_out_expr;
-        while current != null {
-            // Depend on the value of each type in procedure type
-            if _insert_value_dependencies(context, current) ret true;
-            current = current.next;
-        }
-    }
-
-    case KAI_EXPR_STRUCT; {
-        //s: *Expr_Struct = cast expr;
-        //current: *Stmt = s.head;
-        //while current {
-        //    // Depend on the value of each type in struct
-        //    if _insert_value_dependencies(context, current) ret true;
-        //    current = current.next;
-        //}
-        ret false;
-    }
-
-    case KAI_EXPR_ENUM; {
-        //e: *Expr_Enum = cast expr;
-        //ret false;
-    }
-    
-    case KAI_EXPR_PROCEDURE_TYPE; {
-        // ret false;
-    }
-
-    case KAI_EXPR_PROCEDURE_CALL; {
-        p: *Expr_Procedure_Call = cast expr;
-        if _insert_type_dependencies(context, p.proc) ret true;
-        current: *Expr = p.arg_head;
-        while current {
-            // Depend on the value of each type in struct
-            if _insert_value_dependencies(context, current) ret true;
-            current = current.next;
-        }
-    }
-/*
-    break; case KAI_STMT_DECLARATION: {
-        // What do we do here exactly?
-        kai__todo("declaration\n");
-    }
-
-    break; case KAI_STMT_RETURN: {
-        Kai_Stmt_Return* node = base;
-        return kai__dg_insert_type_dependencies(
-            Context,
-            out_Dependency_Array,
-            Scope_Index,
-            node->expr
-        );
-    }
-
-    break; case KAI_STMT_COMPOUND: {
-        kai__todo("compound\n");
-    }
-*/
-    case; {
-        kai__todo("need to implement id = %i", expr.id);
-    }
-    }
-    
-    ret false;
-}
-
-_generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
+_generate_builtin_types :: (context: *Compiler_Context) -> bool
 {
     //
     // TODO: There must be a better solution than this.
@@ -803,158 +500,6 @@ _generate_dependency_builtin_types :: (context: *Compiler_Context) -> bool
     string_type.fields.data[1] = Struct_Field.{name = STRING("data"), offset = sizeof(uint), type = pu8_type->Type};
     array_push(*context.nodes, Node.{type = type_type, value = Value.{type = string_type->Type}, flags = KAI_NODE_EVALUATED});
     context.string_type = string_type -> Type;
-    ret false;
-}
-
-_generate_dependency_graph :: (context: *Compiler_Context) -> bool
-{
-    allocator: *Allocator = *context.allocator;
-    
-    // Initialize Global Scope
-    array_push(*context.scopes, Scope.{ is_proc_scope = false });
-
-    if _generate_dependency_builtin_types(context)
-        ret true;
-
-    // Insert nodes from syntax tree
-    for i: 0..<context.program.code.trees.count {
-        tree: *Syntax_Tree = *context.program.code.trees.data[i];
-        context.current_source = tree.source;
-
-        current: *Stmt = tree.root.head;
-        while current {
-            if _create_nodes(context, current)
-                ret true;
-            current = current.next;
-        }
-    }
-
-    // Insert dependencies for each node
-    for i: 0..<context.nodes.count
-    {
-        node: *Node = *context.nodes.data[i];
-        context.current_node.index = i;
-
-        if node.flags & KAI_NODE_EVALUATED || node.flags & KAI_NODE_IMPORT
-            continue;
-
-        if node.expr != null {
-            context.current_node.flags = 0;
-            if _insert_value_dependencies(context, node.expr) ret true;
-            context.current_node.flags = KAI_NODE_TYPE;
-            if _insert_type_dependencies(context, node.expr) ret true;
-        }
-
-        context.current_node.flags = KAI_NODE_TYPE;
-        if node.type_expr != null {
-            if _insert_value_dependencies(context, node.type_expr)
-                ret true;
-        }
-    }
-
-    if context.options.flags & KAI_COMPILE_DEBUG
-    for i: 14..<context.nodes.count {
-        node: *Node = *context.nodes.data[i];
-        printf("node (%i) %.*s", i, node.location.string.count->s32, node.location.string.data);
-        for i: 0..<(32 - node.location.string.count) putchar(#char " ");
-        printf(" V{ ");
-        for j: 0..<node.value_dependencies.count {
-            ref: Node_Reference = node.value_dependencies.data[j];
-            id: u8 = #char "v";
-            if ref.flags & KAI_NODE_TYPE id = #char "t";
-            printf("%i%c", ref.index, id);
-            if j+1 < node.value_dependencies.count
-                printf(", ");
-        }
-        printf(" } T{ ");
-        for j: 0..<node.type_dependencies.count {
-            ref: Node_Reference = node.type_dependencies.data[j];
-            id: u8 = #char "v";
-            if ref.flags & KAI_NODE_TYPE id = #char "t";
-            printf("%i%c", ref.index, id);
-            if j+1 < node.type_dependencies.count
-                printf(", ");
-        }
-        printf(" }\n");
-    }
-
-    ret false;
-}
-
-_DFS_Context :: struct {
-    context: *Compiler_Context;
-    post: *u32;
-    prev: *u32;
-    visited: *bool;
-    next: u32;
-}
-
-_explore_dependencies :: (dfs: *_DFS_Context, ref: Node_Reference)
-{
-    index: u32 = (ref.index << 1) | (ref.flags & KAI_NODE_TYPE);
-    dfs.visited[index] = true;
-
-    node: *Node = *dfs.context.nodes.data[ref.index];
-
-    deps: *[..] Node_Reference;
-    if ref.flags & KAI_NODE_TYPE  deps = *node.type_dependencies;
-    else                          deps = *node.value_dependencies;
-
-    for d: 0..<deps.count {
-        dep: Node_Reference = deps.data[d];
-        d_index: u32 = (dep.index << 1) | (dep.flags & KAI_NODE_TYPE);
-
-        if !dfs.visited[d_index] {
-            dfs.prev[d_index] = index;
-            _explore_dependencies(dfs, dep);
-        }
-    }
-
-    dfs.post[index] = dfs.next;
-    dfs.next += 1;
-}
-
-_generate_compilation_order :: (context: *Compiler_Context) -> bool
-{
-    // TODO: only one allocation necessary
-    allocator: *Allocator = *context.allocator;
-    dfs: _DFS_Context = _DFS_Context.{context = context, next = 0};
-    dfs.post    = _allocate(null, context.nodes.count * 2 * sizeof(u32), 0) -> *u32;
-    dfs.prev    = _allocate(null, context.nodes.count * 2 * sizeof(u32), 0) -> *u32;
-    dfs.visited = _allocate(null, context.nodes.count * 2 * sizeof(bool), 0) -> *bool;
-    _memory_fill(dfs.prev, 0xFF, context.nodes.count * 2 * sizeof(u32));
-
-    // Perform DFS traversal
-    for i: 0..<context.nodes.count {
-        ref: Node_Reference = Node_Reference.{index = i};
-
-        v: u32 = (ref.index << 1) | (ref.flags & KAI_NODE_TYPE);
-        if !dfs.visited[v] _explore_dependencies(*dfs, ref);
-
-        ref.flags = KAI_NODE_TYPE;
-        t: u32 = (ref.index << 1) | (ref.flags & KAI_NODE_TYPE);
-        if !dfs.visited[t] _explore_dependencies(*dfs, ref);
-    }
-
-    // Sort based on the post number to linearize the graph
-    context.compilation_order.count = context.nodes.count * 2;
-    context.compilation_order.data = _allocate(null, context.compilation_order.count * sizeof(u32), 0) -> *u32;
-
-    for i: 0..<context.compilation_order.count {
-        context.compilation_order.data[dfs.post[i]] = i;
-    }
-
-    if context.options.flags & KAI_COMPILE_DEBUG {
-        for i: 28..<context.compilation_order.count {
-            k: u32 = context.compilation_order.data[i];
-            index: u32 = k >> 1;
-            ch: u8 = #char "v";
-            if k & 1 { ch = #char "t"; }
-            printf("%i%c ", index, ch);
-        }
-        printf("\n");
-    }
-
     ret false;
 }
 
@@ -1808,6 +1353,8 @@ _compile_node_value :: (context: *Compiler_Context, node: *Node) -> bool
         node.value = value;
         ret false;
     }
+
+    assert(node.type != null);
     
     if type != node.type {
         // Able to auto-cast Numbers => Integer | Float
@@ -2049,10 +1596,9 @@ _push_value :: (context: *Compiler_Context, type: *Type_Info, value: Value) -> u
 _compile_all_nodes :: (context: *Compiler_Context) -> bool
 {
     allocator: *Allocator = *context.allocator;
-    for i: 0..<context.compilation_order.count
+    for i: 0..<(context.nodes.count << 1)
     {
-        k: u32 = context.compilation_order.data[i];
-        ref: Node_Reference = Node_Reference.{index = (k >> 1), flags = (k & 1)};
+        ref: Node_Reference = Node_Reference.{index = (i >> 1), flags = (i & 1)};
         node: *Node = *context.nodes.data[ref.index];
 
         if (node.flags & KAI_NODE_EVALUATED) == KAI_NODE_EVALUATED
@@ -2061,29 +1607,17 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
         context.current_source = node.location.source;
         context.current_node = ref;
 
-        writer: *Writer = *context.debug_writer;
+        writer: *Writer = context.debug_writer;
 
-        if ref.flags & KAI_NODE_TYPE {
-            if context.options.flags & KAI_COMPILE_DEBUG {
-                printf("compiling typeof(%.*s)\n", node.location.string.count->s32, node.location.string.data);
-            }
-            if _compile_node_type(context, node)
-                ret true;
-            if context.options.flags & KAI_COMPILE_DEBUG {
-                printf("=> ");
-                write_type(*context.debug_writer, node.type);
-                printf("\n");
-            }
-        }
-        else {
-            if context.options.flags & KAI_COMPILE_DEBUG {
-                printf("compiling (%.*s)\n", node.location.string.count->s32, node.location.string.data);
+        if ref.flags & KAI_NODE_VALUE {
+            if writer != NULL {
+                printf("compiling V(%.*s)\n", node.location.string.count->s32, node.location.string.data);
             }
             if !(node.flags & KAI_NODE_IMPORT) {
                 if _compile_node_value(context, node)
                     ret true;
             }
-            if context.options.flags & KAI_COMPILE_DEBUG {
+            if writer != NULL {
                 printf("=> ");
                 if node.type.id == {
                     case KAI_TYPE_ID_NUMBER; {
@@ -2111,6 +1645,18 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
                 table_set(*context.program.variable_table, node.location.string, Variable.{type = node.type, location = location});
             }
         }
+        else {
+            if writer != NULL {
+                printf("compiling T(%.*s)\n", node.location.string.count->s32, node.location.string.data);
+            }
+            if _compile_node_type(context, node)
+                ret true;
+            if writer != NULL {
+                printf("=> ");
+                write_type(writer, node.type);
+                printf("\n");
+            }
+        }
     }
     ret false;
 }
@@ -2130,7 +1676,7 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         program = out_program,
         options = info.options,
         imports = info.imports,
-        debug_writer = writer_stdout(),
+        debug_writer = info.debug_writer,
     };
     arena_create(*context.type_allocator, *info.allocator);
     arena_create(*context.temp_allocator, *info.allocator);
@@ -2143,8 +1689,7 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
 
     while context.error.result == KAI_SUCCESS {
         if _create_syntax_trees(*context, info.sources) break;
-        if _generate_dependency_graph(*context) break;
-        if _generate_compilation_order(*context) break;
+        if _generate_nodes(*context) break;
         if _compile_all_nodes(*context) break;
         break;
     }
