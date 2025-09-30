@@ -95,3 +95,26 @@ static inline Kai_u32 kai_intrinsics_ctz64(Kai_u64 value)
     }
 #endif
 
+#if defined(KAI_PLATFORM_APPLE) || defined(KAI_PLATFORM_LINUX)
+#include "execinfo.h"
+void kai__debug_print_stacktrace(void) {
+    void *buffer[128];
+    int nptrs = backtrace(buffer, sizeof(buffer)/sizeof(void*));
+    char **symbols = backtrace_symbols(buffer, nptrs);
+
+    if (symbols == NULL) {
+        perror("backtrace_symbols");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Stack trace:\n");
+    for (int i = 1; i < nptrs; i++) {
+        printf("%s\n", symbols[i]);
+    }
+
+    free(symbols);
+}
+#else
+void kai__debug_print_stacktrace(void) {}
+#endif
+

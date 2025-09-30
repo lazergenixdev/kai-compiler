@@ -12,6 +12,8 @@
 - [ ] remove need for `destroy_syntax_tree` by passing in arena as input to `create_syntax_tree`
 - [ ] `_type_of_expression` should return `bool`
 - [ ] `_type_of_expression` should have an option to write out the types of subexpressions to remove need for separate typechecker
+- [ ] rename `EXPR_ARRAY` to `EXPR_ARRAY_TYPE`
+- [ ] fix parser so that `#array` and `#map` can be removed
 
 # Version 1
 - [ ] AST interpreter (compile-time) -> compile time execution
@@ -27,3 +29,4 @@
 - [ ] add `then` keyword
 - [ ] add multi-line string literals
 - [ ] parser needs a recovery mode for syntax highlighting only??
+- [ ] consider using `KAI_IMP` instead of `KAI_API` for implementation for grep purposes

@@ -1,0 +1,128 @@
+
+VERSION_STRING :: #host_import;
+VERSION_MAJOR  :: #host_import;
+VERSION_MINOR  :: #host_import;
+VERSION_PATCH  :: #host_import;
+
+#export version_string :: () -> string
+{
+    ret VERSION_STRING;
+}
+@doc_short ("Get version as string (includes extra version info)")
+
+#export version :: () -> [3] u32
+{
+    ret {VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
+}
+@doc_short ("Get version as number")
+
+ceil_div :: (num: u64, den: u64) -> u64
+{
+    ret (num + den - 1) / den;
+}
+
+ceil_div_fast :: (num: u64, exp: u32) -> u64
+{
+    ret (num + (1 << exp) - 1) >> exp;
+}
+
+max_u32 :: (a: u32, b: u32) -> u32
+{
+    if a < b ret b;
+    ret a;
+}
+
+min_u32 :: (a: u32, b: u32) -> u32
+{
+    if a < b ret a;
+    ret b;
+}
+
+gcd :: (a: u64, b: u64) -> u64
+{
+    r: u64 = 1;
+    //while r != 0 {
+    //    r = a % b;
+    //    a = b;
+    //    b = r;
+    //}
+    ret r;
+}
+
+//ldexp :: #host_import;
+
+#export Result :: enum u32 {
+    SUCCESS        :: 0;
+    ERROR_MEMORY   :: 1;
+    ERROR_SYNTAX   :: 2;
+    ERROR_SEMANTIC :: 3;
+    ERROR_INFO     :: 4;
+    ERROR_FATAL    :: 5; @comment ("means compiler bug probably")
+    ERROR_INTERNAL :: 6; @comment ("means compiler error unrelated to the source code")
+    RESULT_COUNT   :: 7;
+}
+
+#export Type_Id :: enum u8 {
+    TYPE      :: 0; @comment ("no type info struct")
+    VOID      :: 1; @comment ("no type info struct")
+    BOOLEAN   :: 2; @comment ("no type info struct")
+    INTEGER   :: 3;
+    FLOAT     :: 4;
+    POINTER   :: 5;
+    PROCEDURE :: 6;
+    ARRAY     :: 7;
+    STRUCT    :: 8;
+    ENUM      :: 9;
+    STRING    :: 10; @comment ("same as STRUCT")
+    NUMBER    :: 11; @comment ("compiler internal only")
+} @long_names
+
+#export Type :: *Type_Info;
+
+#export Type_Info :: struct {
+    id : Type_Id;
+}
+
+#export Range :: struct {
+    start: u32;
+    count: u32;
+}
+
+#export Memory :: struct {
+    size : u32;
+    data : *void;
+}
+
+#export Source :: struct {
+    name:     string;
+    contents: string;
+}
+#export Location :: struct {
+    source : Source; // source code for this file
+    string : string;
+    line   : u32;
+}
+
+#export Error :: struct {
+    result    : Result;
+    location  : Location;
+    message   : string;
+    context   : string;
+    memory    : Memory;
+    next      : *Error;
+}
+
+// ldexp :: #host_import; @internal
+
+// Math
+/*
+_ceil_div :: (num: u64, den: u64) -> u64
+{
+    ret (num + den - 1) / den;
+}
+
+_ceil_div_fast :: (num: u64, exp: u32) -> u64
+{
+    ret (num + (1->u64 << exp) - 1) >> exp;
+}
+*/

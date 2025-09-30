@@ -69,12 +69,18 @@ static Kai_Writer div_writer = {
 	.set_color      = &__env_set_color,
 	.user           = (void*)0,
 };
-static Kai_Error error = {0};
+static Kai_Error error;
 static Kai_Allocator allocator = {
 	.heap_allocate = &_Heap_Allocate,
 	.platform_allocate = &_Platform_Allocate,
 	.page_size = WASM_PAGE_SIZE,
 };
+static Kai_string file_name;
+
+WASM_EXPORT void set_file_name(Kai_string name)
+{
+    file_name = name;
+}
 
 // NOTE: No destroy procedures ever need to be called,
 // because after each of these procedures, the WASM
@@ -87,7 +93,10 @@ WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)
 	Kai_Syntax_Tree_Create_Info info = {
 		.allocator = allocator,
 		.error = &error,
-		.source = { .contents = (Kai_string){.count = count, .data = data} },
+		.source = {
+            .name = file_name,
+            .contents = (Kai_string){.count = count, .data = data}
+        },
 	};
 	Kai_Result result = kai_create_syntax_tree(&info, &tree);
 
@@ -110,7 +119,7 @@ WASM_EXPORT int compile_show_typed_ast(Kai_u8* data, Kai_u32 count)
 
 	error = (Kai_Error){0};
 	Kai_Program program = {0};
-    Kai_Source source = { .contents = (Kai_string){.count = count, .data = data} };
+    Kai_Source source = { .name = file_name, .contents = (Kai_string){.count = count, .data = data} };
     Kai_Program_Create_Info info = {
         .allocator = allocator,
         .error = &error,
@@ -139,7 +148,7 @@ WASM_EXPORT int compile_show_exports(Kai_u8* data, Kai_u32 count)
 	
 	error = (Kai_Error){0};
 	Kai_Program program = {0};
-    Kai_Source source = { .contents = (Kai_string){.count = count, .data = data} };
+    Kai_Source source = { .name = file_name, .contents = (Kai_string){.count = count, .data = data} };
     Kai_Program_Create_Info info = {
         .allocator = allocator,
         .error = &error,

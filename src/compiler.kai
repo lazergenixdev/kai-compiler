@@ -240,9 +240,30 @@ _error_not_declared :: (context: *Compiler_Context, location: Location) -> bool
     range: Range = _buffer_end(*buffer);
     context.error.memory = _buffer_done(*buffer);
     context.error.message = _range_to_string(range, context.error.memory);
+    kai__debug_print_stacktrace();
     ret true;
 }
 
+_error_host_import_not_found :: (context: *Compiler_Context, location: Location) -> bool
+{
+    [context.error] = Error.{
+        result = KAI_ERROR_SEMANTIC,
+        location = location,
+    };
+    buffer: Buffer = Buffer.{allocator = context.allocator};
+    _buffer_append_string(*buffer, STRING("could not find host import \""));
+    _buffer_append_string(*buffer, location.string);
+    _buffer_append_string(*buffer, STRING("\""));
+    range: Range = _buffer_end(*buffer);
+    context.error.memory = _buffer_done(*buffer);
+    context.error.message = _range_to_string(range, context.error.memory);
+    ret true;
+}
+
+// TODO: do not generate a dependency graph, because it will not work for
+// procedures, I would need to parse the entire procedure first to look
+// for constant declarations inside the procedure, then look for redefinitions.
+// Is this too inefficient?
 _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
 {
     allocator: *Allocator = *context.allocator;
@@ -628,18 +649,23 @@ _insert_type_dependencies :: (context: *Compiler_Context, expr: *Expr) -> bool
     }
 
     case KAI_EXPR_STRUCT; {
-        s: *Expr_Struct = cast expr;
-        current: *Stmt = s.head;
-        while current {
-            // Depend on the value of each type in struct
-            if _insert_value_dependencies(context, current) ret true;
-            current = current.next;
-        }
+        //s: *Expr_Struct = cast expr;
+        //current: *Stmt = s.head;
+        //while current {
+        //    // Depend on the value of each type in struct
+        //    if _insert_value_dependencies(context, current) ret true;
+        //    current = current.next;
+        //}
         ret false;
+    }
+
+    case KAI_EXPR_ENUM; {
+        //e: *Expr_Enum = cast expr;
+        //ret false;
     }
     
     case KAI_EXPR_PROCEDURE_TYPE; {
-        ret false; // always a type
+        // ret false;
     }
 
     case KAI_EXPR_PROCEDURE_CALL; {
@@ -1002,9 +1028,15 @@ _evaluate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) ->
                 case #char "-"; ret Value.{number = number_sub(a.number, b.number)};
                 case #char "*"; ret Value.{number = number_mul(a.number, b.number)};
                 case #char "/"; ret Value.{number = number_div(a.number, b.number)};
-                // TODO: OK to treat shift as multiplying by power of 2?
-                case #multi "<<"; ret Value.{number = number_mul(a.number, Number.{1, 1, b.number.n, 0})};
-                case #multi ">>"; ret Value.{number = number_div(a.number, Number.{1, 1, b.number.n, 0})};
+                // TODO: shift must be by an unsigned integer
+                case #multi "<<"; {
+                    e: s64 = number_to_u64(b.number) -> s64;
+                    ret Value.{number = number_normalize(Number.{a.number.n, a.number.d, a.number.e + e, a.number.is_neg})};
+                }
+                case #multi ">>"; {
+                    e: s64 = number_to_u64(b.number) -> s64;
+                    ret Value.{number = number_normalize(Number.{a.number.n, a.number.d, a.number.e - e, a.number.is_neg})};
+                }
             }
             kai__todo("number op = %i", op);
         }
@@ -1013,6 +1045,38 @@ _evaluate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) ->
         }
     }
     ret Value.{0};
+}
+
+_type_check_literal :: (context: *Compiler_Context, l: *Expr_Literal, type: *Type_Info) -> bool
+{
+    l.this_type = type;
+    if type.id == {
+        case KAI_TYPE_ID_TYPE; kai__todo("TYPE");
+        case KAI_TYPE_ID_VOID; kai__todo("VOID");
+        case KAI_TYPE_ID_BOOLEAN; kai__todo("BOOLEAN");
+        case KAI_TYPE_ID_INTEGER; kai__todo("INTEGER");
+        case KAI_TYPE_ID_FLOAT; kai__todo("FLOAT");
+        case KAI_TYPE_ID_POINTER; kai__todo("POINTER");
+        case KAI_TYPE_ID_PROCEDURE; kai__todo("PROCEDURE");
+        case KAI_TYPE_ID_ARRAY; {
+            t: *Type_Info_Array = cast type;
+            // look at every item of 
+            assert(t.cols == 0);
+            assert(l.count == t.rows);
+            current: *Expr =  l.head;
+            while current != null {
+                _type_check(context, current, *t.sub_type);
+                current = current.next;
+            }
+            ret false;
+        }
+        case KAI_TYPE_ID_STRUCT; kai__todo("STRUCT");
+        case KAI_TYPE_ID_STRING; kai__todo("STRING");
+        case; {
+            kai__todo("what are types????");
+        }
+    }
+    ret true;
 }
 
 _type_check :: (context: *Compiler_Context, expr: *Expr, out_or_expected: **Type_Info) -> bool
@@ -1118,6 +1182,22 @@ _type_check :: (context: *Compiler_Context, expr: *Expr, out_or_expected: **Type
             }
 
             n.this_type = expected;
+        }
+        case KAI_EXPR_LITERAL; {
+            assert(out_or_expected != null);
+            ret _type_check_literal(context, expr -> *Expr_Literal, [out_or_expected]);
+        }
+        case KAI_EXPR_UNARY; {
+            u: *Expr_Unary = cast expr;
+            if u.op == #char "."
+            {
+                assert(out_or_expected != null);
+                u.this_type = [out_or_expected];
+                ret _type_check(context, u.expr, out_or_expected);
+            }
+            else {
+                kai__todo("I don't know what this unary op is, and you can fix that!");
+            }
         }
         case KAI_EXPR_BINARY; {
             b: *Expr_Binary = cast expr;
@@ -1238,6 +1318,10 @@ _type_check :: (context: *Compiler_Context, expr: *Expr, out_or_expected: **Type
                 b.this_type = lt;
             }
             }
+        }
+        case KAI_STMT_DECLARATION; {
+            // d: *Stmt_Declaration = cast expr;
+            // TODO: do something here
         }
         case KAI_STMT_RETURN; {
             r: *Stmt_Return = cast expr;
@@ -1464,6 +1548,38 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             [out_type] = context.type_type;
             ret false;
         }
+
+        case KAI_EXPR_ENUM; {
+            e: *Expr_Enum = cast expr;
+            et: *Type_Info_Enum = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Enum));
+            et.id = KAI_TYPE_ID_ENUM;
+            et.values.count = e.field_count;
+            et.values.data = arena_allocate(*context.type_allocator, sizeof(Enum_Value) * et.values.count) -> *Enum_Value;
+
+            current: *Expr = e.head;
+            for i: 0..<e.field_count {
+                assert(current.id == KAI_STMT_DECLARATION);
+                d: *Stmt_Declaration = cast current;
+
+                type: *Type_Info;
+                value: Value;
+                if _value_of_expression(context, d.expr, *value, *type)
+                    ret true;
+                if type.id != KAI_TYPE_ID_TYPE
+                    ret true;
+
+                //ASSERT(type.id == KAI_TYPE_ID_NUMBER);
+                //et.values.data[i] = Enum_Value.{
+                //    name = d.name,
+                //    value = number_to_u64(value.number),
+                //};
+                current = current.next;
+            }
+
+            out_value.type = et -> Type;
+            [out_type] = context.type_type;
+            ret false;
+        }
         
         case KAI_EXPR_PROCEDURE_TYPE; {
             p: *Expr_Procedure_Type = cast expr;
@@ -1659,6 +1775,7 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
         }
         
         case KAI_EXPR_STRUCT; #through;
+        case KAI_EXPR_ENUM; #through;
         case KAI_EXPR_PROCEDURE_TYPE; {
             ret context.type_type;
         }
@@ -1762,7 +1879,7 @@ _compile_node_type :: (context: *Compiler_Context, node: *Node) -> bool
     if node.flags & KAI_NODE_IMPORT {
         import = _find_import(context, node.location.string);
         if import == null
-            ret _error_fatal(context, STRING("cannot find import"));
+            ret _error_host_import_not_found(context, node.location);
 
         if node.type_expr == null {
             if import.type.count == 0
@@ -1905,9 +2022,9 @@ _copy_value :: (out: *u8, type: *Type_Info, value: Value)
         case KAI_TYPE_ID_STRUCT; {
             info: *Type_Info_Struct = cast type;
             if info.size <= sizeof(Value)
-                memcpy(out, value.inline_struct, info.size);
+                _memory_copy(out, value.inline_struct, info.size);
             else
-                memcpy(out, value.ptr, info.size);
+                _memory_copy(out, value.ptr, info.size);
         }
         case KAI_TYPE_ID_NUMBER; {
             [out -> *Number] = value.number;

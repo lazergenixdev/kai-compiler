@@ -1,8 +1,8 @@
 
 // Basic Types
-#export value1 : s32    = 0x45;  // 32-bit signed integer
-#export value2 : f64    = 3.125; // 64-bit IEEE floating point
-#export value3 : string = "wow"; // string type (pointer + length)
+#export value1 : s32 = 3.0 / (0.1 + 0.2);
+#export value2 : f64 = 3.125;
+#export value3 : string = "wow";
 
 
 // Struct Types

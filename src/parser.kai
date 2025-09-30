@@ -13,7 +13,7 @@ Expr_Id :: enum u8 {
     EXPR_IMPORT         = 10; // no struct
     EXPR_STRUCT         = 11;
     EXPR_ENUM           = 12;
-    EXPR_ARRAY          = 13; // (consider renaming => EXPR_ARRAY_TYPE)
+    EXPR_ARRAY          = 13;
     EXPR_SPECIAL        = 14;
     STMT_RETURN         = 15;
     STMT_DECLARATION    = 16;
@@ -211,6 +211,11 @@ Syntax_Tree_Create_Info :: struct {
     error      : *Error;    // [output]
 }
 
+//Linked_List :: struct (T: #Type) {
+//    head : *T;
+//    last : *T;
+//}
+
 Expr_List :: LINKED_LIST(Expr);
 Stmt_List :: LINKED_LIST(Stmt);
 
@@ -292,7 +297,7 @@ Token_Id :: enum u32 {
     TOKEN_break      = 0x80;
     TOKEN_case       = 0x81;
     TOKEN_cast       = 0x82;
-    TOKEN_continue   = 0x83; // => skip?
+    TOKEN_continue   = 0x83; // ? rename to skip
     TOKEN_defer      = 0x84;
     TOKEN_else       = 0x85;
     TOKEN_enum       = 0x86;
@@ -1251,7 +1256,8 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
     case #char "["; {
         // Check if actually a type
         peeked: *Token = _peek_token();
-        if peeked.id == #char "]" || peeked.id == #multi ".." {
+        if peeked.id == #char "]" || peeked.id == #multi ".."
+        || peeked.id == KAI_TOKEN_NUMBER { // Numbers are not pointers
             left = parse_type_expression(parser);
         }
         else {
@@ -1416,6 +1422,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         count: u32;
 
         _next_token(); // skip struct
+        _expect(current.id == #char "{", "in struct", "should be '{' here");
         _next_token(); // skip '{'
         while current.id != #char "}"
         {

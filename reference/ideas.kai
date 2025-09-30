@@ -15,15 +15,6 @@ example :: ()
     memory := allocate(allocator, 100);
 }
 
-// Idea: don't use identifier for type of types, use directive
-example :: (w: $T) -> T
-{
-    a, b: u32;
-    T :: #type(a + b); // get type of `a + b`
-    K: #Type = u32; // K is a `#Type`
-    assert(T == K);
-}
-
 // Idea: multiline string
 //        start = "\"\"\"\n", end = "\n\"\"\""
 example :: ()
@@ -167,6 +158,8 @@ example :: (a: u64, b: u32) -> f32
 array      :: #array [3] int;
 hash_table :: #map [string] int;
 proc       :: #proc () -> int;
+
+[string] (); // map of functions, or dereference string an call
 
 // These expressions will work as expected because
 array :: [] int;   // `[]` is not a valid expression

@@ -414,13 +414,6 @@ void generate_all_macros(String_Builder* builder)
 		sb_appendf(builder, "#define kai_%s%s %s\n", function_macros[i].name, function_macros[i].args, function_macros[i].value);
 	}
 	sb_append_cstr(builder, "\n");
-
-	sb_append_cstr(builder,
-		"#ifndef KAI_API\n"
-		"#define KAI_API(RETURN) extern RETURN\n"
-		"#endif\n\n"
-	);
-	
 	sb_append_cstr(builder, "#define KAI_INTERNAL inline static\n\n");
 
 	String_Builder internal = {0};
@@ -482,12 +475,6 @@ void generate_all_primitive_types(String_Builder* builder)
 	shput(g_identifier_map, "cstring", Identifier_Type_Type);
 	
 	sb_append_cstr(builder, "\n");
-}
-
-void write_decl(String_Builder* builder, Kai_Stmt_Declaration* decl)
-{
-	printf("%.*s;\n", decl->name.count, decl->name.data);
-	sb_appendf(builder, "KAI_API(void) kai_%.*s();\n", decl->name.count, decl->name.data);
 }
 
 const char* map_binary_operator(Kai_u32 op)
@@ -1199,7 +1186,7 @@ void generate_all_struct_definitions(String_Builder* builder, Kai_Stmt_Compound*
 			Kai_Expr_Struct* str = (void*)decl->expr;
 			
 			sb_appendf(builder, "%s Kai_%.*s {\n", str->flags & KAI_FLAG_STRUCT_UNION? "union":"struct",
-				decl->name.count, decl->name.data);
+				(int)decl->name.count, decl->name.data);
 			generate_all_struct_members(builder, str);
 			sb_append(builder, "};\n\n");
 		}
@@ -1659,6 +1646,7 @@ void run_tests(void)
 			const char* output = executable(name);
 			nob_cc(&cmd);
 			nob_cc_flags(&cmd);
+			nob_cmd_append(&cmd, "-g"); // DEBUG
 			nob_cc_inputs(&cmd, temp_sprintf("%s.c", name));
 			nob_cc_output(&cmd, temp_sprintf("../bin/%s", output));
 			exit_on_fail(cmd_run_sync_and_reset(&cmd));

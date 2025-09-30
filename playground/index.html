@@ -19,7 +19,7 @@
 <style>
   .monospaced-font {
     font-optical-sizing: auto;
-    font-size: small;
+    font-size: normal;
     font-family: "Inconsolata", monospace;
     font-weight: 400;
     font-style: normal;
@@ -113,14 +113,14 @@
     font-family: 'Fira Code', monospace;
   }
   select {
-		font-size: 1rem;
-    color: color-mix(in srgb, #0f111a 20%, white);
+	font-size: 1rem;
+	color: color-mix(in srgb, #0f111a 20%, white);
     background-color: color-mix(in srgb, #0f111a 97%, white);
     border-color: color-mix(in srgb, #0f111a 90%, white);
   }
   .CodeMirror {
     font-family: "Fira Code", monospace; /* change to your preferred font */
-    font-size: 14px;                       /* adjust size */
+    font-size: normal; /* adjust size */
   }
 </style>
 </head>
@@ -135,15 +135,15 @@
   </div>
   <div id="container">
     <div class="column">
-			<select id="files">
-				<option selected>Intro.kai</option>
-				<option>My Code</option>
-				<option value="../src/core.kai">Source core.kai</option>
-				<option value="../src/parser.kai">Source parser.kai</option>
-				<option value="../src/compiler.kai">Source compiler.kai</option>
-				<option value="../src/memory.kai">Source memory.kai</option>
-				<option value="../src/writer.kai">Source writer.kai</option>
-			</select>
+		<select id="files">
+			<option selected>Intro.kai</option>
+			<option>My Code</option>
+			<option value="../src/core.kai">Source core.kai</option>
+			<option value="../src/parser.kai">Source parser.kai</option>
+			<option value="../src/compiler.kai">Source compiler.kai</option>
+			<option value="../src/memory.kai">Source memory.kai</option>
+			<option value="../src/writer.kai">Source writer.kai</option>
+		</select>
       <textarea id="editor"></textarea>
     </div>
     <div class="column">
@@ -314,47 +314,52 @@
 		function write_value(user, type, value, format) {
 			const view = new DataView(c_memory.buffer);
 			const map = {
-				///*KAI_U8  */ 16 : (value, format) => {},
-				///*KAI_U16 */ 33 : (value, format) => {},
-				/*KAI_U32 */ 66 : (value, format) => {
+				///*KAI_U8  */ 0 : (value, format) => {},
+				///*KAI_U16 */ 1 : (value, format) => {},
+				/*KAI_U32 */ 2 : (value, format) => {
 					const string = view.getUint32(value, true).toString();
 					builder.append(new TextEncoder().encode(string));
 				},
-				/*KAI_U64 */ 131: (value, format) => {
-					const string = view.getBigUint64(value, true).toString();
+				/*KAI_U64 */ 3: (value, format) => {
+					let flags          = view.getUint32(format, true);
+					let min_count      = view.getUint32(format + 4, true);
+					let fill_character = view.getUint8(format + 12, true);
+					let string         = view.getBigUint64(value, true).toString(flags&1?16:10);
+					if (min_count > 0)
+						string = string.padStart(min_count, String.fromCharCode(fill_character));
 					builder.append(new TextEncoder().encode(string));
 				},
-				///*KAI_S8  */ 20 : (value, format) => {},
-				///*KAI_S16 */ 37 : (value, format) => {},
-				/*KAI_S32 */ 70 : (value, format) => {
+				///*KAI_S8  */ 4 : (value, format) => {},
+				///*KAI_S16 */ 5 : (value, format) => {},
+				/*KAI_S32 */ 6 : (value, format) => {
 					const string = view.getInt32(value, true).toString();
 					builder.append(new TextEncoder().encode(string));
 				},
-				/*KAI_S64 */ 135: (value, format) => {
+				/*KAI_S64 */ 7: (value, format) => {
 					const string = view.getBigInt64(value, true).toString();
 					builder.append(new TextEncoder().encode(string));
 				},
-				/*KAI_F32 */ 72 : (value, format) => {
+				/*KAI_F32 */ 8 : (value, format) => {
 					const string = view.getFloat32(value, true).toString();
 					builder.append(new TextEncoder().encode(string));
 				},
-				/*KAI_F64 */ 137: (value, format) => {
+				/*KAI_F64 */ 9: (value, format) => {
 					const string = view.getFloat64(value, true).toString();
 					builder.append(new TextEncoder().encode(string));
 				},
-				///*KAI_TYPE*/ 74 : (value, format) => {},
-				/*KAI_FILL*/ 0x800: (value, format) => {
-					let min_count      = view.getUint32(format + 4, true);
-					let fill_character = view.getUint8(format + 12, true);
-					//builder.append(String.fromCharCode(fill_character).repeat(min_count));
-					builder.append(new Uint8Array(min_count).fill(fill_character));
-				},
+				///*KAI_TYPE*/ 10 : (value, format) => {},
 			}
+			if (type == 0x800) {
+				let min_count      = view.getUint32(format + 4, true);
+				let fill_character = view.getUint8(format + 12, true);
+				//builder.append(String.fromCharCode(fill_character).repeat(min_count));
+				builder.append(new Uint8Array(min_count).fill(fill_character));
+			}
+			type = type & 0xF; // get primitive type id
 			if (!(type in map)) {
-				console.warn("value type not implemented")
+				console.warn(`value type ${type} not implemented`)
 				return;
 			}
-
 			map[type](value, format);
 		}
 
@@ -362,19 +367,23 @@
 			builder.set_color(color);
 		}
 
-		let SOURCE = await (await fetch("Intro.kai")).text();
-		{
-		//	const src = localStorage.getItem("kai-compiler.playground.code");
-		//	if (src !== null) {
-		//		SOURCE = src;
-		//	}
-		}
+		let SOURCE = `#export A :: 1;\n`;
 		{
 			const sel = localStorage.getItem("kai-compiler.playground.selection");
 			if (sel !== null) {
 				mode.value = sel;
 			}
 		}
+		{
+			const sel = localStorage.getItem("kai-compiler.playground.selected-file");
+			if (sel !== null) {
+				files.value = sel;
+			}
+		}
+		if (files.value == "My Code")
+			SOURCE = localStorage.getItem("kai-compiler.playground.code");
+		else
+			SOURCE = await fetch(files.value).then(r => r.text());
  
 	CodeMirror.defineSimpleMode("mylang", {
 		start: [
@@ -408,6 +417,18 @@
 		
 		const allocator = new ArenaAllocator();
 
+		function allocate_string(string) {
+			const c_bytes = new Uint8Array(c_memory.buffer);
+			const encodedString = new TextEncoder().encode(string); // Convert to UTF-8
+			const stringMemory = allocator.allocate(encodedString.byteLength); // Allocate memory in WASM module to put string
+			const structMemory = allocator.allocate(8); // Allocate memory for Kai_string
+			c_bytes.set(encodedString, stringMemory); // Write string to WASM memory
+			const dataView = new DataView(c_memory.buffer);
+			dataView.setUint32(structMemory, encodedString.byteLength, true);
+			dataView.setUint32(structMemory+4, stringMemory, true);
+			return structMemory;
+		}
+
 		function compile(code) {
 			SOURCE = code;
 			const encodedString = new TextEncoder().encode(code); // Convert to UTF-8
@@ -419,6 +440,7 @@
 			try {
 				let result;
 				localStorage.setItem("kai-compiler.playground.selection", mode.value);
+				c.set_file_name(allocate_string(files.value));
 				switch (parseInt(mode.value)) {
 					case SYNTAX_TREE:
 						result = c.create_syntax_tree(scratch_buffer, encodedString.byteLength);
@@ -478,6 +500,8 @@
 
 			mode.addEventListener("input", e => compile(SOURCE));
 			files.addEventListener("input", async e => {
+				localStorage.setItem("kai-compiler.playground.selected-file", files.value);
+
 				if (files.value == "My Code")
 					SOURCE = localStorage.getItem("kai-compiler.playground.code");
 				else

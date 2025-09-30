@@ -1,4 +1,10 @@
 
+// Public API
+
+#ifndef KAI_API
+#define KAI_API(R) extern R
+#endif
+
 // Detect Compiler
 
 #if defined(__clang__)

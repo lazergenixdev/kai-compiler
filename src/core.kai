@@ -2,7 +2,6 @@
 // Primitive meta-data
 
 Primitive_Type :: enum u32 {
-    //         ID   SIZE
     U8   =  0 | (1 << 4);
     U16  =  1 | (2 << 4);
     U32  =  2 | (4 << 4);
@@ -372,7 +371,7 @@ raw_hash_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, elem_size
         for j: 0..<new_capacity
         {
             block: u64 = occupied[index / 64];
-            bit: u32 = 1->u64 << (index % 64);
+            bit: u64 = 1->u64 << (index % 64); // are you kidding me!!
     
             // Do an insertion
             if (block & bit) == 0
@@ -466,7 +465,6 @@ raw_hash_table_find :: (table: *Raw_Hash_Table, key: string) -> int
 
         index = (index + 1) & mask;
     }
-
     ret -1;
 }
 
@@ -489,15 +487,16 @@ Type_Id :: enum u8 {
     PROCEDURE = 6;
     ARRAY     = 7;
     STRUCT    = 8;
-    STRING    = 9;
+    ENUM      = 9;
+    STRING    = 10;
     // compiler internal only
-    NUMBER    = 10;
+    NUMBER    = 11;
 }
 
 Type :: *Type_Info;
 
 Type_Info :: struct {
-    id : u8;
+    id : Type_Id;
 }
 
 Type_Info_Integer :: struct {
@@ -541,6 +540,17 @@ Type_Info_Struct :: struct {
     fields: [] Struct_Field;
 }
 
+Enum_Value :: struct {
+    name:  string;
+    value: u64;
+}
+
+Type_Info_Enum :: struct {
+    using Type_Info;
+    sub_type: Type;
+    values: [] Enum_Value;
+}
+
 
 // Numbers
 
@@ -575,6 +585,7 @@ number_to_f64 :: (number: Number) -> f64
 
 number_normalize :: (number: Number) -> Number
 {
+    if number.n == 0 ret Number.{};
     ns: s32 = intrinsics_ctz64(number.n);
     ds: s32 = intrinsics_ctz64(number.d);
     ex: s32 = number.e + (ns - ds);
@@ -1033,9 +1044,9 @@ _advance_to_line :: (source: *u8, line: u32) -> *u8
     ret source;
 }
 
-// TODO: Audit code
 _write_source_code :: (writer: *Writer, src: *u8)
 {
+    // TODO: null terminator????
     while ([src] != 0 && [src] != #char "\n")
     {
         if ([src] == #char "\t")
@@ -1116,9 +1127,9 @@ _unicode_char_width :: (writer: *Writer, cp: u32, first: u8, ch: u8) -> u32
     ret count + 1;
 }
 
-// TODO: Audit code
 _write_source_code_fill :: (writer: *Writer, src: *u8, end: *u8, first: u8, ch: u8)
 {
+    // TODO: null terminator????
     while (src < end && [src] != 0 && [src] != #char "\n")
     {
         cp: u32 = _utf8_decode(*src);
@@ -1150,13 +1161,11 @@ write_error :: (writer: *Writer, error: *Error)
             ret;
         }
 
-        // ------------------------- Write Error Message --------------------------
-
         _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
         if error.location.source.name.count != 0
             _write_string(error.location.source.name);
         else
-            _write("[...]");
+            _write("...");
         _set_color(KAI_WRITE_COLOR_PRIMARY);
     //#if KAI_SHOW_LINE_NUMBER_WITH_FILE {
     //    _write(":");
