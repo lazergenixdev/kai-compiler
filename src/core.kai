@@ -315,6 +315,13 @@ raw_array_grow :: (array: *Raw_Dynamic_Array, count: u32, allocator: *Allocator,
     raw_array_reserve(array, new_capacity, allocator, elem_size);
 }
 
+raw_array_remove :: (array: *Raw_Dynamic_Array, index: u32, elem_size: u32)
+{    
+    for i: index ..< array.count - 1
+        _memory_copy(array.data->*u8 + i * elem_size, array.data->*u8 + (i+1) * elem_size, elem_size);
+    array.count -= 1;
+}
+
 
 // Hash Table
 

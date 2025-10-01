@@ -1966,12 +1966,12 @@ parse_statement :: (parser: *Parser) -> *Stmt
             _expect(right, "in assignment statement", "should be an expression");
             expr = _parser_create_assignment(parser, op, expr, right);
             _next_token();
-            _expect(current.id == #char ";", "in assignment statement", "should be ';' after expression");
+            _expect(current.id == #char ";", "in assignment statement", "should be ';' before this");
         }
         case; {
             if requires_semicolon {
                 _next_token(); // skip expr
-                _expect(current.id == #char ";", "in expression statement", "should be ';' after expression");
+                _expect(current.id == #char ";", "in expression statement", "should be ';' before this");
             }
         }
         }

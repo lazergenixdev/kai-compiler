@@ -81,7 +81,7 @@ Macro function_macros[] = {
 	{"array_last", "(ARRAY)", "(ARRAY)->data[(ARRAY)->count - 1]"},
 	{"array_insert", "(ARRAY)", "TODO"},
 	{"array_insert_n", "(ARRAY)", "TODO"},
-	{"array_remove", "(ARRAY)", "TODO"},
+	{"array_remove", "(ARRAY, INDEX)", "kai_raw_array_remove((Kai_Raw_Dynamic_Array*)(ARRAY), INDEX, sizeof((ARRAY)->data[0]))"},
 	{"array_remove_n", "(ARRAY)", "TODO"},
 	{"array_remove_swap", "(ARRAY)", "TODO"},
 	{"table_set", "(T,KEY,...)", "do{ Kai_u32 _; kai_raw_hash_table_emplace_key((Kai_Raw_Hash_Table*)(T), KEY, &_, allocator, sizeof (T)->values[0]); (T)->values[_] = (__VA_ARGS__); }while(0)"},
