@@ -4,8 +4,10 @@
 - [x] create function to parse function call arguments (for use in parsing tags)
 - [x] add expression tags ()
 - [x] add struct type generation to compiler
+- [x] pass in `debug_writer` to program_create to enable internal debug printing
+- [x] insert all nodes that need to be compiled into wait_list
+- [ ] check if node's dependencies are evaluated before we compile this node
 - [ ] add statement tags {}
-- [ ] pass in `debug_writer` to program_create to enable internal debug printing
 - [ ] add `#optional_export` and `#require_export` directives
 - [ ] `#char` needs to do a utf8 decode and evaluate to the codepoint value
 - [ ] need some kind of import handler from host

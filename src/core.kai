@@ -1149,7 +1149,7 @@ result_string_map: [7] string = .{
     CONST_STRING("Success"),
     CONST_STRING("Memory Error"),
     CONST_STRING("Syntax Error"),
-    CONST_STRING("Semantic Error"),
+    CONST_STRING("Error"), // Semantic errors are the default
     CONST_STRING("Info"),
     CONST_STRING("Fatal Error"),
     CONST_STRING("Internal Error"),
