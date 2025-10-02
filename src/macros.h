@@ -82,6 +82,7 @@
 do { char __message__[1024] = {0};                           \
     int __length__ = snprintf(__message__, sizeof(__message__), __VA_ARGS__); \
     snprintf(__message__ + __length__, sizeof(__message__) - __length__, " (%s)", __FUNCTION__); \
+    kai__debug_print_stacktrace(); \
     kai_fatal_error("TODO", __message__);                    \
 } while (0)
 #endif

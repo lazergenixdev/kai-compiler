@@ -238,11 +238,18 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
     allocator->void;
 
     if expr.id == {
-    /* case KAI_EXPR_PROCEDURE; {
+    case KAI_EXPR_PROCEDURE; {
         p: *Expr_Procedure = cast expr;
-        // Create new scope
-        // Insert nodes for scope
-    } */
+        if p.body.id == KAI_STMT_COMPOUND {
+            c: *Stmt_Compound = cast expr;
+            current: *Stmt = c.head;
+            while current {
+                if _create_nodes(context, current)
+                    ret true;
+                current = current.next;
+            }
+        }
+    }
     case KAI_STMT_DECLARATION; {
         d: *Stmt_Declaration = cast expr;
 
@@ -300,19 +307,7 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
             }
         }
         ret false;
-    }/* 
-    case KAI_STMT_COMPOUND; {
-        c: *Stmt_Compound = cast expr;
-        array_push(*context.scopes, Scope.{0});
-        current: *Stmt = c.head;
-        while current {
-            if _create_nodes(context, current)
-                ret true;
-            current = current.next;
-        }
-        array_pop(*context.scopes);
-        ret false;
-    } */
+    }
     }
     ret false;
 }
@@ -1082,8 +1077,20 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
 
         case KAI_EXPR_ENUM; {
             e: *Expr_Enum = cast expr;
+
+            sv: Value;
+            st: *Type_Info;
+            if _value_of_expression(context, e.type, *sv, *st)
+                ret true;
+
+            if st.id != KAI_TYPE_ID_TYPE
+                kai__todo("enum backing type must be type");
+            if sv.type.id != KAI_TYPE_ID_INTEGER
+                kai__todo("non integral enum type");
+
             et: *Type_Info_Enum = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Enum));
             et.id = KAI_TYPE_ID_ENUM;
+            et.sub_type = sv.type;
             et.values.count = e.field_count;
             et.values.data = arena_allocate(*context.type_allocator, sizeof(Enum_Value) * et.values.count) -> *Enum_Value;
 
@@ -1096,9 +1103,8 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
                 value: Value;
                 if _value_of_expression(context, d.expr, *value, *type)
                     ret true;
-                if type.id != KAI_TYPE_ID_TYPE
-                    ret true;
-
+                
+                // TODO: need to save all values
                 //ASSERT(type.id == KAI_TYPE_ID_NUMBER);
                 //et.values.data[i] = Enum_Value.{
                 //    name = d.name,
@@ -1171,6 +1177,12 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
             size: u32 = _type_size(value.type);
             out_value.u32 = size;
             [out_type] = u32_node.value.type;
+            ret false;
+        }
+
+        // File scope
+        case KAI_STMT_COMPOUND; {
+            kai__todo("do something here");
             ret false;
         }
 
@@ -1258,6 +1270,11 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type
                 ret true;
 
             if u.op == #char "*" {
+                // Pointer to a type, is still a type
+                if et.id == KAI_TYPE_ID_TYPE {
+                    [out_type] = et;
+                    ret false;
+                }
                 pt: *Type_Info_Pointer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Pointer));
                 pt.id = KAI_TYPE_ID_POINTER;
                 pt.sub_type = et;
@@ -1367,7 +1384,18 @@ _compile_node_value :: (context: *Compiler_Context, node: *Node) -> bool
     type: *Type_Info = node.type;
     value: Value;
 
-    if node.expr != null && _value_of_expression(context, node.expr, *value, *type)
+    if node.expr == null
+        kai__todo("how is expression null?");
+
+    if node.expr.id == KAI_EXPR_PROCEDURE {
+        // Skip to treat node as own compilation unit
+        //if _create_nodes(node.expr)
+        //    ret true;
+        // Need another loop here?
+
+    }
+
+    if _value_of_expression(context, node.expr, *value, *type)
         ret true;
 
     // Skip type-checking on procedures (TODO)
@@ -1513,6 +1541,8 @@ _compile_node_type :: (context: *Compiler_Context, node: *Node) -> bool
 // ret #size(type)  (bytes)
 _type_size :: (type: *Type_Info) -> u32
 {
+    if type == null
+        kai__todo("type cannot be null");
     if type.id == {
         case KAI_TYPE_ID_TYPE; {
             ret sizeof(Type);
@@ -1536,6 +1566,10 @@ _type_size :: (type: *Type_Info) -> u32
         case KAI_TYPE_ID_STRUCT; {
             info: *Type_Info_Struct = cast type;
             ret info.size;
+        }
+        case KAI_TYPE_ID_ENUM; {
+            info: *Type_Info_Enum = cast type;
+            ret _type_size(info.sub_type);
         }
         case KAI_TYPE_ID_NUMBER; {
             ret sizeof(Number);
@@ -1676,8 +1710,12 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
                 continue;
             }
             if writer != NULL {
+                write_type(writer, node.type);
                 printf("=> ");
                 if node.type.id == {
+                    case KAI_TYPE_ID_TYPE; {
+                        write_type(writer, node.value.type);
+                    }
                     case KAI_TYPE_ID_NUMBER; {
                         kai_write_number(writer, node.value.number);
                     }
@@ -1705,6 +1743,13 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
         }
     }
     ret false;
+}
+
+_compile :: (context: *Compiler_Context) -> bool
+{
+    context->void;
+    ret false;
+    //_value_of_expression(context, )
 }
 
 create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result

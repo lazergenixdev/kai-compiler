@@ -737,6 +737,7 @@ int main(int argc, char** argv)
         .error = &error,
         .imports = MAKE_SLICE(imports),
         .options = {.flags = KAI_COMPILE_NO_CODE_GEN},
+        .debug_writer = writer,
     };
     Kai_Program program = {0};
     if (kai_create_program(&program_ci, &program)) {

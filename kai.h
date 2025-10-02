@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20251002150240 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20251002222950 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -111,6 +111,7 @@ extern "C" {
 do { char __message__[1024] = {0};                           \
     int __length__ = snprintf(__message__, sizeof(__message__), __VA_ARGS__); \
     snprintf(__message__ + __length__, sizeof(__message__) - __length__, " (%s)", __FUNCTION__); \
+    kai__debug_print_stacktrace(); \
     kai_fatal_error("TODO", __message__);                    \
 } while (0)
 #endif
@@ -1354,7 +1355,7 @@ KAI_INTERNAL Kai_Memory kai__buffer_done(Kai_Buffer* buffer);
 KAI_INTERNAL Kai_u32 kai__base10_digit_count(Kai_u32 x);
 KAI_INTERNAL Kai_u8* kai__advance_to_line(Kai_u8* source, Kai_u32 line);
 KAI_INTERNAL void kai__write_source_code(Kai_Writer* writer, Kai_u8* src);
-KAI_INTERNAL Kai_u32 kai__utf8_decode(Kai_u8** s);
+KAI_INTERNAL Kai_u32 kai__utf8_decode(Kai_string s, Kai_u32* out);
 KAI_INTERNAL Kai_u32 kai__unicode_char_width(Kai_Writer* writer, Kai_u32 cp, Kai_u8 first, Kai_u8 ch);
 KAI_INTERNAL void kai__write_source_code_fill(Kai_Writer* writer, Kai_u8* src, Kai_u8* end, Kai_u8 first, Kai_u8 ch);
 KAI_INTERNAL void kai__tree_traversal_push(Kai__Tree_Traversal_Context* context, Kai_bool is_last);
@@ -1421,6 +1422,7 @@ KAI_INTERNAL Kai_u32 kai__type_size(Kai_Type_Info* type);
 KAI_INTERNAL void kai__copy_value(Kai_u8* out, Kai_Type_Info* type, Kai_Value value);
 KAI_INTERNAL Kai_u32 kai__push_value(Kai_Compiler_Context* context, Kai_Type_Info* type, Kai_Value value);
 KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context);
+KAI_INTERNAL Kai_bool kai__compile(Kai_Compiler_Context* context);
 KAI_INTERNAL void kai__file_writer_write_value(void* user, Kai_u32 type, Kai_Value value, Kai_Write_Format format);
 KAI_INTERNAL void kai__file_writer_write_string(void* user, Kai_string s);
 KAI_INTERNAL void kai__stdout_writer_write_value(void* user, Kai_u32 type, Kai_Value value, Kai_Write_Format format);
@@ -2184,41 +2186,45 @@ KAI_INTERNAL void kai__write_source_code(Kai_Writer* writer, Kai_u8* src)
     }
 }
 
-KAI_INTERNAL Kai_u32 kai__utf8_decode(Kai_u8** s)
+KAI_INTERNAL Kai_u32 kai__utf8_decode(Kai_string s, Kai_u32* out)
 {
-    Kai_u8* p = *s;
-    Kai_u32 cp = 0;
-    Kai_u32 len = 0;
+    *out = 65533;
+    if (s.count<1)
+        return 1;
+    Kai_u8* p = s.data;
     if (p[0]<128)
     {
-        cp = p[0];
-        len = 1;
+        *out = p[0];
+        return 1;
     }
     else
     if ((p[0]&224)==192)
     {
-        cp = (p[0]&31)<<6|(p[1]&63);
-        len = 2;
+        if (s.count>=2)
+        {
+            *out = (p[0]&31)<<6|(p[1]&63);
+        }
+        return 2;
     }
     else
     if ((p[0]&240)==224)
     {
-        cp = ((p[0]&15)<<12|(p[1]&63)<<6)|(p[2]&63);
-        len = 3;
+        if (s.count>=3)
+        {
+            *out = ((p[0]&15)<<12|(p[1]&63)<<6)|(p[2]&63);
+        }
+        return 3;
     }
     else
     if ((p[0]&248)==240)
     {
-        cp = (((p[0]&7)<<18|(p[1]&63)<<12)|(p[2]&63)<<6)|(p[3]&63);
-        len = 4;
+        if (s.count>=4)
+        {
+            *out = (((p[0]&7)<<18|(p[1]&63)<<12)|(p[2]&63)<<6)|(p[3]&63);
+        }
+        return 4;
     }
-    else
-    {
-        cp = 65533;
-        len = 1;
-    }
-    *s += len;
-    return cp;
+    return 1;
 }
 
 KAI_INTERNAL Kai_u32 kai__unicode_char_width(Kai_Writer* writer, Kai_u32 cp, Kai_u8 first, Kai_u8 ch)
@@ -2241,7 +2247,11 @@ KAI_INTERNAL void kai__write_source_code_fill(Kai_Writer* writer, Kai_u8* src, K
 {
     while ((src<end&&*src!=0)&&*src!=10)
     {
-        Kai_u32 cp = kai__utf8_decode(&src);
+        Kai_string slice = {0};
+        slice.data = src;
+        slice.count = (Kai_uint)(end-src);
+        Kai_u32 cp = {0};
+        src += kai__utf8_decode(slice, &cp);
         kai__unicode_char_width(writer, cp, first, ch);
         first = ch;
     }
@@ -2404,6 +2414,12 @@ KAI_API(void) kai_write_type(Kai_Writer* writer, Kai_Type_Info* type)
                     kai__write("; ");
             }
             kai__write("}");
+        }
+        break; case KAI_TYPE_ID_ENUM:
+        {
+            Kai_Type_Info_Enum* info = (Kai_Type_Info_Enum*)(type);
+            kai__write("enum ");
+            kai_write_type(writer, info->sub_type);
         }
     }
 }
@@ -4189,8 +4205,12 @@ KAI_API(Kai_Expr*) kai_parse_expression(Kai_Parser* parser, Kai_u32 flags)
             {
                 kai__next_token();
                 kai__expect(current->id==KAI_TOKEN_STRING, "char", "must be string");
-                kai__expect(((current->value).string).count==1, "char", "string must be have length of 1");
-                (current->value).number = ((Kai_Number){.n = (Kai_u64)((((current->value).string).data)[0]), .d = 1});
+                Kai_u32 cp = {0};
+                if (((current->value).string).count>kai__utf8_decode((current->value).string, &cp))
+                {
+                    return kai__error_unexpected(parser, current, KAI_STRING("in character literal"), KAI_STRING("string must be a single codepoint"));
+                }
+                (current->value).number = kai_number_normalize(((Kai_Number){.n = (Kai_u64)(cp), .d = 1}));
                 left = kai__parser_create_number(parser, *current);
             }
             else
@@ -4707,6 +4727,7 @@ KAI_API(Kai_Stmt*) kai_parse_statement(Kai_Parser* parser)
             {
                 kai__next_token();
                 Kai_Stmt* decl = kai_parse_declaration(parser);
+                kai__expect(decl, "in export statement", "should be declaration here");
                 decl->flags |= KAI_FLAG_DECL_EXPORT;
                 return decl;
             }
@@ -4882,6 +4903,21 @@ KAI_INTERNAL Kai_bool kai__create_nodes(Kai_Compiler_Context* context, Kai_Expr*
     (void)(allocator);
     switch (expr->id)
     {
+        break; case KAI_EXPR_PROCEDURE:
+        {
+            Kai_Expr_Procedure* p = (Kai_Expr_Procedure*)(expr);
+            if ((p->body)->id==KAI_STMT_COMPOUND)
+            {
+                Kai_Stmt_Compound* c = (Kai_Stmt_Compound*)(expr);
+                Kai_Stmt* current = c->head;
+                while (current)
+                {
+                    if (kai__create_nodes(context, current))
+                        return KAI_TRUE;
+                    current = current->next;
+                }
+            }
+        }
         break; case KAI_STMT_DECLARATION:
         {
             Kai_Stmt_Declaration* d = (Kai_Stmt_Declaration*)(expr);
@@ -5686,8 +5722,17 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
         break; case KAI_EXPR_ENUM:
         {
             Kai_Expr_Enum* e = (Kai_Expr_Enum*)(expr);
+            Kai_Value sv = {0};
+            Kai_Type_Info* st = 0;
+            if (kai__value_of_expression(context, e->type, &sv, &st))
+                return KAI_TRUE;
+            if (st->id!=KAI_TYPE_ID_TYPE)
+                kai__todo("enum backing type must be type");
+            if ((sv.type)->id!=KAI_TYPE_ID_INTEGER)
+                kai__todo("non integral enum type");
             Kai_Type_Info_Enum* et = (Kai_Type_Info_Enum*)(kai_arena_allocate(&context->type_allocator, sizeof(Kai_Type_Info_Enum)));
             et->id = KAI_TYPE_ID_ENUM;
+            et->sub_type = sv.type;
             (et->values).count = e->field_count;
             (et->values).data = (Kai_Enum_Value*)(kai_arena_allocate(&context->type_allocator, sizeof(Kai_Enum_Value)*(et->values).count));
             Kai_Expr* current = e->head;
@@ -5698,8 +5743,6 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
                 Kai_Type_Info* type = 0;
                 Kai_Value value = {0};
                 if (kai__value_of_expression(context, d->expr, &value, &type))
-                    return KAI_TRUE;
-                if (type->id!=KAI_TYPE_ID_TYPE)
                     return KAI_TRUE;
                 current = current->next;
             }
@@ -5762,6 +5805,11 @@ KAI_INTERNAL Kai_bool kai__value_of_expression(Kai_Compiler_Context* context, Ka
             Kai_u32 size = kai__type_size(value.type);
             out_value->u32 = size;
             *out_type = (u32_node->value).type;
+            return KAI_FALSE;
+        }
+        break; case KAI_STMT_COMPOUND:
+        {
+            kai__todo("do something here");
             return KAI_FALSE;
         }
         break; default:
@@ -5849,6 +5897,11 @@ KAI_INTERNAL Kai_bool kai__type_of_expression(Kai_Compiler_Context* context, Kai
                 return KAI_TRUE;
             if (u->op==42)
             {
+                if (et->id==KAI_TYPE_ID_TYPE)
+                {
+                    *out_type = et;
+                    return KAI_FALSE;
+                }
                 Kai_Type_Info_Pointer* pt = (Kai_Type_Info_Pointer*)(kai_arena_allocate(&context->type_allocator, sizeof(Kai_Type_Info_Pointer)));
                 pt->id = KAI_TYPE_ID_POINTER;
                 pt->sub_type = et;
@@ -5956,7 +6009,12 @@ KAI_INTERNAL Kai_bool kai__compile_node_value(Kai_Compiler_Context* context, Kai
 {
     Kai_Type_Info* type = node->type;
     Kai_Value value = {0};
-    if (node->expr!=NULL&&kai__value_of_expression(context, node->expr, &value, &type))
+    if (node->expr==NULL)
+        kai__todo("how is expression null?");
+    if ((node->expr)->id==KAI_EXPR_PROCEDURE)
+    {
+    }
+    if (kai__value_of_expression(context, node->expr, &value, &type))
         return KAI_TRUE;
     if (type==NULL&&(node->type)->id==KAI_TYPE_ID_PROCEDURE)
     {
@@ -6086,6 +6144,8 @@ KAI_INTERNAL Kai_bool kai__compile_node_type(Kai_Compiler_Context* context, Kai_
 
 KAI_INTERNAL Kai_u32 kai__type_size(Kai_Type_Info* type)
 {
+    if (type==NULL)
+        kai__todo("type cannot be null");
     switch (type->id)
     {
         break; case KAI_TYPE_ID_TYPE:
@@ -6116,6 +6176,11 @@ KAI_INTERNAL Kai_u32 kai__type_size(Kai_Type_Info* type)
         {
             Kai_Type_Info_Struct* info = (Kai_Type_Info_Struct*)(type);
             return info->size;
+        }
+        break; case KAI_TYPE_ID_ENUM:
+        {
+            Kai_Type_Info_Enum* info = (Kai_Type_Info_Enum*)(type);
+            return kai__type_size(info->sub_type);
         }
         break; case KAI_TYPE_ID_NUMBER:
         {
@@ -6290,9 +6355,14 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
             }
             if (writer!=NULL)
             {
+                kai_write_type(writer, node->type);
                 printf("=> ");
                 switch ((node->type)->id)
                 {
+                    break; case KAI_TYPE_ID_TYPE:
+                    {
+                        kai_write_type(writer, (node->value).type);
+                    }
                     break; case KAI_TYPE_ID_NUMBER:
                     {
                         kai_write_number(writer, (node->value).number);
@@ -6324,6 +6394,12 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes(Kai_Compiler_Context* context)
             }
         }
     }
+    return KAI_FALSE;
+}
+
+KAI_INTERNAL Kai_bool kai__compile(Kai_Compiler_Context* context)
+{
+    (void)(context);
     return KAI_FALSE;
 }
 
