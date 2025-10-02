@@ -1192,9 +1192,8 @@ _write_node_ref :: (context: *Compiler_Context, ref: Node_Reference)
     _write(")");
 }
 
-_type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
+_type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type) -> bool
 {
-    // TODO: type cache
     assert(expr != null);
 
     writer: *Writer = context.debug_writer;
@@ -1204,8 +1203,7 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
             ref: Node_Reference = _lookup_node(context, expr.source_code);
 
             if ref.flags & KAI_NODE_NOT_FOUND {
-                _error_fatal(context, STRING("cant find node [todo]"));
-                ret null;
+                ret _error_fatal(context, STRING("cant find node [todo]"));
             }
 
             node: *Node = *context.nodes.data[ref.index];
@@ -1219,22 +1217,26 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
                     _write("\n");
                 }
                 _add_dependency(context, ref);
-                ret null;
+                ret true;
             }
 
-            ret node.type;
+            [out_type] = node.type;
+            ret false;
         }
 
         case KAI_EXPR_NUMBER; {
             // TODO make better
             ref: Node_Reference = _lookup_node(context, STRING("s32"));
-            if ref.flags & KAI_NODE_NOT_FOUND ret null;
+            if ref.flags & KAI_NODE_NOT_FOUND
+                kai__todo("how???");
             node: *Node = *context.nodes.data[ref.index];
-            ret node.value.type;
+            [out_type] = node.value.type;
+            ret false;
         }
 
         case KAI_EXPR_STRING; {
-            ret context.string_type;
+            [out_type] = context.string_type;
+            ret false;
         }
 
         case KAI_EXPR_SPECIAL; {
@@ -1242,7 +1244,8 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
             if s.kind == {
                 case KAI_SPECIAL_NUMBER; #through;
                 case KAI_SPECIAL_TYPE; {
-                    ret context.type_type;
+                    [out_type] = context.type_type;
+                    ret false;
                 }
             }
             kai__todo("special value not implemented");
@@ -1250,18 +1253,20 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
 
         case KAI_EXPR_UNARY; {
             u: *Expr_Unary = cast expr;
-            et: *Type_Info = _type_of_expression(context, u.expr);
-
-            if et == null
+            et: *Type_Info;
+            if _type_of_expression(context, u.expr, *et)
+                ret true;
 
             if u.op == #char "*" {
                 pt: *Type_Info_Pointer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Pointer));
                 pt.id = KAI_TYPE_ID_POINTER;
                 pt.sub_type = et;
-                ret pt -> Type;
+                [out_type] = pt -> Type;
+                ret false;
             }
 
-            ret et;
+            [out_type] = et;
+            ret false;
         }
 
         case KAI_EXPR_BINARY; {
@@ -1271,25 +1276,31 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
                 rt: *Type_Info;
 
                 if _value_of_expression(context, b.right, *rv, *rt)
-                    ret null;
+                    ret true;
 
-                if rt.id != KAI_TYPE_ID_TYPE {
+                if rt.id != KAI_TYPE_ID_TYPE
                     kai__todo("must cast to a type");
-                    ret null;
-                }
 
-                ret rv.type;
+                [out_type] = rv.type;
+                ret false;
             }
-            lt: *Type_Info = _type_of_expression(context, b.left);
-            rt: *Type_Info = _type_of_expression(context, b.right);
-            if lt == null || rt == null ret null;
+            lt: *Type_Info;
+            rt: *Type_Info;
+            if _type_of_expression(context, b.left, *lt) ret true;
+            if _type_of_expression(context, b.right, *rt) ret true;
             if lt != rt {
-                if lt.id == KAI_TYPE_ID_NUMBER ret rt;
-                if rt.id == KAI_TYPE_ID_NUMBER ret lt;
+                if lt.id == KAI_TYPE_ID_NUMBER {
+                    [out_type] = rt;
+                    ret false;
+                }
+                if rt.id == KAI_TYPE_ID_NUMBER {
+                    [out_type] = lt;
+                    ret false;
+                }
                 kai__todo("binary expression with different types");
-                ret null;
             }
-            ret lt;
+            [out_type] = lt;
+            ret false;
         }
 
         case KAI_EXPR_PROCEDURE; {
@@ -1307,8 +1318,9 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
                 type: *Type_Info;
                 value: Value;
                 if _value_of_expression(context, current, *value, *type)
-                    ret null;
-                if type.id != KAI_TYPE_ID_TYPE ret null;
+                    ret true;
+                if type.id != KAI_TYPE_ID_TYPE
+                    kai__todo("proc input must be type");
                 pt.inputs.data[i] = value.type;
                 current = current.next;
             }
@@ -1316,26 +1328,30 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
                 type: *Type_Info;
                 value: Value;
                 if _value_of_expression(context, current, *value, *type)
-                    ret null;
-                if type.id != KAI_TYPE_ID_TYPE ret null;
+                    ret true;
+                if type.id != KAI_TYPE_ID_TYPE
+                    kai__todo("proc output must be type");
                 pt.outputs.data[i] = value.type;
                 current = current.next;
             }
 
-            ret pt -> Type;
+            [out_type] = pt -> Type;
+            ret false;
         }
         
         case KAI_EXPR_STRUCT; #through;
         case KAI_EXPR_ENUM; #through;
         case KAI_EXPR_PROCEDURE_TYPE; {
-            ret context.type_type;
+            [out_type] = context.type_type;
+            ret false;
         }
 
         case KAI_EXPR_PROCEDURE_CALL; {
             // TODO: HACK
             ref: Node_Reference = _lookup_node(context, STRING("u32"));
             u32_node: *Node = *context.nodes.data[ref.index];
-            ret u32_node.value.type;
+            [out_type] = u32_node.value.type;
+            ret false;
         }
 
         case; {
@@ -1343,7 +1359,7 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr) -> Type
         }
     }
 
-    ret null;
+    ret false;
 }
 
 _compile_node_value :: (context: *Compiler_Context, node: *Node) -> bool
@@ -1485,8 +1501,8 @@ _compile_node_type :: (context: *Compiler_Context, node: *Node) -> bool
         ret false;
     }
 
-    type: Type = _type_of_expression(context, node.expr);
-    if type == null
+    type: Type;
+    if _type_of_expression(context, node.expr, *type)
         ret true;
 
     node.type = type;
