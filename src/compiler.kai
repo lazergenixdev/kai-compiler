@@ -92,7 +92,8 @@ Local_Node :: struct {
 }
 
 Scope :: struct {
-    identifiers: [string] Node_Reference;
+    identifiers : [string] Node_Reference;
+    pending_nodes  : [..] Node_Wait;
     is_proc_scope: bool;
 }
 
@@ -109,7 +110,6 @@ Compiler_Context :: struct {
     scopes:                [..] Scope;
     nodes:                 [..] Node;
     local_nodes:           [..] Local_Node; // what is this?
-    wait_list:             [..] Node_Wait;
     imports:               [] Import;
     type_allocator:        Arena_Allocator;
     temp_allocator:        Arena_Allocator;
@@ -298,12 +298,12 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
             table_set(*scope.identifiers, d.name, reference);
 
             type_reference: Node_Reference = Node_Reference.{flags = KAI_NODE_TYPE, index = reference.index};
-            array_push(*context.wait_list, Node_Wait.{ref = type_reference});
+            array_push(*scope.pending_nodes, Node_Wait.{ref = type_reference});
 
             if !(d.flags & KAI_FLAG_DECL_HOST_IMPORT) {
                 value_dependencies: [..] Node_Reference;
                 array_push(*value_dependencies, type_reference);
-                array_push(*context.wait_list, Node_Wait.{ref = reference, dependencies = value_dependencies});
+                array_push(*scope.pending_nodes, Node_Wait.{ref = reference, dependencies = value_dependencies});
             }
         }
         ret false;
@@ -1031,12 +1031,35 @@ _value_of_expression :: (context: *Compiler_Context, expr: *Expr, out_value: *Va
         }
 
         case KAI_EXPR_PROCEDURE; {
-            // TODO: compile procedure (recursively)
-            current_node: *Node = *context.nodes.data[context.current_node.index];
-            expected_type: *Type_Info = current_node.type;
-            if _type_check(context, expr, *expected_type)
+            p: *Expr_Procedure = cast expr;
+
+            // create scope
+
+            prev_count: u32 = context.nodes.count;
+
+            if _create_nodes(context, p.body)
                 ret true;
-            out_value.ptr = expr;
+
+            // TODO: compile loop here
+            assert(context.nodes.count == prev_count);
+
+            if p.body.id == KAI_STMT_COMPOUND {
+                c: *Stmt_Compound = cast expr;
+                current: *Stmt = c.head;
+                while current {
+                    //t: *Type_Info;
+                    //v: Value;
+                    //if _value_of_expression(context, b.left, *lv, *lt)
+                    //    ret true;
+                    current = current.next;
+                }
+            }
+            else kai__todo("non compound procedures");
+
+            // pop scope and nodes
+
+            out_type -> void;
+            out_value -> void;
             ret false;
         }
 
@@ -1649,6 +1672,7 @@ _push_value :: (context: *Compiler_Context, type: *Type_Info, value: Value) -> u
     ret location;
 }
 
+/*
 _compile_all_nodes :: (context: *Compiler_Context) -> bool
 {
     allocator: *Allocator = *context.allocator;
@@ -1744,12 +1768,92 @@ _compile_all_nodes :: (context: *Compiler_Context) -> bool
     }
     ret false;
 }
+*/
 
 _compile :: (context: *Compiler_Context) -> bool
 {
-    context->void;
+    allocator: *Allocator = *context.allocator;
+    writer: *Writer = context.debug_writer;
+
+    while context.scopes.count > 0 {
+        scope: *Scope = *array_last(*context.scopes);
+        if scope.pending_nodes.count == 0 {
+            array_pop(*context.scopes);
+            continue;
+        }
+        wait: Node_Wait = scope.pending_nodes.data[0];
+        array_remove(*scope.pending_nodes, 0);
+
+        // TODO: check dependencies here
+
+        node: *Node = *context.nodes.data[wait.ref.index];
+
+        context.current_source = node.location.source;
+        context.current_node = wait.ref;
+
+        if wait.ref.flags & KAI_NODE_TYPE {
+            if writer != NULL {
+                printf("compiling T(%.*s)\n", node.location.string.count->s32, node.location.string.data);
+            }
+            if _compile_node_type(context, node) {
+                if context.error.result != KAI_SUCCESS
+                    ret true;
+                array_push(*scope.pending_nodes, Node_Wait.{ref = wait.ref, dependencies = context.current_dependencies});
+                context.current_dependencies.data = null;
+                context.current_dependencies.count = 0;
+                context.current_dependencies.capacity = 0;
+            }
+            if writer != NULL {
+                printf("=> ");
+                write_type(writer, node.type);
+                printf("\n");
+            }
+        } else {
+            if writer != NULL {
+                printf("compiling V(%.*s)\n", node.location.string.count->s32, node.location.string.data);
+            }
+            if _compile_node_value(context, node) {
+                if context.error.result != KAI_SUCCESS
+                    ret true;
+                array_push(*scope.pending_nodes, Node_Wait.{ref = wait.ref, dependencies = context.current_dependencies});
+                context.current_dependencies.data = null;
+                context.current_dependencies.count = 0;
+                context.current_dependencies.capacity = 0;
+                continue;
+            }
+            if writer != NULL {
+                printf("=> ");
+                if node.type.id == {
+                    case KAI_TYPE_ID_TYPE; {
+                        write_type(writer, node.value.type);
+                    }
+                    case KAI_TYPE_ID_NUMBER; {
+                        kai_write_number(writer, node.value.number);
+                    }
+                    case KAI_TYPE_ID_INTEGER; {
+                        info: *Type_Info_Integer = cast node.type;
+                        if info.is_signed _write_s64(node.value.s64);
+                        else _write_u64(node.value.u64);
+                    }
+                    case KAI_TYPE_ID_FLOAT; {
+                        //info: *Type_Info_Float = cast node.type;
+                        _write_f64(node.value.f32 -> f64);
+                    }
+                    case KAI_TYPE_ID_PROCEDURE; {
+                        _write("0x");
+                        context.debug_writer.write_value(context.debug_writer.user, KAI_U64,
+                            Value.{u64 = node.value.u64}, Write_Format.{flags = KAI_WRITE_FLAGS_HEXIDECIMAL});
+                    }
+                }
+                printf("\n");
+            }
+            if node.flags & KAI_NODE_EXPORT {
+                location: u32 = _push_value(context, node.type, node.value);
+                table_set(*context.program.variable_table, node.location.string, Variable.{type = node.type, location = location});
+            }
+        }
+    }
     ret false;
-    //_value_of_expression(context, )
 }
 
 create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
@@ -1774,7 +1878,7 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
     while context.error.result == KAI_SUCCESS {
         if _create_syntax_trees(*context, info.sources) break;
         if _generate_nodes(*context) break;
-        if _compile_all_nodes(*context) break;
+        if _compile(*context) break;
         break;
     }
 

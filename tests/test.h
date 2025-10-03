@@ -8,7 +8,7 @@
 #define assert_true(EXPR) if (!(EXPR)) printf("\x1b[91mTest Failed\x1b[0m: %s (\x1b[92m%s:%i\x1b[0m)\n", #EXPR, __FILE__, __LINE__), exit(1)
 #define assert_no_error() \
   if (default_error()->result != KAI_SUCCESS) \
-    printf("\x1b[91mTest Failed\x1b[0m: (\x1b[92m%s:%i\x1b[0m)\n", __FILE__, __LINE__), kai_write_error(default_writer(), default_error()), exit(1)
+    kai_write_error(default_writer(), default_error()), printf("\x1b[91mTest Failed\x1b[0m: (\x1b[92m%s:%i\x1b[0m)\n", __FILE__, __LINE__), exit(1)
 
 #define MAKE_SLICE(L) {.data = L, .count = sizeof(L)/sizeof(L[0])}
 
