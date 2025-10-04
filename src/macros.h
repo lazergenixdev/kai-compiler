@@ -70,7 +70,7 @@
 
 #ifndef kai_fatal_error
 #define kai_fatal_error(DESC, MESSAGE) \
-    (printf("[\x1b[92mkai.h:%i\x1b[0m] \x1b[91m%s\x1b[0m: %s\n", __LINE__, DESC, MESSAGE), exit(1))
+    (kai__debug_print_stacktrace(), printf("[\x1b[92mkai.h:%i\x1b[0m] \x1b[91m%s\x1b[0m: %s\n", __LINE__, DESC, MESSAGE), exit(1))
 #endif
 
 #ifndef kai_unreachable
@@ -82,7 +82,6 @@
 do { char __message__[1024] = {0};                           \
     int __length__ = snprintf(__message__, sizeof(__message__), __VA_ARGS__); \
     snprintf(__message__ + __length__, sizeof(__message__) - __length__, " (%s)", __FUNCTION__); \
-    kai__debug_print_stacktrace(); \
     kai_fatal_error("TODO", __message__);                    \
 } while (0)
 #endif

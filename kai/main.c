@@ -39,6 +39,18 @@ static inline Kai_Source load_source_file(const char* path)
 	};
 }
 
+#define TOKEN_COUNT (1<<0)
+void help_token()
+{
+    printf(
+        "Usage: kai token [FLAGS] <files...>\n"
+        "\n"
+        "FLAGS:\n"
+        "   -c, --count   Print number of tokens\n"
+        "\n"
+    );
+}
+
 #define PARSE_NO_PRINT (1<<0)
 void help_parse()
 {
@@ -53,13 +65,17 @@ void help_parse()
 
 #define COMPILE_NO_PRINT     (1<<0)
 #define COMPILE_NO_CODE_GEN  (1<<1)
+#define COMPILE_OUTPUT_TREE  (1<<2)
+#define COMPILE_DEBUG  (1<<3)
 void help_compile()
 {
     printf(
         "Usage: kai compile [FLAGS] <files...>\n"
         "\n"
         "FLAGS:\n"
+        "   -d, --debug          Enable debug printing\n"
         "   -p, --no-print       Do not print compilation results\n"
+        "   -t, --tree           Print type-checked syntax tree\n"
         "   -c, --no-code-gen    Do not generate machine code\n"
         "\n"
     );
@@ -72,6 +88,7 @@ int help(int argc, char** argv)
         for (int i = 0; i < argc; ++i)
         {
             if (argv[i][0] == '-') continue;
+            if (strcmp(argv[i], "token") == 0)   { help_token(); continue; }
             if (strcmp(argv[i], "parse") == 0)   { help_parse(); continue; }
             if (strcmp(argv[i], "compile") == 0) { help_compile(); continue; }
             printf("no help info for \"%s\"\n", argv[i]);
@@ -86,6 +103,7 @@ int help(int argc, char** argv)
         "      version   Print version and exit\n"
         "      token     Tokenize file\n"
         "      parse     Parse file\n"
+        "      compile   Compile file\n"
         "      bind      Generate host language bindings\n"
         "\n"
         "Examples:\n"
@@ -104,7 +122,20 @@ int error_no_source_provided()
 int token(int argc, char** argv)
 {
     if (argc == 0) return error_no_source_provided();
-    Kai_Source source = load_source_file(argv[0]);
+    Kai_u32 parse_options = 0;
+    Kai_u32 source_start = 0;
+    for (int i = 0; i < argc; ++i) {
+        if (argv[i][0] == '-') {
+            // -> Possible Flag
+            if (strcmp(argv[i]+1, "c") == 0)
+                parse_options |= TOKEN_COUNT;
+        }
+        else {
+            source_start = i;
+            break;
+        }
+    }
+    Kai_Source source = load_source_file(argv[source_start]);
     Kai_Tokenizer tokenizer = {
         .source = source.contents,
         .line_number = 1,
@@ -113,13 +144,19 @@ int token(int argc, char** argv)
             .size = source.contents.count,
         },
     };
+    Kai_u64 count = 0;
     Kai_Token* token = kai_tokenizer_next(&tokenizer);
     while (token->id != KAI_TOKEN_END)
     {
-        kai_write_token(writer, *token);
+        count += 1;
+        if (!(parse_options & TOKEN_COUNT)) {
+            kai_write_token(writer, *token);
+            kai__write(" ");
+        }
         kai_tokenizer_next(&tokenizer);
-        kai__write(" ");
     }
+    if (parse_options & TOKEN_COUNT)
+        printf("%llu\n", count);
     return 0;
 }
 
@@ -165,6 +202,10 @@ int compile(int argc, char** argv)
             // -> Possible Flag
             if (strcmp(argv[i]+1, "p") == 0)
                 parse_options |= COMPILE_NO_PRINT;
+            if (strcmp(argv[i]+1, "t") == 0)
+                parse_options |= COMPILE_OUTPUT_TREE;
+            if (strcmp(argv[i]+1, "d") == 0)
+                parse_options |= COMPILE_DEBUG;
         }
         else {
             source_start = i;
@@ -179,24 +220,32 @@ int compile(int argc, char** argv)
         .error = &error,
         .sources = { .count = 1, .data = &source },
 		.options = { .flags = KAI_COMPILE_NO_CODE_GEN },
+        .debug_writer = parse_options & COMPILE_DEBUG ? writer : NULL,
     };
     kai_create_program(&info, &program);
 
     if (!(parse_options & COMPILE_NO_PRINT))
     {
-        hash_table_iterate(program.variable_table, i)
+        if (parse_options & COMPILE_OUTPUT_TREE)
         {
-            Kai_string name = program.variable_table.keys[i];
-            Kai_Variable var = program.variable_table.values[i];
-            kai__write_string(name);
-            kai__write(" = ");
-            kai_write_value(writer, program.data.data + var.location, var.type);
-            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-            kai__write(" [");
-            kai__set_color(KAI_WRITE_COLOR_TYPE);
-            kai_write_type(writer, var.type);
-            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
-            kai__write("]\n");
+            kai_write_expression(writer, (Kai_Expr*)&program.code.trees.data[0].root, 0);
+        }
+        else
+        {
+            hash_table_iterate(program.variable_table, i)
+            {
+                Kai_string name = program.variable_table.keys[i];
+                Kai_Variable var = program.variable_table.values[i];
+                kai__write_string(name);
+                kai__write(" = ");
+                kai_write_value(writer, program.data.data + var.location, var.type);
+                kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+                kai__write(" [");
+                kai__set_color(KAI_WRITE_COLOR_TYPE);
+                kai_write_type(writer, var.type);
+                kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+                kai__write("]\n");
+            }
         }
     }
 	if (error.result != KAI_SUCCESS) {

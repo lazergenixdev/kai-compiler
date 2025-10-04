@@ -156,7 +156,7 @@ Stmt_Return :: struct {
 
 Stmt_Declaration :: struct {
     using Expr;
-    expr : *Expr;
+    expr : *Expr; // TODO: rename -> value
     type : *Expr; // optional
 }
 
@@ -315,7 +315,7 @@ Token :: struct {
     id : Token_Id;
     line_number : u32;
     string : string; // TODO: rename to `source_code`
-    value : struct {
+    value : struct { // TODO: why struct and not union?
         string : string;
         number : Number;
     };
