@@ -6,3 +6,5 @@ if [ ! -f "build" ]; then
 end
 
 alias kai ./bin/kai
+alias build ./build
+alias newbuild ./newbuild

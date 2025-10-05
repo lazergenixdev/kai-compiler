@@ -572,10 +572,11 @@ _add_dependency :: (context: *Compiler_Context, ref: Node_Reference)
 
 // NOTE: should this function always do type-checking?
 // NOTE: expected_type WILL NOT be overwritten if [expected_type] != null
-_value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, out_type: *Type) -> bool
+// NOTE: if out_value == null then only type-checking will occur
+_value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, expected_type: *Type) -> bool
 {
     assert(expr != null);
-    //assert(expected_type != null);
+    assert(expected_type != null);
 
     writer: *Writer = context.debug_writer;
 
@@ -592,7 +593,6 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
                 ret _error_not_declared(context, location);
             }
 
-            //node: *Node;
             node_type: Type;
             node_value: Value;
 
@@ -618,27 +618,28 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             if node_type == null
                 ret _error_fatal(context, STRING("node type cannot be null"));
             
-            // TODO: type expect error
-            if [out_type] != null && [out_type] != node_type
-                ret _error_fatal(context, STRING("oh no, types not same for node"));
+            if [expected_type] != null {
+                // TODO: type-check specific error
+                if [expected_type] != node_type
+                    ret _error_fatal(context, STRING("oh no, types not same for node"));
+            }
+            else [expected_type] = node_type;
             
             expr.this_type = node_type;
-            [out_value] = node_value;
-            [out_type] = node_type;
+            if out_value != null { [out_value] = node_value; }
             ret false;
         }
 
-        // done;
         case KAI_EXPR_NUMBER; {
             n: *Expr_Number = cast expr;
-            if [out_type] == null {
+            if [expected_type] == null {
                 [out_value] = Value.{number = n.value};
-                [out_type] = context.number_type;
+                [expected_type] = context.number_type;
                 n.this_type = context.number_type;
             }
             else {
                 // TODO: make sure number can be auto-cast to expected type
-                type: *Type_Info = [out_type];
+                type: *Type_Info = [expected_type];
                 if type.id == {
                     case KAI_TYPE_ID_BOOLEAN; {
                         if !number_is_integer(n.value) || n.value.is_neg
@@ -676,7 +677,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
         case KAI_EXPR_STRING; {
             s: *Expr_String = cast expr;
             [out_value] = Value.{string = s.value};
-            [out_type] = context.string_type;
+            [expected_type] = context.string_type;
             ret false;
         }
 
@@ -713,7 +714,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             }
             // TODO: use cols for matrices
             [out_value] = Value.{type = type};
-            [out_type] = context.type_type;
+            [expected_type] = context.type_type;
             ret false;
         }
         
@@ -722,12 +723,12 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             if s.kind == {
                 case KAI_SPECIAL_TYPE; {
                     out_value.type = context.type_type;
-                    [out_type] = context.type_type;
+                    [expected_type] = context.type_type;
                     ret false;
                 }
                 case KAI_SPECIAL_NUMBER; {
                     out_value.type = context.number_type;
-                    [out_type] = context.type_type;
+                    [expected_type] = context.type_type;
                     ret false;
                 }
             }
@@ -748,7 +749,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
                     pt.id = KAI_TYPE_ID_POINTER;
                     pt.sub_type = ev.type;
                     out_value.type = pt -> Type;
-                    [out_type] = context.type_type;
+                    [expected_type] = context.type_type;
                     ret false;
                 }
                 else {
@@ -790,9 +791,10 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
                 }
                 else _error_fatal(context, STRING("invalid binary expression [todo]"));
             }
-
-            [out_value] = _evaluate_binary_operation(b.op, lt, lv, rv);
-            [out_type] = lt;
+            if out_value != null {
+                [out_value] = _evaluate_binary_operation(b.op, lt, lv, rv);
+            }
+            [expected_type] = lt;
             ret false;
         }
 
@@ -800,8 +802,8 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             allocator: *Allocator = *context.allocator;
             p: *Expr_Procedure = cast expr;
 
-            assert([out_type] != null);
-            pt: *Type_Info_Procedure = cast [out_type];
+            assert([expected_type] != null);
+            pt: *Type_Info_Procedure = cast [expected_type];
             assert(pt.id == KAI_TYPE_ID_PROCEDURE);
 
             // Setup procedure scope
@@ -864,7 +866,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             context.nodes.count = prev_node_count;
             context.local_nodes.count = local_node_count;
             out_value.ptr = p;
-            p.this_type = [out_type]; // ???
+            p.this_type = [expected_type]; // ???
             ret false;
         }
 
@@ -877,6 +879,10 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             st.fields.data = arena_allocate(*context.type_allocator, sizeof(Struct_Field) * st.fields.count) -> *Struct_Field;
             st.size = 0;
 
+            node: *Node = *context.nodes.data[context.current_node.index];
+            node.flags |= KAI_NODE_VALUE_EVALUATED;
+            node.value.type = st -> Type;
+
             current: *Expr = s.head;
             for i: 0..<s.field_count {
                 assert(current.id == KAI_STMT_DECLARATION);
@@ -884,10 +890,14 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
 
                 type: *Type_Info;
                 value: Value;
-                if _value_of_expr(context, d.type, *value, *type)
+                if _value_of_expr(context, d.type, *value, *type) {
+                    node.flags &=~ KAI_NODE_VALUE_EVALUATED;
                     ret true;
-                if type.id != KAI_TYPE_ID_TYPE
+                }
+                if type.id != KAI_TYPE_ID_TYPE {
+                    node.flags &=~ KAI_NODE_VALUE_EVALUATED;
                     ret true;
+                }
 
                 st.fields.data[i] = Struct_Field.{
                     name = d.name,
@@ -899,7 +909,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             }
 
             out_value.type = st -> Type;
-            [out_type] = context.type_type;
+            [expected_type] = context.type_type;
             ret false;
         }
 
@@ -942,7 +952,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             }
 
             out_value.type = et -> Type;
-            [out_type] = context.type_type;
+            [expected_type] = context.type_type;
             ret false;
         }
         
@@ -984,7 +994,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             }
 
             out_value.type = pt -> Type;
-            [out_type] = context.type_type;
+            [expected_type] = context.type_type;
             ret false;
         }
 
@@ -1007,18 +1017,18 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
                     ret true;
                 current = current.next;
             }
+            // TODO: output value? type?
             ret false;
         }
 
-        // File scope
         case KAI_STMT_COMPOUND; {
-            kai__todo("do something here");
+            kai__todo("similar to procedure here");
             ret false;
         }
 
         case KAI_STMT_RETURN; {
             r: *Stmt_Return = cast expr;
-            if _value_of_expr(context, r.expr, out_value, out_type)
+            if _value_of_expr(context, r.expr, out_value, expected_type)
                 ret true;
             ret false;
         }
@@ -1026,18 +1036,22 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
         case KAI_STMT_DECLARATION; {
             allocator: *Allocator = *context.allocator;
             d: *Stmt_Declaration = cast expr;
+
+            assert([expected_type] == null);
+
             v: Value;
-            t: *Type_Info;
-            if _value_of_expr(context, d.type, *v, *t)
+            type: *Type_Info;
+            if _value_of_expr(context, d.type, *v, *type)
                 ret true;
-            assert(t.id == KAI_TYPE_ID_TYPE);
+            assert(type.id == KAI_TYPE_ID_TYPE);
+            type = v.type;
 
             ref: Node_Reference = Node_Reference.{
                 flags = KAI_NODE_LOCAL,
                 index = context.local_nodes.count,
             };
             array_push(*context.local_nodes, Local_Node.{
-                type = v.type,
+                type = type,
                 location = Location.{
                     string = d.name,
                     line = d.line_number
@@ -1047,9 +1061,25 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, o
             scope: *Scope = *array_last(*context.scopes);
             table_set(*scope.identifiers, d.name, ref);
             
-            t = v.type;
-            if _value_of_expr(context, d.expr, *v, *t)
+            if _value_of_expr(context, d.expr, *v, *type)
                 ret true;
+            d.this_type = type;
+            [expected_type] = type;
+            ret false;
+        }
+
+        case KAI_STMT_IF; {
+            i: *Stmt_If = cast expr;
+
+            type: *Type_Info = context.bool_type;
+            if _value_of_expr(context, i.expr, null, *type)
+                ret true;
+            if _value_of_expr(context, i.then_body, null, expected_type)
+                ret true;
+            if i.else_body != null {
+                if _value_of_expr(context, i.else_body, null, expected_type)
+                    ret true;
+            }
             ret false;
         }
 

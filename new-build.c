@@ -32,6 +32,7 @@
 
 typedef void (*Expr_Visitor)(String_Builder* builder, Kai_Expr* expr);
 
+// TODO: remove this
 typedef enum {
 	Identifier_Type_Invalid,
 	Identifier_Type_Macro,    // KAI_
@@ -744,7 +745,8 @@ int main(int argc, char** argv)
         kai_write_error(writer, &error);
         return 1;
     }
-    //for_each_node(NULL, &program, print_ast); // DEBUG
+
+    // for_each_node(NULL, &program, print_ast); // DEBUG
     String_Builder builder = {0};
 	read_entire_file("src/comments/header.h", &builder);
 	sb_append(&builder, "#ifndef KAI__H\n#define KAI__H\n\n");

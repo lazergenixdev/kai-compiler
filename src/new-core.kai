@@ -10,11 +10,13 @@ VERSION_PATCH  :: #host_import;
 }
 @doc_short ("Get version as string (includes extra version info)")
 
+/*
 #export version :: () -> [3] u32
 {
     ret {VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
 }
 @doc_short ("Get version as number")
+*/
 
 // Math
 
@@ -94,6 +96,7 @@ gcd :: (a: u64, b: u64) -> u64
     name:     string;
     contents: string;
 }
+
 #export Location :: struct {
     source : Source; // source code for this file
     string : string;
@@ -101,12 +104,12 @@ gcd :: (a: u64, b: u64) -> u64
 }
 
 #export Error :: struct {
-    result    : Result;
-    location  : Location;
-    message   : string;
-    context   : string;
-    memory    : Memory;
-    next      : *Error;
+    result   : Result;
+    location : Location;
+    message  : string;
+    context  : string;
+    memory   : Memory;
+    next     : *Error;
 }
 
 // ldexp :: #host_import; @internal

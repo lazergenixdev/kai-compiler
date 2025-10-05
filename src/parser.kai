@@ -163,8 +163,8 @@ Stmt_Declaration :: struct {
 Stmt_Assignment :: struct {
     using Expr;
     op   : u32;
-    left : *Expr;
-    expr : *Expr;
+    left : *Expr; // TODO: rename -> target
+    expr : *Expr; // TODO: rename -> value
 }
 
 Stmt_Compound :: struct {
@@ -174,9 +174,9 @@ Stmt_Compound :: struct {
 
 Stmt_If :: struct {
     using Expr;
-    expr      : *Expr;
+    expr      : *Expr; // TODO: rename -> condition
     then_body : *Stmt;
-    else_body : *Stmt;
+    else_body : *Stmt; @comment ("optional")
 }
 
 Stmt_While :: struct {

@@ -1,0 +1,372 @@
+
+_type_check_literal :: (context: *Compiler_Context, l: *Expr_Literal, type: *Type_Info) -> bool
+{
+    l.this_type = type;
+    if type.id == {
+        case KAI_TYPE_ID_TYPE; kai__todo("TYPE");
+        case KAI_TYPE_ID_VOID; kai__todo("VOID");
+        case KAI_TYPE_ID_BOOLEAN; kai__todo("BOOLEAN");
+        case KAI_TYPE_ID_INTEGER; kai__todo("INTEGER");
+        case KAI_TYPE_ID_FLOAT; kai__todo("FLOAT");
+        case KAI_TYPE_ID_POINTER; kai__todo("POINTER");
+        case KAI_TYPE_ID_PROCEDURE; kai__todo("PROCEDUfRE");
+        case KAI_TYPE_ID_ARRAY; {
+            t: *Type_Info_Array = cast type;
+            // look at every item of 
+            assert(t.cols == 0);
+            assert(l.count == t.rows);
+            current: *Expr =  l.head;
+            while current != null {
+                _type_check(context, current, *t.sub_type);
+                current = current.next;
+            }
+            ret false;
+        }
+        case KAI_TYPE_ID_STRUCT; kai__todo("STRUCT");
+        case KAI_TYPE_ID_STRING; kai__todo("STRING");
+        case; {
+            kai__todo("what are types????");
+        }
+    }
+    ret true;
+}
+
+_type_check :: (context: *Compiler_Context, expr: *Expr, out_or_expected: **Type_Info) -> bool
+{
+    expected: *Type_Info = [out_or_expected];
+    allocator: *Allocator = *context.allocator;
+    if expr.id == {
+        case KAI_EXPR_IDENTIFIER; {
+            ref: Node_Reference = _lookup_node(context, expr.source_code);
+            if ref.flags & KAI_NODE_NOT_FOUND {
+                node: *Node = *context.nodes.data[context.current_node.index];
+                location: Location = Location.{source = node.location.source, string = expr.source_code, line = expr.line_number};
+                ret _error_not_declared(context, location);
+            }
+            // Local Node
+            if ref.flags & KAI_NODE_LOCAL {
+                local_node: *Local_Node = *context.local_nodes.data[ref.index];
+
+                if local_node.type == null {
+                    ret _error_fatal(context, STRING("local node type cannot be null"));
+                }
+
+                if expected == null {
+                    [out_or_expected] = local_node.type;
+                    expr.this_type = local_node.type;
+                    ret false;
+                }
+
+                if local_node.type != expected
+                    ret _error_fatal(context, STRING("oh no, not same type, bad"));
+
+                expr.this_type = expected;
+                ret false;
+            }
+            // Global Node
+            node: *Node = *context.nodes.data[ref.index];
+
+            if node.type == null {
+                ret _error_fatal(context, STRING("node type cannot be null"));
+            }
+
+            if expected == null {
+                expr.this_type = node.type;
+                ret false;
+            }
+
+            if node.type != expected
+                ret _error_fatal(context, STRING("oh no, types not same for node"));
+            
+            expr.this_type = expected;
+        }
+        case KAI_EXPR_PROCEDURE; {
+            p: *Expr_Procedure = cast expr;
+            assert(expected.id == KAI_TYPE_ID_PROCEDURE);
+            pt: *Type_Info_Procedure = cast expected;
+            array_push(*context.scopes, Scope.{0});
+            scope: *Scope = *array_last(*context.scopes);
+            local_node_count: u32 = context.local_nodes.count;
+            current: *Expr = p.in_out_expr;
+            for i: 0..<p.in_count {
+                type: Type = pt.inputs.data[i];
+                ref: Node_Reference = Node_Reference.{flags = KAI_NODE_LOCAL, index = context.local_nodes.count}; 
+                array_push(*context.local_nodes, Local_Node.{
+                    type = type,
+                    location = Location.{
+                        string = current.name,
+                        line = current.line_number
+                    },
+                });
+                table_set(*scope.identifiers, current.name, ref);
+                current = current.next;
+            }
+
+            assert(pt.outputs.count <= 1);
+            if _type_check(context, p.body, *pt.outputs.data[0])
+                ret true;
+
+            context.local_nodes.count = local_node_count;
+            array_pop(*context.scopes);
+
+            p.this_type = expected;
+        }
+        case KAI_EXPR_NUMBER; {
+            n: *Expr_Number = cast expr;
+            
+            if expected == null {
+                [out_or_expected] = context.number_type;
+                n.this_type = context.number_type;
+                ret false;
+            }
+
+            // see if number is representable in type that is expected
+            if expected.id == {
+                case KAI_TYPE_ID_INTEGER; {
+                    if !number_is_integer(n.value)
+                        ret _error_fatal(context, STRING("not integer"));
+                }
+                case KAI_TYPE_ID_FLOAT;
+                case KAI_TYPE_ID_NUMBER;
+                case; {
+                    ret _error_fatal(context, STRING("cannot convert from number to unknown type"));
+                }
+            }
+
+            n.this_type = expected;
+        }
+        case KAI_EXPR_LITERAL; {
+            assert(out_or_expected != null);
+            ret _type_check_literal(context, expr -> *Expr_Literal, [out_or_expected]);
+        }
+        case KAI_EXPR_UNARY; {
+            u: *Expr_Unary = cast expr;
+            if u.op == #char "."
+            {
+                assert(out_or_expected != null);
+                u.this_type = [out_or_expected];
+                ret _type_check(context, u.expr, out_or_expected);
+            }
+            else {
+                kai__todo("I don't know what this unary op is, and you can fix that!");
+            }
+        }
+        case KAI_EXPR_BINARY; {
+            b: *Expr_Binary = cast expr;
+
+            if b.op == {
+            case #multi "<<"; #through;
+            case #multi ">>"; {
+                lt: *Type_Info = expected;
+                if _type_check(context, b.left, *lt)
+                    ret true;
+                rt: *Type_Info;
+                if _type_check(context, b.right, *rt)
+                    ret true;
+
+                [out_or_expected] = lt;
+                b.this_type = lt;
+
+                if expected == null
+                    ret false;
+
+                if lt != expected
+                    ret _error_fatal(context, STRING("shift not good type"));
+
+                ret false;
+            }
+            // Comparisons
+            case #multi "=="; #through;
+            case #multi "!="; #through;
+            case #multi "<"; #through;
+            case #multi ">"; #through;
+            case #multi "<="; #through;
+            case #multi ">="; {
+                if expected != null && expected.id != KAI_TYPE_ID_BOOLEAN
+                    ret _error_fatal(context, STRING("must expect bool here"));
+
+                lt: *Type_Info;
+                rt: *Type_Info;
+
+                if _type_check(context, b.left, *lt)
+                    ret true;
+
+                if lt.id == KAI_TYPE_ID_NUMBER {
+                    if _type_check(context, b.right, *rt)
+                        ret true;
+                    lt = rt;
+                    if _type_check(context, b.left, *lt)
+                        ret true;
+                }
+                else {
+                    rt = lt;
+                    if _type_check(context, b.right, *rt)
+                        ret true;
+                }
+
+                if lt != rt
+                    ret _error_fatal(context, STRING("types no match, comparison"));
+
+                [out_or_expected] = context.bool_type;
+                b.this_type = context.bool_type;
+                ret false;
+            }
+            case #multi "->"; {
+                lt: *Type_Info = null;
+                if _type_check(context, b.left, *lt)
+                    ret true;
+
+                rt: *Type_Info = context.type_type;
+                if _type_check(context, b.right, *rt)
+                    ret true;
+
+                rv: Value;
+                if _value_of_expression(context, b.right, *rv, *rt)
+                    ret true;
+
+                [out_or_expected] = rv.type;
+                
+                if expected == null {
+                    b.this_type = rv.type;
+                    ret false;
+                }
+
+                if rv.type != expected
+                    ret _error_fatal(context, STRING("cast invalid"));
+
+                b.this_type = expected;
+                ret false;
+            }
+            case; {
+                lt: *Type_Info = expected;
+                rt: *Type_Info = expected;
+                
+                if expected != null {
+                    if _type_check(context, b.right, *rt)
+                        ret true;
+                    if _type_check(context, b.left, *lt)
+                        ret true;
+                    if lt != rt
+                        ret _error_fatal(context, STRING("types no match, binary"));
+                }
+                else {
+                    if _type_check(context, b.left, *lt)
+                        ret true;
+
+                    if lt.id == KAI_TYPE_ID_NUMBER {
+                        if _type_check(context, b.right, *rt)
+                            ret true;
+                        lt = rt;
+                        if _type_check(context, b.left, *lt)
+                            ret true;
+                    }
+                    else {
+                        rt = lt;
+                        if _type_check(context, b.right, *rt)
+                            ret true;
+                    }
+                }
+
+                b.this_type = lt;
+            }
+            }
+        }
+        case KAI_STMT_DECLARATION; {
+            // d: *Stmt_Declaration = cast expr;
+            // TODO: do something here
+        }
+        case KAI_STMT_RETURN; {
+            r: *Stmt_Return = cast expr;
+            if _type_check(context, r.expr, out_or_expected)
+                ret true;
+        }
+        case KAI_STMT_IF; {
+            i: *Stmt_If = cast expr;
+            expected: *Type_Info = context.bool_type;
+            if _type_check(context, i.expr, *expected) ret true;
+            if i.then_body != null && _type_check(context, i.then_body, out_or_expected) ret true;
+            if i.else_body != null && _type_check(context, i.else_body, out_or_expected) ret true;
+        }
+        case KAI_STMT_COMPOUND; {
+            c: *Stmt_Compound = cast expr;
+            current: *Stmt = c.head;
+            while current {
+                if _type_check(context, current, out_or_expected)
+                    ret true;
+                current = current.next;
+            }
+        }
+        case; {
+            kai__todo("expr.id = %i", expr.id);
+        }
+    }
+    ret false;
+}
+
+_compile_node_type :: (context: *Compiler_Context, node: *Node) -> bool
+{
+    import: *Import;
+    if node.flags & KAI_NODE_IMPORT {
+        import = _find_host_import(context, node.location.string);
+        if import == null
+            ret _error_host_import_not_found(context, node.location);
+
+        if node.type_expr == null {
+            if import.type.count == 0
+                ret _error_fatal(context, STRING("host import must be typed"));
+
+            node.type_expr = _type_expression_from_string(context, import.type);
+            if node.type_expr == null ret true;
+        }
+
+        node.value = import.value;
+    }
+
+    if node.type_expr != null {
+        type: *Type_Info;
+        value: Value;
+
+        if _value_of_expression(context, node.type_expr, *value, *type)
+            ret true;
+        
+        if type == null
+            ret true;
+
+        if type.id != KAI_TYPE_ID_TYPE
+            ret _error_fatal(context, STRING("type is not type"));
+
+        // check type against import
+        if node.flags & KAI_NODE_IMPORT && import.type.count != 0
+        {
+            import_type_expr: *Expr = _type_expression_from_string(context, import.type);
+            if import_type_expr == null ret true;
+            
+            import_type_type: *Type_Info;
+            import_type_value: Value;
+
+            if _value_of_expression(context, import_type_expr, *import_type_value, *import_type_type)
+                ret true;
+
+            if import_type_type == null
+                ret true;
+
+            if import_type_type.id != KAI_TYPE_ID_TYPE
+                ret _error_fatal(context, STRING("import expr type is not type"));
+
+            if value.type != import_type_value.type
+                ret _error_fatal(context, STRING("import type does not match declaration"));
+        }
+        
+        node.type = value.type;
+        node.flags |= KAI_NODE_TYPE_EVALUATED;
+        ret false;
+    }
+
+    type: Type;
+    if _type_of_expression(context, node.value_expr, *type)
+        ret true;
+
+    node.type = type;
+    node.flags |= KAI_NODE_TYPE_EVALUATED;
+    ret false;
+}

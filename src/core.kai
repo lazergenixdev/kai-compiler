@@ -1292,6 +1292,8 @@ write_type :: (writer: *Writer, type: *Type_Info)
     }
     case KAI_TYPE_ID_STRING; _write("string");
     case KAI_TYPE_ID_STRUCT; {
+        _write("struct"); // TODO: fix recursion issue
+        /*
         info: *Type_Info_Struct = cast type;
         _write("{");
         for i: 0..<info.fields.count {
@@ -1303,6 +1305,7 @@ write_type :: (writer: *Writer, type: *Type_Info)
                 kai__write("; ");
         }
         _write("}");
+        */
     }
     case KAI_TYPE_ID_ENUM; {
         info: *Type_Info_Enum = cast type;
