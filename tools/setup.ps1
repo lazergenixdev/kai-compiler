@@ -6,5 +6,3 @@ if (!(Test-Path -Path "build.exe" -PathType Leaf)) {
 }
 
 Set-Alias kai ./bin/kai
-
-.\build.exe

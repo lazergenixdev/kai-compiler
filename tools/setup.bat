@@ -8,4 +8,4 @@ IF NOT EXIST "build.exe" (
 	cl /nologo /utf-8 build.c
 )
 
-.\build.exe
+:: alias kai ./bin/kai

@@ -14,14 +14,3 @@ C :: (a: s32, b: s32)
 {
     ret (a - 1) * (b + 1);
 }
-
-// compile T(A)
-// compile V(A)
-// compile T(B)
-// compile V(B)
-//  -> C is not defined, add to require list
-// compile T(C)
-// compile V(C)
-// all declarations were exhausted
-//  -> C is now defined, pop V(B)
-// compile V(B)

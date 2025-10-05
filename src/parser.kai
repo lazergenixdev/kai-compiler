@@ -156,15 +156,15 @@ Stmt_Return :: struct {
 
 Stmt_Declaration :: struct {
     using Expr;
-    expr : *Expr;
+    expr : *Expr; // TODO: rename -> value
     type : *Expr; // optional
 }
 
 Stmt_Assignment :: struct {
     using Expr;
     op   : u32;
-    left : *Expr;
-    expr : *Expr;
+    left : *Expr; // TODO: rename -> target
+    expr : *Expr; // TODO: rename -> value
 }
 
 Stmt_Compound :: struct {
@@ -174,9 +174,9 @@ Stmt_Compound :: struct {
 
 Stmt_If :: struct {
     using Expr;
-    expr      : *Expr;
+    expr      : *Expr; // TODO: rename -> condition
     then_body : *Stmt;
-    else_body : *Stmt;
+    else_body : *Stmt; @comment ("optional")
 }
 
 Stmt_While :: struct {
@@ -315,7 +315,7 @@ Token :: struct {
     id : Token_Id;
     line_number : u32;
     string : string; // TODO: rename to `source_code`
-    value : struct {
+    value : struct { // TODO: why struct and not union?
         string : string;
         number : Number;
     };
@@ -1376,8 +1376,11 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         {
             _next_token();
             _expect(current.id == KAI_TOKEN_STRING, "char", "must be string");
-            _expect(current.value.string.count == 1, "char", "string must be have length of 1");
-            current.value.number = Number.{n = current.value.string.data[0]->u64, d = 1};
+            cp: u32;
+            if current.value.string.count > _utf8_decode(current.value.string, *cp) {
+                ret _error_unexpected(parser, current, STRING("in character literal"), STRING("string must be a single codepoint"));
+            }
+            current.value.number = number_normalize(Number.{n = cp->u64, d = 1});
             left = _parser_create_number(parser, [current]);
         }
         else if (string_equals(current.value.string, STRING("multi")))
@@ -1447,6 +1450,8 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         _next_token(); // skip enum
 
         type: *Expr = parse_type_expression(parser);
+        // TODO: need some way to replace error message here,
+        // otherwise this error message will be terrible
         _expect(type, "[todo]", "[todo]");
         _next_token();
 
@@ -1925,6 +1930,7 @@ parse_statement :: (parser: *Parser) -> *Stmt
         {
             _next_token();
             decl: *Stmt = parse_declaration(parser);
+            _expect(decl, "in export statement", "should be declaration here");
             decl.flags |= KAI_FLAG_DECL_EXPORT;
             ret decl;
         }
@@ -1966,12 +1972,12 @@ parse_statement :: (parser: *Parser) -> *Stmt
             _expect(right, "in assignment statement", "should be an expression");
             expr = _parser_create_assignment(parser, op, expr, right);
             _next_token();
-            _expect(current.id == #char ";", "in assignment statement", "should be ';' after expression");
+            _expect(current.id == #char ";", "in assignment statement", "should be ';' before this");
         }
         case; {
             if requires_semicolon {
                 _next_token(); // skip expr
-                _expect(current.id == #char ";", "in expression statement", "should be ';' after expression");
+                _expect(current.id == #char ";", "in expression statement", "should be ';' before this");
             }
         }
         }

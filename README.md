@@ -1,10 +1,10 @@
 # Kai Scripting Language
 [Preview online now!](https://lazergenixdev.github.io/kai-compiler/playground/)
 ## Background
-todo
+
 ## Features
 - Header only C library with no external dependencies
-- Strict static type checking
+- Strict static type checking 
 
 # Usage
 - Copy `kai.h` into your include directory

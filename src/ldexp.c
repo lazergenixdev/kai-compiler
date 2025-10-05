@@ -3,7 +3,7 @@
 KAI_INTERNAL double kai__ldexp(double x, int n)
 {
 	union {double f; uint64_t i;} u;
-	double_t y = x;
+	double y = x;
 
 	if (n > 1023) {
 		y *= 0x1p1023;

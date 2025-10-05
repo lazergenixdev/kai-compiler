@@ -10,45 +10,44 @@ VERSION_PATCH  :: #host_import;
 }
 @doc_short ("Get version as string (includes extra version info)")
 
+/*
 #export version :: () -> [3] u32
 {
     ret {VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
 }
 @doc_short ("Get version as number")
+*/
+
+// Math
 
 ceil_div :: (num: u64, den: u64) -> u64
 {
     ret (num + den - 1) / den;
 }
-
 ceil_div_fast :: (num: u64, exp: u32) -> u64
 {
     ret (num + (1 << exp) - 1) >> exp;
 }
-
 max_u32 :: (a: u32, b: u32) -> u32
 {
     if a < b ret b;
     ret a;
 }
-
 min_u32 :: (a: u32, b: u32) -> u32
 {
     if a < b ret a;
     ret b;
 }
-
 gcd :: (a: u64, b: u64) -> u64
 {
-    r: u64 = 1;
+    //r: u64 = 1;
     //while r != 0 {
     //    r = a % b;
-    //    a = b;
     //    b = r;
+    //    a = b;
     //}
-    ret r;
+    //ret r;
 }
-
 //ldexp :: #host_import;
 
 #export Result :: enum u32 {
@@ -97,6 +96,7 @@ gcd :: (a: u64, b: u64) -> u64
     name:     string;
     contents: string;
 }
+
 #export Location :: struct {
     source : Source; // source code for this file
     string : string;
@@ -104,12 +104,12 @@ gcd :: (a: u64, b: u64) -> u64
 }
 
 #export Error :: struct {
-    result    : Result;
-    location  : Location;
-    message   : string;
-    context   : string;
-    memory    : Memory;
-    next      : *Error;
+    result   : Result;
+    location : Location;
+    message  : string;
+    context  : string;
+    memory   : Memory;
+    next     : *Error;
 }
 
 // ldexp :: #host_import; @internal
