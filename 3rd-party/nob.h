@@ -616,7 +616,7 @@ NOBDEF bool nob_set_current_dir(const char *path);
 #       define NOB_REBUILD_URSELF(binary_path, source_path) "cl.exe", "/O2", "/utf-8", nob_temp_sprintf("/Fe:%s", (binary_path)), source_path
 #    endif
 #  else
-#    define NOB_REBUILD_URSELF(binary_path, source_path) "cc", "-O2", "-o", binary_path, source_path
+#    define NOB_REBUILD_URSELF(binary_path, source_path) "cc", "-O2", "-Wall", "-Wextra", "-pedantic", "-o", binary_path, source_path
 #  endif
 #endif
 

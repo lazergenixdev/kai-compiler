@@ -781,9 +781,13 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
                 break;
             }
 
-            // otherwise just a divide symbol
-            token.id = #char "/";
+            // otherwise a character token
+            token.id = ch->u32;
             token.string.count = 1;
+            if _make_multi_token(context, *token, ch) {
+                context.cursor += 1;
+                token.string.count += 1;
+            }
             ret token;
         }
         /////////////////////////////////////////////////////////////////////////////////

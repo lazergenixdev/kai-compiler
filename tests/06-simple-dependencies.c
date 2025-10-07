@@ -9,12 +9,15 @@ int main()
         .error = default_error(),
         .sources = MAKE_SLICE(sources),
 		.options = { .flags = KAI_COMPILE_NO_CODE_GEN },
+        //.debug_writer = default_writer(),
     };
     kai_create_program(&info, &program);
     assert_no_error();
 
+    write_expression((Kai_Expr*)&program.code.trees.data[0].root);
+
     //Kai_Type type = NULL;
-    //void* ptr = kai_find_variable(&program, KAI_STRING("A"), &type);
+    //void* ptr = xkai_find_variable(&program, KAI_STRING("A"), &type);
 //    assert_true(type != NULL);
 //    assert_true(ptr != NULL);
 //    assert_true(type->id == KAI_TYPE_ID_PROCEDURE);

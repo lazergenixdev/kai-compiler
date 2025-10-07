@@ -1,3 +1,4 @@
+// c :: #import "ctypes";
 
 VERSION_STRING :: #host_import;
 VERSION_MAJOR  :: #host_import;
@@ -10,13 +11,11 @@ VERSION_PATCH  :: #host_import;
 }
 @doc_short ("Get version as string (includes extra version info)")
 
-/*
 #export version :: () -> [3] u32
 {
     ret {VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH};
 }
 @doc_short ("Get version as number")
-*/
 
 // Math
 
@@ -40,15 +39,131 @@ min_u32 :: (a: u32, b: u32) -> u32
 }
 gcd :: (a: u64, b: u64) -> u64
 {
-    //r: u64 = 1;
+    r: u64 = 1;
     //while r != 0 {
     //    r = a % b;
     //    b = r;
     //    a = b;
     //}
-    //ret r;
+    ret r;
 }
 //ldexp :: #host_import;
+
+// ...
+
+add_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
+{
+    sum := a + b;
+    carry := sum < a;
+
+    //if !carry ret sum;
+    if carry ret sum;
+
+    // if sub { [exp] -= 1; }
+    // else   { [exp] += 1; }
+    ret (1 << 63) | (sum >> 1);
+}
+
+// Memory Allocator
+
+#export Memory_Command :: enum u32 {
+    ALLOCATE_WRITE_ONLY :: 0; // input: Size
+    SET_EXECUTABLE      :: 1; // input: Ptr, Size
+    FREE                :: 2; // input: Ptr, Size
+};
+
+#export P_Memory_Heap_Allocate     :: #proc (user: *void, ptr: *void, new_size: u32, old_size: u32) -> *void;
+#export P_Memory_Platform_Allocate :: #proc (user: *void, ptr: *void, size: u32, op: Memory_Command) -> *void;
+
+Allocator :: struct {
+    heap_allocate      : *P_Memory_Heap_Allocate;
+    platform_allocate  : *P_Memory_Platform_Allocate;
+    user               : *void;
+    page_size          : u32;
+}
+
+// General Memory Operations
+
+#export Memory :: struct {
+    data : *void;
+    size : u32;
+}
+
+memory_copy :: (dst: *void, src: *void, size: u32)
+{
+    //for i: 0..<size {
+    //    (dst->*u8)[i] = (src->*u8)[i];
+    //}
+}
+memory_zero :: (dst: *void, size: u32)
+{
+    //for i: 0..<size {
+    //    (dst->*u8)[i] = 0;
+    //}
+}
+memory_fill :: (dst: *void, byte: u8, size: u32)
+{
+    //for i: 0..<size {
+    //    (dst->*u8)[i] = byte;
+    //}
+}
+
+// String Operations
+
+#export string_equals :: (left: string, right: string) -> bool
+{
+    //if left.count != right.count ret false;
+    //for i: 0..<left.count {
+    //    if left.data[i] != right.data[i] ret false;
+    //}
+    //ret true;
+}
+
+//#export string_from_c :: (s: c.string) -> string
+//{
+//    //count: u32;
+//    //while (s[count] != 0) count += 1;
+//    ret {count = count, data = s->*u8};
+//}
+
+#export string_from_data :: (data: *u8, count: u32) -> string
+{
+    ret {count = count, data = data};
+}
+
+// http://www.cse.yorku.ca/~oz/hash.html (djb2)
+// " this algorithm (k=33) was first reported by dan bernstein many years ago in comp.lang.c.
+// " another version of this algorithm (now favored by bernstein) uses xor:
+// " hash(i) = hash(i - 1) * 33 ^ str[i]; the magic of number 33
+// " (why it works better than many other constants, prime or not) has never been adequately explained. 
+
+string_hash :: (s: string) -> u64
+{
+    hash: u64 = 5381;
+    //for i: 0..<s.count
+    //    hash = ((hash << 5) + hash) + s.data[i]; // hash * 33 + c
+    ret hash;
+}
+string_hash_next :: (hash: u64, s: string) -> u64
+{
+    //for i: 0..<s.count
+    //    hash = ((hash << 5) + hash) + s.data[i];
+    ret hash;
+}
+
+// Dynamic Arrays
+
+#export Raw_Dynamic_Array :: struct {
+    count    : u32;
+    capacity : u32;
+    data     : *void;
+}
+
+#export Type_Info :: struct {
+    id : Type_Id;
+}
+
+// Errors
 
 #export Result :: enum u32 {
     SUCCESS        :: 0;
@@ -59,37 +174,6 @@ gcd :: (a: u64, b: u64) -> u64
     ERROR_FATAL    :: 5; @comment ("means compiler bug probably")
     ERROR_INTERNAL :: 6; @comment ("means compiler error unrelated to the source code")
     RESULT_COUNT   :: 7;
-}
-
-#export Type_Id :: enum u8 {
-    TYPE      :: 0; @comment ("no type info struct")
-    VOID      :: 1; @comment ("no type info struct")
-    BOOLEAN   :: 2; @comment ("no type info struct")
-    INTEGER   :: 3;
-    FLOAT     :: 4;
-    POINTER   :: 5;
-    PROCEDURE :: 6;
-    ARRAY     :: 7;
-    STRUCT    :: 8;
-    ENUM      :: 9;
-    STRING    :: 10; @comment ("same as STRUCT")
-    NUMBER    :: 11; @comment ("compiler internal only")
-} @long_names
-
-#export Type :: *Type_Info;
-
-#export Type_Info :: struct {
-    id : Type_Id;
-}
-
-#export Range :: struct {
-    start: u32;
-    count: u32;
-}
-
-#export Memory :: struct {
-    size : u32;
-    data : *void;
 }
 
 #export Source :: struct {
@@ -112,17 +196,21 @@ gcd :: (a: u64, b: u64) -> u64
     next     : *Error;
 }
 
-// ldexp :: #host_import; @internal
+// Type Info
 
-// Math
-/*
-_ceil_div :: (num: u64, den: u64) -> u64
-{
-    ret (num + den - 1) / den;
-}
+#export Type_Id :: enum u8 {
+    TYPE      :: 0; @comment ("no type info struct")
+    VOID      :: 1; @comment ("no type info struct")
+    BOOLEAN   :: 2; @comment ("no type info struct")
+    INTEGER   :: 3;
+    FLOAT     :: 4;
+    POINTER   :: 5;
+    PROCEDURE :: 6;
+    ARRAY     :: 7;
+    STRUCT    :: 8;
+    ENUM      :: 9;
+    STRING    :: 10; @comment ("same as STRUCT")
+    NUMBER    :: 11; @comment ("compiler internal only")
+} @long_names
 
-_ceil_div_fast :: (num: u64, exp: u32) -> u64
-{
-    ret (num + (1->u64 << exp) - 1) >> exp;
-}
-*/
+#export Type :: *Type_Info;

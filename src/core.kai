@@ -1,20 +1,4 @@
 
-// Primitive meta-data
-
-Primitive_Type :: enum u32 {
-    U8   =  0 | (1 << 4);
-    U16  =  1 | (2 << 4);
-    U32  =  2 | (4 << 4);
-    U64  =  3 | (8 << 4);
-    S8   =  4 | (1 << 4);
-    S16  =  5 | (2 << 4);
-    S32  =  6 | (4 << 4);
-    S64  =  7 | (8 << 4);
-    F32  =  8 | (4 << 4);
-    F64  =  9 | (8 << 4);
-    TYPE = 10 | (sizeof(*void) << 4);
-}
-
 // Version
 
 //VERSION_STRING :: #host_import;
@@ -240,6 +224,10 @@ string_from_c :: (s: cstring) -> string
     count: u32;
     while (s[count] != 0) count += 1;
     ret string.{count = count, data = s->*u8};
+}
+string_from_data :: (data: *u8, count: u32) -> string
+{
+    ret string.{count = count, data = data};
 }
 string_copy_from_c :: (dst: string, src: cstring) -> string
 {
@@ -857,37 +845,46 @@ Value :: union {
 
 // Writer API
 
-Write_Color :: enum u32 {
-    PRIMARY     = 0;
-    SECONDARY   = 1;
-    IMPORTANT   = 2;
-    IMPORTANT_2 = 3;
-    DECORATION  = 4;
-    TYPE        = 5;
-    COUNT       = 6;
-};
-
 Write_Flags :: enum u32 {
-    NONE        = 0;
-    HEXIDECIMAL = 1 << 0;
+    NONE    = 0;
+    BASE_16 = 1 << 0;
 };
 
 Write_Format :: struct {
-    flags : u32;
-    min_count : u32;
-    max_count : u32;
-    fill_character : u8;
+    flags          : u16;
+    min_count      : u16;
+    max_count      : u16;
+    fill_character : u8; // should be codepoint?
 }
 
-P_Write_String :: #proc (user: *void, str: string);
-P_Write_Value  :: #proc (user: *void, type: u32, value: Value, format: Write_Format);
-P_Set_Color    :: #proc (user: *void, color: Write_Color);
+Write_Command :: enum u32 {
+    WRITE_STRING            =  0;
+    WRITE_U8                =  1 | (1 << 8);
+    WRITE_U16               =  2 | (2 << 8);
+    WRITE_U32               =  3 | (4 << 8);
+    WRITE_U64               =  4 | (8 << 8);
+    WRITE_S8                =  5 | (1 << 8);
+    WRITE_S16               =  6 | (2 << 8);
+    WRITE_S32               =  7 | (4 << 8);
+    WRITE_S64               =  8 | (8 << 8);
+    WRITE_F32               =  9 | (4 << 8);
+    WRITE_F64               = 10 | (8 << 8);
+    WRITE_POINTER           = 11 | (sizeof(*void) << 8);
+    WRITE_FILL              = 12;
+    WRITE_COLOR_DEFAULT     = 0x80;
+    WRITE_COLOR_PRIMARY     = 0x81;
+    WRITE_COLOR_SPECIAL     = 0x82;
+    WRITE_COLOR_IMPORTANT   = 0x83;
+    WRITE_COLOR_VARIABLE    = 0x84;
+    WRITE_COLOR_DECORATION  = 0x85;
+    WRITE_COLOR_TYPE        = 0x86;
+}
+
+P_Write_Callback :: #proc (user: *void, command: Write_Command, value: Value, format: Write_Format);
 
 Writer :: struct {
-    write_string : *P_Write_String;
-    write_value  : *P_Write_Value;
-    set_color    : *P_Set_Color;
-    user         : *void;
+    write : *P_Write_Callback;
+    user  : *void;
 }
 
 
@@ -981,12 +978,95 @@ arena_allocate :: (arena: *Arena_Allocator, size: u32) -> *void
 
 // Buffer
 
+Growing_Arena :: struct {
+    buffer: [..] u8;
+    allocator: Allocator;
+}
+
+growing_arena_push :: (arena: *Growing_Arena, data: *void, size: u32) -> *void
+{
+    allocator: *Allocator = *arena.allocator;
+    array_grow(*arena.buffer, size);
+    ptr: *void = arena.buffer.data + arena.buffer.count;
+    _memory_copy(ptr, data, size);
+    arena.buffer.count += size;
+    ret ptr;
+}
+
+_push_integer :: (arena: *Growing_Arena, value: u64)
+{
+    if value < 10 {
+        character: u8 = #char "0" + value->u8;
+        growing_arena_push(arena, *character, 1);
+        ret;
+    }
+    n: u64 = 100000000000->u64;
+    show_zero: bool = false;
+    while n != 0 {
+        digit: u64 = value / n;
+        if digit != 0 || show_zero {
+            character: u8 = #char "0" + digit;
+            growing_arena_push(arena, *character, 1);
+            if digit != 0 {
+                show_zero = true;
+            }
+        }
+        value -= digit * n;
+        n /= 10;
+    }
+}
+
+_arena_writer_write :: (user: *void, command: Write_Command, value: Value, format: Write_Format)
+{
+    if user == null ret;
+    arena: *Growing_Arena = cast user;
+
+    if command & 0x80 {
+        // fprintf(f, "%s", _term_debug_colors[command & 0x7F]);
+        ret;
+    }
+    if command == {
+        case KAI_WRITE_STRING; {
+            growing_arena_push(arena, value.string.data, value.string.count);
+        }
+        case KAI_WRITE_U8; {
+            value.u64 = value.u8 -> u64;
+        } #through;
+        case KAI_WRITE_U16; {
+            value.u64 = value.u16 -> u64;
+        } #through;
+        case KAI_WRITE_U32; {
+            value.u64 = value.u32 -> u64;
+        } #through;
+        case KAI_WRITE_U64; {
+            _push_integer(arena, value.u64);
+        }
+        case KAI_WRITE_FILL; {
+            for i: 0..<format.min_count {
+                // fputc(format.fill_character, f);
+            }
+        }
+        case; {
+            value.string = STRING("([Writer] Unknown command)");
+            growing_arena_push(arena, value.string.data, value.string.count);
+        }
+    }
+}
+
+writer_from_arena :: (arena: *Growing_Arena) -> Writer
+{
+    ret Writer.{
+        write = _arena_writer_write,
+        user  = arena,
+    };
+}
+
+// TODO: remove
 Buffer :: struct {
     array     : [..] u8;
     offset    : u32;
     allocator : Allocator;
 }
-
 _buffer_append_string :: (buffer: *Buffer, s: string)
 {
     allocator: *Allocator = *buffer.allocator;
@@ -994,7 +1074,6 @@ _buffer_append_string :: (buffer: *Buffer, s: string)
     _memory_copy(buffer.array.data + buffer.array.count, s.data, s.count);
     buffer.array.count += s.count;
 }
-
 _buffer_end :: (buffer: *Buffer) -> Range
 {
     out: Range = Range.{
@@ -1004,7 +1083,6 @@ _buffer_end :: (buffer: *Buffer) -> Range
     buffer.offset = buffer.array.count;
     ret out;
 }
-
 _buffer_push :: (buffer: *Buffer, size: u32) -> Range
 {
     allocator: *Allocator = *buffer.allocator;
@@ -1012,7 +1090,6 @@ _buffer_push :: (buffer: *Buffer, size: u32) -> Range
     buffer.array.count += size;
     ret _buffer_end(buffer);
 }
-
 _buffer_done :: (buffer: *Buffer) -> Memory
 {
     memory: Memory = Memory.{
@@ -1170,26 +1247,26 @@ write_error :: (writer: *Writer, error: *Error)
             ret;
         }
 
-        _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
         if error.location.source.name.count != 0
             _write_string(error.location.source.name);
         else
             _write("...");
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
     //#if KAI_SHOW_LINE_NUMBER_WITH_FILE {
     //    _write(":");
-    //    _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-    //    _write_u32(error.location.line);
     //    _set_color(KAI_WRITE_COLOR_PRIMARY);
+    //    _write_u32(error.location.line);
+    //    _set_color(KAI_WRITE_COLOR_DEFAULT);
     //}
         _write(" --> ");
         if error.result != KAI_ERROR_INFO { _set_color(KAI_WRITE_COLOR_IMPORTANT); }
-        else                              { _set_color(KAI_WRITE_COLOR_SECONDARY); }
+        else                              { _set_color(KAI_WRITE_COLOR_SPECIAL); }
         _write_string(result_string_map[error.result]);
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
         _write(": ");
         _write_string(error.message);
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
         _write("\n");
 
         // -------------------------- Write Source Code ---------------------------
@@ -1211,7 +1288,7 @@ write_error :: (writer: *Writer, error: *Error)
         // TODO: Should start from location.string.data and go back
         begin: *u8 = _advance_to_line(error.location.source.contents.data, error.location.line);
 
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
         _write_source_code(writer, begin);
         _write("\n");
 
@@ -1230,7 +1307,7 @@ write_error :: (writer: *Writer, error: *Error)
         _write_string(error.context);
 
         _write("\n");
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
         
         error = error.next;
     }
@@ -1292,9 +1369,12 @@ write_type :: (writer: *Writer, type: *Type_Info)
     }
     case KAI_TYPE_ID_STRING; _write("string");
     case KAI_TYPE_ID_STRUCT; {
-        _write("struct"); // TODO: fix recursion issue
-        /*
         info: *Type_Info_Struct = cast type;
+        _write("struct"); // TODO: fix recursion issue
+        _write("(size=");
+        _write_u32(info.size);
+        _write(")");
+        /*
         _write("{");
         for i: 0..<info.fields.count {
             field: Struct_Field = info.fields.data[i];
@@ -1322,7 +1402,7 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
             t: *Type = cast data;
             _set_color(KAI_WRITE_COLOR_TYPE);
             kai_write_type(writer, [t]);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
         }
         case KAI_TYPE_ID_VOID; _write("nothing");
         case KAI_TYPE_ID_BOOLEAN; {
@@ -1330,7 +1410,7 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             if (value) _write("true");
             else       _write("false");
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
         }
         case KAI_TYPE_ID_INTEGER; {
             value: union { u: u64; s: s64; };
@@ -1344,7 +1424,7 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             if (i.is_signed) _write_s64(value.s);
             else             _write_u64(value.u);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
         }
         case KAI_TYPE_ID_FLOAT; {
             f: *Type_Info_Float = cast type;
@@ -1353,7 +1433,7 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
                 case 32; _write_f64([data->*f32]->f64);
                 case 64; _write_f64([data->*f64]);
             }
-            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+            kai__set_color(KAI_WRITE_COLOR_DEFAULT);
         }
         case KAI_TYPE_ID_POINTER; #through;
         case KAI_TYPE_ID_PROCEDURE; {
@@ -1361,12 +1441,12 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
             fmt: Write_Format = Write_Format.{
                 fill_character = #char "0",
                 min_count = 2 * sizeof(uint),
-                flags = KAI_WRITE_FLAGS_HEXIDECIMAL,
+                flags = KAI_WRITE_FLAGS_BASE_16,
             };
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write("0x");
-            writer.write_value(writer.user, KAI_U64, Value.{u64 = value->u64}, fmt);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            writer.write(writer.user, KAI_WRITE_U64, Value.{u64 = value->u64}, fmt);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
         }
         case KAI_TYPE_ID_ARRAY; {
             _write("[todo array]");
@@ -1377,16 +1457,17 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
             _write("\"");
             _write_string(value); // TODO: print with escapes
             _write("\"");
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
         }
         case KAI_TYPE_ID_STRUCT; {
             s: *Type_Info_Struct = cast type;
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write("{");
             for i: 0..<s.fields.count {
                 field: Struct_Field = s.fields.data[i];
                 _write_string(field.name);
                 _write(" = ");
-                write_value(writer, data + field.offset, field.type);
+                write_value(writer, data->*u8 + field.offset, field.type);
                 if i != s.fields.count - 1 {
                     _write(", ");
                 }
@@ -1397,7 +1478,7 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
             value: Number = [data->*Number];
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             kai_write_number(writer, value);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
         }
         case; {
             _write("[todo]");
@@ -1430,21 +1511,21 @@ _tree_branches: [4] string = .{
 
 _write_expr_id_with_name :: (writer: *Writer, id: string, expr: *Expr)
 {
-    _set_color(KAI_WRITE_COLOR_SECONDARY);
-    _write_string(id);
     _set_color(KAI_WRITE_COLOR_PRIMARY);
+    _write_string(id);
+    _set_color(KAI_WRITE_COLOR_DEFAULT);
     if expr.name.count != 0 {
         _write(" (name = \"");
         _set_color(KAI_WRITE_COLOR_IMPORTANT);
         _write_string(expr.name);
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
         _write("\")");
     }
     if expr.this_type != null {
         _write(" [");
         _set_color(KAI_WRITE_COLOR_TYPE);
         write_type(writer, expr.this_type);
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
         _write("]");
     }
 }
@@ -1514,7 +1595,7 @@ _write_tree_branches :: (context: *_Tree_Traversal_Context)
         _write_string(_tree_branches[(a << 1) | b]);
     }
     if context.prefix.count > 0 {
-        _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        _set_color(KAI_WRITE_COLOR_SPECIAL);
         _write_string(context.prefix);
         _write(" ");
         context.prefix = string.{0};
@@ -1527,9 +1608,9 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
 
     _write_tree_branches(context);
     if expr == null {
-        _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
+        _set_color(KAI_WRITE_COLOR_SPECIAL);
         _write("null\n");
-        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
         ret;
     }
     has_tag: bool = expr.tag != null;
@@ -1539,7 +1620,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write(" \"");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_string(expr.source_code);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write("\"\n");
         }
         case KAI_EXPR_STRING; {
@@ -1548,7 +1629,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write(" ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_string(s.source_code);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write("\n");
         }
         case KAI_EXPR_NUMBER; {
@@ -1557,7 +1638,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write(" ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             write_number(writer, n.value);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write("\n");
         }
         case KAI_EXPR_LITERAL; {
@@ -1577,7 +1658,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write(" (op = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_unary_operator_name(writer, u.op);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write(")\n");
 
             _explore(u.expr, true);
@@ -1588,7 +1669,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write(" (op = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_binary_operator_name(writer, b.op);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write(")\n");
 
             _explore(b.left, b.right == null);
@@ -1621,7 +1702,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
                 case KAI_SPECIAL_NUMBER; _write("Number"); // #Number
                 case KAI_SPECIAL_CODE; _write("Code"); // #Code
             }
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write("\"\n");
         }
         case KAI_EXPR_PROCEDURE_TYPE; {
@@ -1717,14 +1798,14 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write_expr_id_with_name(writer, STRING("declaration"), expr);
             if d.flags & KAI_FLAG_DECL_CONST _write(" const");
             if d.flags & KAI_FLAG_DECL_EXPORT {
-                _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-                _write(" export");
                 _set_color(KAI_WRITE_COLOR_PRIMARY);
+                _write(" export");
+                _set_color(KAI_WRITE_COLOR_DEFAULT);
             }
             if d.flags & KAI_FLAG_DECL_HOST_IMPORT {
-                _set_color(KAI_WRITE_COLOR_IMPORTANT_2);
-                _write(" host_import");
                 _set_color(KAI_WRITE_COLOR_PRIMARY);
+                _write(" host_import");
+                _set_color(KAI_WRITE_COLOR_DEFAULT);
             }
             _write("\n");
 
@@ -1744,7 +1825,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
                 _write(" (op = ");
                 _set_color(KAI_WRITE_COLOR_IMPORTANT);
                 _write_assignment_operator_name(writer, a.op);
-                _set_color(KAI_WRITE_COLOR_PRIMARY);
+                _set_color(KAI_WRITE_COLOR_DEFAULT);
                 _write(")");
             }
             _write("\n");
@@ -1786,7 +1867,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write(" (iterator name = ");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             _write_string(f.iterator_name);
-            _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write(")\n");
             context.prefix = STRING("from");
             _explore(f.from, 0);
@@ -1806,9 +1887,9 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write(" TODO\n");
         }
         case; {
-            _set_color(KAI_WRITE_COLOR_SECONDARY);
-            _write("unknown");
             _set_color(KAI_WRITE_COLOR_PRIMARY);
+            _write("unknown");
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write(" (id = ");
             _write_u32(expr.id);
             _write(")\n");
@@ -1818,9 +1899,12 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         _tree_traversal_push(context, true);
         context.prefix = STRING("tag");
         _write_tree_branches(context);
-        _set_color(KAI_WRITE_COLOR_SECONDARY);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
+        _write("(name = \"");
+        _set_color(KAI_WRITE_COLOR_IMPORTANT);
         _write_string(expr.tag.name);
-        _write("\n");
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
+        _write("\")\n");
 
         current: *Expr = expr.tag.expr;
         while current {

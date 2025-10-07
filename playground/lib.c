@@ -22,16 +22,13 @@ const char* join(const char* left, const char* right)
 #define printf(...) (void)sizeof(__VA_ARGS__)
 #define putchar(...) (void)sizeof(__VA_ARGS__)
 #define kai_fatal_error(DESC, MESSAGE) __env_panic(DESC, MESSAGE, __FILE__, __LINE__)
-#define kai_writer_stdout() (Kai_Writer){0}
 #define kai__todo(...) __env_panic("TODO", join(__FUNCTION__, #__VA_ARGS__), __FILE__, __LINE__)
 #define KAI_DONT_USE_WRITER_API
 #define KAI_DONT_USE_MEMORY_API
 #define KAI_IMPLEMENTATION
 #include "../kai.h"
 
-WASM_IMPORT(void, write_string)(void* user, Kai_string String);
-WASM_IMPORT(void, write_value)(void* user, Kai_u32 type, Kai_Value value, Kai_Write_Format format);
-WASM_IMPORT(void, set_color)(void* user, Kai_Write_Color color_index);
+WASM_IMPORT(void, write)(void* user, Kai_Write_Command command, Kai_Value value, Kai_Write_Format format);
 
 #define hash_table_iterate(Table, Iter_Var)                               \
   for (Kai_u32 Iter_Var = 0; Iter_Var < (Table).capacity; ++Iter_Var)     \
@@ -64,10 +61,7 @@ void* _Platform_Allocate(void* user, void* ptr, Kai_u32 size, Kai_Memory_Command
 }
 
 static Kai_Writer div_writer = {
-	.write_string   = &__env_write_string,
-	.write_value    = &__env_write_value,
-	.set_color      = &__env_set_color,
-	.user           = (void*)0,
+	.write = &__env_write,
 };
 static Kai_Error error;
 static Kai_Allocator allocator = {
@@ -88,7 +82,7 @@ WASM_EXPORT void set_file_name(Kai_string name)
 
 WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)
 {
-	error = (Kai_Error){0};
+	Kai_Error error = {0};
 	Kai_Syntax_Tree tree = {0};
 	Kai_Syntax_Tree_Create_Info info = {
 		.allocator = allocator,
@@ -100,12 +94,15 @@ WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)
 	};
 	Kai_Result result = kai_create_syntax_tree(&info, &tree);
 
+    kai_write_error(&div_writer, &error);
+    if (0) {
     if (result != KAI_SUCCESS) {
         kai_write_error(&div_writer, &error);
 	}
     else {
         kai_write_expression(&div_writer, (Kai_Expr*)&tree.root, 0);
 	}
+    }
     return (result != KAI_SUCCESS);
 }
 
@@ -164,7 +161,7 @@ WASM_EXPORT int compile_show_exports(Kai_u8* data, Kai_u32 count)
         {
             Kai_string name = program.variable_table.keys[i];
             Kai_Variable var = program.variable_table.values[i];
-            kai__set_color(KAI_WRITE_COLOR_SECONDARY);
+            kai__set_color(KAI_WRITE_COLOR_SPECIAL);
             kai__write_string(name);
             kai__set_color(KAI_WRITE_COLOR_PRIMARY);
             kai__write(" = ");

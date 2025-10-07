@@ -53,10 +53,10 @@ void write_table(Kai_Writer* writer, Table* table)
 
         Kai_Write_Format fmt = {
             .fill_character = '0',
-            .flags = KAI_WRITE_FLAGS_HEXIDECIMAL,
+            .flags = KAI_WRITE_FLAGS_BASE_16,
             .min_count = sizeof(Kai_u64) * 2,
         };
-        writer->write_value(writer->user, KAI_U64, (Kai_Value){.u64 = table->hashes[i]}, fmt);
+        writer->write(writer->user, KAI_WRITE_U64, (Kai_Value){.u64 = table->hashes[i]}, fmt);
         //kai__write(": ");
         //kai__write_s32(table->values[i]);
         kai__write(", ");

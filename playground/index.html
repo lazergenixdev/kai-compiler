@@ -1,390 +1,430 @@
 <!DOCTYPE html>
 <html>
-	<head>
-		<title>Kai </title>
-		<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22&gt;&lt;text y=%22.9em%22 font-size=%2285%22&gt;🪁&lt;/text&gt;&lt;/svg&gt;">
-		<link rel="preconnect" href="https://fonts.googleapis.com">
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-		<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@200..900&display=swap" rel="stylesheet">
-		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/firacode@6.2.0/distr/fira_code.css"><link rel="preconnect" href="https://fonts.googleapis.com">
 
-		<!-- Load CodeMirror (v5 classic) -->
-		 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css" integrity="sha512-uf06llspW44/LZpHzHT6qBOIVODjWtv4MxCricRxkzvopAlSWnTf6hpZTFxuuZcuNE9CBQhqE0Seu1CoRk84nQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<head>
+	<title>Kai </title>
+	<link rel="icon"
+		href="data:image/svg+xml,&lt;svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22&gt;&lt;text y=%22.9em%22 font-size=%2285%22&gt;🪁&lt;/text&gt;&lt;/svg&gt;">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@200..900&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/firacode@6.2.0/distr/fira_code.css">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
 
-		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/theme/material-ocean.min.css">
+	<!-- Load CodeMirror (v5 classic) -->
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css"
+		integrity="sha512-uf06llspW44/LZpHzHT6qBOIVODjWtv4MxCricRxkzvopAlSWnTf6hpZTFxuuZcuNE9CBQhqE0Seu1CoRk84nQ=="
+		crossorigin="anonymous" referrerpolicy="no-referrer" />
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/theme/material-ocean.min.css">
 
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js" integrity="sha512-8RnEqURPUc5aqFEN04aQEiPlSAdE0jlFS/9iGgUyNtwFnSKCXhmB6ZTNl7LnDtDWKabJIASzXrzD0K+LYexU9g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-		 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/clike/clike.min.js" integrity="sha512-l8ZIWnQ3XHPRG3MQ8+hT1OffRSTrFwrph1j1oc1Fzc9UKVGef5XN9fdO0vm3nW0PRgQ9LJgck6ciG59m69rvfg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/mode/simple.min.js" integrity="sha512-CGM6DWPHs250F/m90YZ9NEiEUhd9a4+u8wAzeKC6uHzZbYyt9/e2dLC5BGGB6Y0HtEdZQdSDYjDsoTyNGdMrMA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<style>
-  .monospaced-font {
-    font-optical-sizing: auto;
-    font-size: normal;
-    font-family: "Inconsolata", monospace;
-    font-weight: 400;
-    font-style: normal;
-  }
-  html, body {
-    height: 100%;
-    margin: 0;
-    background-color: #000;
-    color: white;
-    font-family: Calibri, sans-serif;
-  }
-  #title {
-    color: #BBB;
-  }
-  #header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    background-color: #000;
-    color: white;
-  }
-  #header a {
-    color: white;
-    text-decoration: none;
-  }
-  #header svg {
-    fill: #aaa;
-    width: 24px;
-    height: 24px;
-    vertical-align: middle;
-    border-radius: 50%;
-    padding: 6px;
-    margin: -6px;
-    transition: filter 0.3s ease-in-out, fill 0.2s ease-in-out;
-  }
-  #header svg:hover {
-    fill: white;
-    filter: drop-shadow(0 0 4px #777) drop-shadow(0 0 2px #BBB);
-  }
-  #container {
-    display: flex;
-    height: 80vh;
-  }
-  .column {
-    flex: 1;
-    min-width: 0; /* prevents overflow pushing */
-    height: 100%; /* fills available space */
-    display: flex;
-    flex-direction: column;
-    overflow: auto;
-    background-color: #0f111a;
-  }
-  .editor-column {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  #editor {
-    flex: 1;
-    height: 100%;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .CodeMirror {
-    flex: 1;
-    height: 100%; /* editor fills available space */
-  }
-  #CompileError {
-    height: auto;
-    margin: 0;
-    overflow: auto;
-    box-sizing: border-box;
-    background: #000;
-    margin: 4px;
-    padding: 4px;
-  }
-  .contains_error {
-    border: thin solid #F54;
-  }
-  #SyntaxTree {
-    flex: 1;
-    margin: 0;
-    padding: 0.5em;
-    overflow: auto;
-	border-left: 1px solid #000;
-  }
-  pre {
-    color: #acacac;
-    font-family: 'Fira Code', monospace;
-  }
-  select {
-	font-size: 1rem;
-	color: color-mix(in srgb, #0f111a 20%, white);
-    background-color: color-mix(in srgb, #0f111a 97%, white);
-    border-color: color-mix(in srgb, #0f111a 90%, white);
-  }
-  .CodeMirror {
-    font-family: "Fira Code", monospace; /* change to your preferred font */
-    font-size: normal; /* adjust size */
-  }
-</style>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"
+		integrity="sha512-8RnEqURPUc5aqFEN04aQEiPlSAdE0jlFS/9iGgUyNtwFnSKCXhmB6ZTNl7LnDtDWKabJIASzXrzD0K+LYexU9g=="
+		crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/clike/clike.min.js"
+		integrity="sha512-l8ZIWnQ3XHPRG3MQ8+hT1OffRSTrFwrph1j1oc1Fzc9UKVGef5XN9fdO0vm3nW0PRgQ9LJgck6ciG59m69rvfg=="
+		crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/mode/simple.min.js"
+		integrity="sha512-CGM6DWPHs250F/m90YZ9NEiEUhd9a4+u8wAzeKC6uHzZbYyt9/e2dLC5BGGB6Y0HtEdZQdSDYjDsoTyNGdMrMA=="
+		crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+	<style>
+		.monospaced-font {
+			font-optical-sizing: auto;
+			font-size: normal;
+			font-family: "Inconsolata", monospace;
+			font-weight: 400;
+			font-style: normal;
+		}
+
+		html,
+		body {
+			height: 100%;
+			margin: 0;
+			background-color: #000;
+			color: white;
+			font-family: Calibri, sans-serif;
+		}
+
+		#title {
+			color: #BBB;
+		}
+
+		#header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			padding: 0.75rem 1rem;
+			background-color: #000;
+			color: white;
+		}
+
+		#header a {
+			color: white;
+			text-decoration: none;
+		}
+
+		#header svg {
+			fill: #aaa;
+			width: 24px;
+			height: 24px;
+			vertical-align: middle;
+			border-radius: 50%;
+			padding: 6px;
+			margin: -6px;
+			transition: filter 0.3s ease-in-out, fill 0.2s ease-in-out;
+		}
+
+		#header svg:hover {
+			fill: white;
+			filter: drop-shadow(0 0 4px #777) drop-shadow(0 0 2px #BBB);
+		}
+
+		#container {
+			display: flex;
+			height: 80vh;
+		}
+
+		.column {
+			flex: 1;
+			min-width: 0;
+			/* prevents overflow pushing */
+			height: 100%;
+			/* fills available space */
+			display: flex;
+			flex-direction: column;
+			overflow: auto;
+			background-color: #0f111a;
+		}
+
+		.editor-column {
+			flex: 1;
+			min-width: 0;
+			display: flex;
+			flex-direction: column;
+		}
+
+		#editor {
+			flex: 1;
+			height: 100%;
+			width: 100%;
+			box-sizing: border-box;
+		}
+
+		.CodeMirror {
+			flex: 1;
+			height: 100%;
+			/* editor fills available space */
+		}
+
+		#CompileError {
+			height: auto;
+			margin: 0;
+			overflow: auto;
+			box-sizing: border-box;
+			background: #000;
+			margin: 4px;
+			padding: 4px;
+		}
+
+		.contains_error {
+			border: thin solid #F54;
+		}
+
+		#SyntaxTree {
+			flex: 1;
+			margin: 0;
+			padding: 0.5em;
+			overflow: auto;
+			border-left: 1px solid #000;
+		}
+
+		pre {
+			color: #acacac;
+			font-family: 'Fira Code', monospace;
+		}
+
+		select {
+			font-size: 1rem;
+			color: color-mix(in srgb, #0f111a 20%, white);
+			background-color: color-mix(in srgb, #0f111a 97%, white);
+			border-color: color-mix(in srgb, #0f111a 90%, white);
+		}
+
+		.CodeMirror {
+			font-family: "Fira Code", monospace;
+			/* change to your preferred font */
+			font-size: normal;
+			/* adjust size */
+		}
+	</style>
 </head>
+
 <body>
-  <div id="header">
-    <div id="title">hi</div>
-    <strong>Playground</strong>
-	<!-- GitHub Link -->
-    <a href="https://github.com/lazergenixdev/kai-compiler" aria-label="GitHub repository">
-      <svg viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"/></svg>
-    </a>
-  </div>
-  <div id="container">
-    <div class="column">
-		<select id="files">
-			<option selected>Intro.kai</option>
-			<option>My Code</option>
-			<option value="../src/core.kai">Source core.kai</option>
-			<option value="../src/parser.kai">Source parser.kai</option>
-			<option value="../src/compiler.kai">Source compiler.kai</option>
-			<option value="../src/memory.kai">Source memory.kai</option>
-			<option value="../src/writer.kai">Source writer.kai</option>
-		</select>
-      <textarea id="editor"></textarea>
-    </div>
-    <div class="column">
-      <select id="mode">
-        <option value="0">AST</option>
-        <option value="1">Type-Checked AST</option>
-        <option value="2" selected>Exported Variables</option>
-      </select>
-      <pre id="SyntaxTree" class="monospaced-font"></pre>
-    </div>
-  </div>
-  <pre id="CompileError"></pre>
+	<div id="header">
+		<div id="title">hi</div>
+		<strong>Playground</strong>
+		<!-- GitHub Link -->
+		<a href="https://github.com/lazergenixdev/kai-compiler" aria-label="GitHub repository">
+			<svg viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg">
+				<path fill-rule="evenodd" clip-rule="evenodd"
+					d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" />
+			</svg>
+		</a>
+	</div>
+	<div id="container">
+		<div class="column">
+			<select id="files">
+				<option selected>Intro.kai</option>
+				<option>My Code</option>
+				<option value="../src/core.kai">Source core.kai</option>
+				<option value="../src/parser.kai">Source parser.kai</option>
+				<option value="../src/compiler.kai">Source compiler.kai</option>
+				<option value="../src/memory.kai">Source memory.kai</option>
+				<option value="../src/writer.kai">Source writer.kai</option>
+			</select>
+			<textarea id="editor"></textarea>
+		</div>
+		<div class="column">
+			<select id="mode">
+				<option value="0">AST</option>
+				<option value="1">Type-Checked AST</option>
+				<option value="2" selected>Exported Variables</option>
+			</select>
+			<pre id="SyntaxTree" class="monospaced-font"></pre>
+		</div>
+	</div>
+	<pre id="CompileError"></pre>
 </body>
 
-	<script type="module">
-		const SYNTAX_TREE  = 0;
-		const TYPED_AST    = 1;
-		const SHOW_EXPORTS = 2;
-		
-		let c = null; // functions we defined in C!
-		let c_memory = null;
-		const PAGESIZE = 64 * 1024;
+<script type="module">
+	const SYNTAX_TREE = 0;
+	const TYPED_AST = 1;
+	const SHOW_EXPORTS = 2;
 
-		class HTML_Builder {
-			constructor() {
-				this.parts = [];
-				this.currentColorIndex = 0;
-				this.colorMap = {
-					1: "#FFF",
-					2: "#F76",
-					3: "#237ccf",
-					4: "#333",
-					5: "#b2ec45",
-				};
+	let c = null; // functions we defined in C!
+	let c_memory = null;
+	const PAGESIZE = 64 * 1024;
+
+	class HTML_Builder {
+		constructor() {
+			this.parts = [];
+			this.currentColorIndex = 0;
+			this.colorMap = {
+				1: "#FFF",
+				2: "#FFF",
+				3: "#F76",
+				4: "#237ccf",
+				5: "#333",
+				6: "#b2ec45",
+			};
+			this.colorActive = false;
+			this.bytes = [];
+		}
+
+		append(string) {
+			if (string instanceof Uint8Array) {
+				// NOTE: produces Call Stack maximum error when string is too large
+				this.bytes.push(...string.values());
+			}
+			else {
+				this.bytes.push(string);
+			}
+		}
+
+		set_color(index) {
+			if (this.bytes.length !== 0) {
+				this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+				this.bytes.length = 0;
+			}
+
+			if (index === this.currentColorIndex) {
+				return; // no change
+			}
+
+			// Close current span if active
+			if (this.colorActive) {
+				this.parts.push("</span>");
 				this.colorActive = false;
-				this.bytes = [];
 			}
 
-			append(string) {
-				if (string instanceof Uint8Array) {
-					this.bytes.push(...string.values());
-				}
-				else {
-					this.bytes.push(string);
-				}
+			// Open new span if not default color (index != 0)
+			if (index !== 0 && this.colorMap[index]) {
+				const color = this.colorMap[index];
+				this.parts.push(`<span style="color: ${color}">`);
+				this.colorActive = true;
 			}
 
-			set_color(index) {
-				if (this.bytes.length !== 0) {
-					this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
-					this.bytes.length = 0;
-				}
-
-				if (index === this.currentColorIndex) {
-					return; // no change
-				}
-
-				// Close current span if active
-				if (this.colorActive) {
-					this.parts.push("</span>");
-					this.colorActive = false;
-				}
-
-				// Open new span if not default color (index != 0)
-				if (index !== 0 && this.colorMap[index]) {
-					const color = this.colorMap[index];
-					this.parts.push(`<span style="color: ${color}">`);
-					this.colorActive = true;
-				}
-
-				this.currentColorIndex = index;
-			}
-
-			finalize() {
-				if (this.bytes.length !== 0) {
-					this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
-					this.bytes.length = 0;
-				}
-				if (this.colorActive) {
-					this.parts.push("</span>");
-					this.colorActive = false;
-				}
-				return this.parts.join("");
-			}
-		}
-		class ArenaAllocator {
-			constructor() {
-				this.start = 0;
-				this.offset = 0;
-				this.reserved = 0; // Total size we can allocate without growing
-			}
-
-			init() {
-				this.start = c_memory.grow(1) * PAGESIZE;
-				this.offset = 0;
-				this.reserved = PAGESIZE;
-				console.info("START", this);
-			}
-
-			reset() {
-				console.info("Memory Used:", Math.trunc(1000*this.offset/(1024*1024))/1000, "MiB")
-				new Uint8Array(c_memory.buffer).fill(0, this.start, this.start + this.offset);
-				this.offset = 0;
-			}
-
-			allocate(size) {
-				function ceil_div(num, den) {
-					return Math.ceil((num + den - 1) / den);
-				}
-				if (this.offset + size > this.reserved) {
-					const pages = ceil_div(this.offset + size - this.reserved, PAGESIZE);
-					c_memory.grow(pages);
-					this.reserved += pages * PAGESIZE;
-				}
-				const ptr = this.offset + this.start;
-				this.offset += size;
-				return ptr;
-			}
-		}
-		
-		// Find length of C string
-		function c_string_length(address) {
-			const start = address;
-			const c_bytes = new Uint8Array(c_memory.buffer);
-			while (c_bytes[address] != 0) address++;
-			return address - start;
-		}
-		
-		// Convert C string to Javascript string
-		function c_string(address, length) {
-			if (length === undefined) {
-				length = c_string_length(address);
-			}
-			return new TextDecoder().decode(new Uint8Array(c_memory.buffer).slice(address, address + length));
+			this.currentColorIndex = index;
 		}
 
-		// Convert Kai string to Javascript string
-		function kai_string(address) {
-			const dataView = new DataView(c_memory.buffer);
-			let len = dataView.getUint32(address, true);
-			let ptr = dataView.getUint32(address + 4, true);
-			return new TextDecoder().decode(new Uint8Array(c_memory.buffer).slice(ptr, ptr + len));
-		}
-
-		function panic(_desc, _message, _file, line) {
-			const desc = c_string(_desc);
-			const message = c_string(_message);
-			const file = c_string(_file);
-			const error = Error(`${message}\n(${file}:${line})`);
-			error.name = desc;
-			throw error;
-		}
-
-		function console_log(message, value) {
-			console.log(c_string(message), value);
-		}
-
-		let builder = null;
-
-		function write_string(user, string) {
-			const dataView = new DataView(c_memory.buffer);
-			let count = dataView.getUint32(string, true);
-			let data = dataView.getUint32(string + 4, true);
-			const c_bytes = new Uint8Array(c_memory.buffer);
-			builder.append(c_bytes.slice(data, data + count));
-		}
-
-		function write_value(user, type, value, format) {
-			const view = new DataView(c_memory.buffer);
-			const map = {
-				///*KAI_U8  */ 0 : (value, format) => {},
-				///*KAI_U16 */ 1 : (value, format) => {},
-				/*KAI_U32 */ 2 : (value, format) => {
-					const string = view.getUint32(value, true).toString();
-					builder.append(new TextEncoder().encode(string));
-				},
-				/*KAI_U64 */ 3: (value, format) => {
-					let flags          = view.getUint32(format, true);
-					let min_count      = view.getUint32(format + 4, true);
-					let fill_character = view.getUint8(format + 12, true);
-					let string         = view.getBigUint64(value, true).toString(flags&1?16:10);
-					if (min_count > 0)
-						string = string.padStart(min_count, String.fromCharCode(fill_character));
-					builder.append(new TextEncoder().encode(string));
-				},
-				///*KAI_S8  */ 4 : (value, format) => {},
-				///*KAI_S16 */ 5 : (value, format) => {},
-				/*KAI_S32 */ 6 : (value, format) => {
-					const string = view.getInt32(value, true).toString();
-					builder.append(new TextEncoder().encode(string));
-				},
-				/*KAI_S64 */ 7: (value, format) => {
-					const string = view.getBigInt64(value, true).toString();
-					builder.append(new TextEncoder().encode(string));
-				},
-				/*KAI_F32 */ 8 : (value, format) => {
-					const string = view.getFloat32(value, true).toString();
-					builder.append(new TextEncoder().encode(string));
-				},
-				/*KAI_F64 */ 9: (value, format) => {
-					const string = view.getFloat64(value, true).toString();
-					builder.append(new TextEncoder().encode(string));
-				},
-				///*KAI_TYPE*/ 10 : (value, format) => {},
+		finalize() {
+			if (this.bytes.length !== 0) {
+				this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+				this.bytes.length = 0;
 			}
-			if (type == 0x800) {
-				let min_count      = view.getUint32(format + 4, true);
-				let fill_character = view.getUint8(format + 12, true);
-				//builder.append(String.fromCharCode(fill_character).repeat(min_count));
+			if (this.colorActive) {
+				this.parts.push("</span>");
+				this.colorActive = false;
+			}
+			return this.parts.join("");
+		}
+	}
+	class ArenaAllocator {
+		constructor() {
+			this.start = 0;
+			this.offset = 0;
+			this.reserved = 0; // Total size we can allocate without growing
+		}
+
+		init() {
+			this.start = c_memory.grow(1) * PAGESIZE;
+			this.offset = 0;
+			this.reserved = PAGESIZE;
+			console.info("START", this);
+		}
+
+		reset() {
+			console.info("Memory Used:", Math.trunc(1000 * this.offset / (1024 * 1024)) / 1000, "MiB")
+			new Uint8Array(c_memory.buffer).fill(0, this.start, this.start + this.offset);
+			this.offset = 0;
+		}
+
+		allocate(size) {
+			function ceil_div(num, den) {
+				return Math.ceil((num + den - 1) / den);
+			}
+			if (this.offset + size > this.reserved) {
+				const pages = ceil_div(this.offset + size - this.reserved, PAGESIZE);
+				c_memory.grow(pages);
+				this.reserved += pages * PAGESIZE;
+			}
+			const ptr = this.offset + this.start;
+			this.offset += size;
+			return ptr;
+		}
+	}
+
+	// Find length of C string
+	function c_string_length(address) {
+		const start = address;
+		const c_bytes = new Uint8Array(c_memory.buffer);
+		while (c_bytes[address] != 0) address++;
+		return address - start;
+	}
+
+	// Convert C string to Javascript string
+	function c_string(address, length) {
+		if (length === undefined) {
+			length = c_string_length(address);
+		}
+		return new TextDecoder().decode(new Uint8Array(c_memory.buffer).slice(address, address + length));
+	}
+
+	// Convert Kai string to Javascript string
+	function kai_string(address) {
+		const dataView = new DataView(c_memory.buffer);
+		let len = dataView.getUint32(address, true);
+		let ptr = dataView.getUint32(address + 4, true);
+		return new TextDecoder().decode(new Uint8Array(c_memory.buffer).slice(ptr, ptr + len));
+	}
+
+	function panic(_desc, _message, _file, line) {
+		const desc = c_string(_desc);
+		const message = c_string(_message);
+		const file = c_string(_file);
+		const error = Error(`${message}\n(${file}:${line})`);
+		error.name = desc;
+		throw error;
+	}
+
+	function console_log(message, value) {
+		console.log(c_string(message), value);
+	}
+
+	let builder = null;
+
+	function write(user, type, value, format) {
+		const view = new DataView(c_memory.buffer);
+		if (type & 0x80) {
+			builder.set_color(type & 0x7F);
+			return;
+		}
+		const flags = view.getUint16(format + 0, true);
+		const min_count = view.getUint16(format + 2, true);
+		const max_count = view.getUint16(format + 4, true);
+		const fill_character = view.getUint8(format + 6, true);
+		switch (type & 0x7F) {
+				/*STRING */ case 0: {
+				let count = view.getUint32(value, true);
+				let data = view.getUint32(value + 4, true);
+				builder.append(new Uint8Array(c_memory.buffer).slice(data, data + count));
+				break;
+			}
+				///*U8  */ 1: {},
+				///*U16 */ 2: {},
+				/*U32 */ case 3: {
+				const string = view.getUint32(value, true).toString();
+				builder.append(new TextEncoder().encode(string));
+				break;
+			}
+				/*U64 */ case 4: {
+				let string = view.getBigUint64(value, true).toString(flags & 1 ? 16 : 10);
+				if (min_count > 0)
+					string = string.padStart(min_count, String.fromCharCode(fill_character));
+				builder.append(new TextEncoder().encode(string));
+				break;
+			}
+				///*S8  */ 5: {},
+				///*S16 */ 6: {},
+				/*S32 */ case 7: {
+				const string = view.getInt32(value, true).toString();
+				builder.append(new TextEncoder().encode(string));
+				break;
+			}
+				/*S64 */ case 8: {
+				const string = view.getBigInt64(value, true).toString();
+				builder.append(new TextEncoder().encode(string));
+				break;
+			}
+				/*F32 */ case 9: {
+				const string = view.getFloat32(value, true).toString();
+				builder.append(new TextEncoder().encode(string));
+				break;
+			}
+				/*F64 */ case 10: {
+				const string = view.getFloat64(value, true).toString();
+				builder.append(new TextEncoder().encode(string));
+				break;
+			}
+				/*FILL */ case 12: {
+				console.log("FILL", min_count, fill_character);
+				// builder.append(String.fromCharCode(fill_character).repeat(min_count));
 				builder.append(new Uint8Array(min_count).fill(fill_character));
+				break;
 			}
-			type = type & 0xF; // get primitive type id
-			if (!(type in map)) {
-				console.warn(`value type ${type} not implemented`)
-				return;
+			default: {
+				console.warn(`value type ${type} not implemented`);
 			}
-			map[type](value, format);
 		}
+	}
 
-		function set_color(user, color) {
-			builder.set_color(color);
+	let SOURCE = `#export A :: 1;\n`;
+	{
+		const sel = localStorage.getItem("kai-compiler.playground.selection");
+		if (sel !== null) {
+			mode.value = sel;
 		}
+	}
+	{
+		const sel = localStorage.getItem("kai-compiler.playground.selected-file");
+		if (sel !== null) {
+			files.value = sel;
+		}
+	}
+	if (files.value == "My Code")
+		SOURCE = localStorage.getItem("kai-compiler.playground.code");
+	else
+		SOURCE = await fetch(files.value).then(r => r.text());
 
-		let SOURCE = `#export A :: 1;\n`;
-		{
-			const sel = localStorage.getItem("kai-compiler.playground.selection");
-			if (sel !== null) {
-				mode.value = sel;
-			}
-		}
-		{
-			const sel = localStorage.getItem("kai-compiler.playground.selected-file");
-			if (sel !== null) {
-				files.value = sel;
-			}
-		}
-		if (files.value == "My Code")
-			SOURCE = localStorage.getItem("kai-compiler.playground.code");
-		else
-			SOURCE = await fetch(files.value).then(r => r.text());
- 
 	CodeMirror.defineSimpleMode("mylang", {
 		start: [
 			{ regex: /"(?:[^\\]|\\.)*?"/, token: "string" },
@@ -414,102 +454,101 @@
 		}
 		compile(code);
 	});
-		
-		const allocator = new ArenaAllocator();
 
-		function allocate_string(string) {
-			const c_bytes = new Uint8Array(c_memory.buffer);
-			const encodedString = new TextEncoder().encode(string); // Convert to UTF-8
-			const stringMemory = allocator.allocate(encodedString.byteLength); // Allocate memory in WASM module to put string
-			const structMemory = allocator.allocate(8); // Allocate memory for Kai_string
-			c_bytes.set(encodedString, stringMemory); // Write string to WASM memory
-			const dataView = new DataView(c_memory.buffer);
-			dataView.setUint32(structMemory, encodedString.byteLength, true);
-			dataView.setUint32(structMemory+4, stringMemory, true);
-			return structMemory;
-		}
+	const allocator = new ArenaAllocator();
 
-		function compile(code) {
-			SOURCE = code;
-			const encodedString = new TextEncoder().encode(code); // Convert to UTF-8
-			const scratch_buffer = allocator.allocate(encodedString.byteLength); // Allocate memory in WASM module to put string
-			const c_bytes = new Uint8Array(c_memory.buffer);
-			c_bytes.set(encodedString, scratch_buffer); // Write string to WASM memory
-			builder = new HTML_Builder();
-			console.groupCollapsed("compile", mode.children[mode.value].innerText);
-			try {
-				let result;
-				localStorage.setItem("kai-compiler.playground.selection", mode.value);
-				c.set_file_name(allocate_string(files.value));
-				switch (parseInt(mode.value)) {
-					case SYNTAX_TREE:
-						result = c.create_syntax_tree(scratch_buffer, encodedString.byteLength);
+	function allocate_string(string) {
+		const c_bytes = new Uint8Array(c_memory.buffer);
+		const encodedString = new TextEncoder().encode(string); // Convert to UTF-8
+		const stringMemory = allocator.allocate(encodedString.byteLength); // Allocate memory in WASM module to put string
+		const structMemory = allocator.allocate(8); // Allocate memory for Kai_string
+		c_bytes.set(encodedString, stringMemory); // Write string to WASM memory
+		const dataView = new DataView(c_memory.buffer);
+		dataView.setUint32(structMemory, encodedString.byteLength, true);
+		dataView.setUint32(structMemory + 4, stringMemory, true);
+		return structMemory;
+	}
+
+	function compile(code) {
+		SOURCE = code;
+		const encodedString = new TextEncoder().encode(code); // Convert to UTF-8
+		const scratch_buffer = allocator.allocate(encodedString.byteLength); // Allocate memory in WASM module to put string
+		const c_bytes = new Uint8Array(c_memory.buffer);
+		c_bytes.set(encodedString, scratch_buffer); // Write string to WASM memory
+		builder = new HTML_Builder();
+		console.groupCollapsed("compile", mode.children[mode.value].innerText);
+		try {
+			let result;
+			localStorage.setItem("kai-compiler.playground.selection", mode.value);
+			c.set_file_name(allocate_string(files.value));
+			switch (parseInt(mode.value)) {
+				case SYNTAX_TREE:
+					result = c.create_syntax_tree(scratch_buffer, encodedString.byteLength);
 					break;
-					case TYPED_AST:
-						result = c.compile_show_typed_ast(scratch_buffer, encodedString.byteLength);
+				case TYPED_AST:
+					result = c.compile_show_typed_ast(scratch_buffer, encodedString.byteLength);
 					break;
-					case SHOW_EXPORTS:
-						result = c.compile_show_exports(scratch_buffer, encodedString.byteLength);
+				case SHOW_EXPORTS:
+					result = c.compile_show_exports(scratch_buffer, encodedString.byteLength);
 					break;
-					default:
-						throw new Error(`unknown casse (${mode.value})`);
+				default:
+					throw new Error(`unknown casse (${mode.value})`);
 					break;
-				}
-				console.info("exit:", result);
-				if (result === 0) {
-					SyntaxTree.innerHTML = builder.finalize();
-					CompileError.innerHTML = "";
-					CompileError.classList.remove("contains_error");
-				}
-				else {
-					SyntaxTree.innerHTML = "";
-					CompileError.innerHTML = builder.finalize();
-					CompileError.classList.add("contains_error");
-				}
 			}
-			catch (error) {
+			console.info("exit:", result);
+			if (result === 0) {
+				SyntaxTree.innerHTML = builder.finalize();
+				CompileError.innerHTML = "";
+				CompileError.classList.remove("contains_error");
+			}
+			else {
 				SyntaxTree.innerHTML = "";
-				CompileError.innerText = error;
+				CompileError.innerHTML = builder.finalize();
 				CompileError.classList.add("contains_error");
-				throw error;
-			}
-			finally {
-				allocator.reset();
-				console.groupEnd();
 			}
 		}
+		catch (error) {
+			SyntaxTree.innerHTML = "";
+			CompileError.innerText = error;
+			CompileError.classList.add("contains_error");
+			throw error;
+		}
+		finally {
+			allocator.reset();
+			console.groupEnd();
+		}
+	}
 
-		WebAssembly.instantiateStreaming(fetch('lib.wasm'), {
-			env: {
-				console_log,
-				write_string,
-				write_value,
-				set_color,
-				panic,
-				allocate: (size) => allocator.allocate(size),
-				free: (ptr) => {},
-			}
-		}).then(async (wasm) => {
-			c = wasm.instance.exports; // Exported C Functions
-			c_memory = wasm.instance.exports.memory;
-			allocator.init();
+	WebAssembly.instantiateStreaming(fetch('lib.wasm'), {
+		env: {
+			console_log,
+			write,
+			panic,
+			allocate: (size) => allocator.allocate(size),
+			free: (ptr) => { },
+		}
+	}).then(async (wasm) => {
+		c = wasm.instance.exports; // Exported C Functions
+		c_memory = wasm.instance.exports.memory;
+		allocator.init();
 
-			const scratch_buffer = allocator.allocate(8);
-			c.kai_version_string(scratch_buffer);
-			title.innerText = "Kai " + kai_string(scratch_buffer);
+		const scratch_buffer = allocator.allocate(8);
+		c.kai_version_string(scratch_buffer);
+		title.innerText = "Kai " + kai_string(scratch_buffer);
 
-			mode.addEventListener("input", e => compile(SOURCE));
-			files.addEventListener("input", async e => {
-				localStorage.setItem("kai-compiler.playground.selected-file", files.value);
+		mode.addEventListener("input", e => compile(SOURCE));
+		files.addEventListener("input", async e => {
+			localStorage.setItem("kai-compiler.playground.selected-file", files.value);
 
-				if (files.value == "My Code")
-					SOURCE = localStorage.getItem("kai-compiler.playground.code");
-				else
-					SOURCE = await fetch(files.value).then(r => r.text());
-				codemirror.setValue(SOURCE);
-			});
-
-			compile(SOURCE);
+			if (files.value == "My Code")
+				SOURCE = localStorage.getItem("kai-compiler.playground.code");
+			else
+				SOURCE = await fetch(files.value).then(r => r.text());
+			codemirror.setValue(SOURCE);
 		});
-	</script>
+
+		compile(SOURCE);
+	});
+</script>
+
 </html>

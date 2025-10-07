@@ -70,13 +70,17 @@ void help_parse()
 void help_compile()
 {
     printf(
-        "Usage: kai compile [FLAGS] <files...>\n"
+        "Usage: kai compile [FLAGS] [OPTIONS] <files...>\n"
         "\n"
         "FLAGS:\n"
         "   -d, --debug          Enable debug printing\n"
         "   -p, --no-print       Do not print compilation results\n"
         "   -t, --tree           Print type-checked syntax tree\n"
         "   -c, --no-code-gen    Do not generate machine code\n"
+        "\n"
+        "OPTIONS:\n"
+        "   -D, --define         Define a host import\n"
+        "                        <NAME>:<TYPE>:<VALUE>\n"
         "\n"
     );
 }
@@ -96,7 +100,7 @@ int help(int argc, char** argv)
         return 1;
     }
     printf(
-        "Usage: kai command [arguments...]\n"
+        "Usage: kai <command> [arguments...]\n"
         "\n"
         "   Commands:\n"
         "      help      Print help and exit (-h, --help, -?)\n"
@@ -239,11 +243,11 @@ int compile(int argc, char** argv)
                 kai__write_string(name);
                 kai__write(" = ");
                 kai_write_value(writer, program.data.data + var.location, var.type);
-                kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+                kai__set_color(KAI_WRITE_COLOR_DEFAULT);
                 kai__write(" [");
                 kai__set_color(KAI_WRITE_COLOR_TYPE);
                 kai_write_type(writer, var.type);
-                kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+                kai__set_color(KAI_WRITE_COLOR_DEFAULT);
                 kai__write("]\n");
             }
         }

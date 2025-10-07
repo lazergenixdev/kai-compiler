@@ -10,12 +10,6 @@ Compile_Options :: struct {
     flags                      : Compile_Flags;
 }
 
-Native_Procedure :: struct {
-    name        : *u8;
-    address     : *void;
-    typestring  : string;
-}
-
 Import :: struct {
     name: string;
     type: string;
@@ -103,7 +97,8 @@ Node_Wait :: struct {
 }
 
 Compiler_Context :: struct {
-    error:                 *Error;
+    error:                 *Error; // TODO: set to the last error in chain?
+    error_arena:            Growing_Arena;
     allocator:              Allocator;
     program:               *Program;
     options:                Compile_Options;
@@ -201,13 +196,39 @@ _error_not_declared :: (context: *Compiler_Context, location: Location) -> bool
         result = KAI_ERROR_SEMANTIC,
         location = location,
     };
-    buffer: Buffer = Buffer.{allocator = context.allocator};
-    _buffer_append_string(*buffer, STRING("identifier \""));
-    _buffer_append_string(*buffer, location.string);
-    _buffer_append_string(*buffer, STRING("\" not declared"));
-    range: Range = _buffer_end(*buffer);
-    context.error.memory = _buffer_done(*buffer);
-    context.error.message = _range_to_string(range, context.error.memory);
+    error_writer: Writer = writer_from_arena(*context.error_arena);
+    writer: *Writer = *error_writer;
+
+    message_offset: u32 = context.error_arena.buffer.count;
+    _write("identifier \"");
+    _write_string(location.string);
+    _write("\" not declared");
+    message_count: u32 = context.error_arena.buffer.count - message_offset;
+
+    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
+    kai__debug_print_stacktrace();
+    ret true;
+}
+
+_error_type_check :: (context: *Compiler_Context, location: Location, expected: Type, got: Type) -> bool
+{
+    [context.error] = Error.{
+        result = KAI_ERROR_SEMANTIC,
+        location = location,
+    };
+    error_writer: Writer = writer_from_arena(*context.error_arena);
+    writer: *Writer = *error_writer;
+
+    message_offset: u32 = context.error_arena.buffer.count;
+    _write("expected \"");
+    _write_string(location.string);
+    _write("\" of type ");
+    write_type(writer, got);
+    _write(" to be of type ");
+    write_type(writer, expected);
+    message_count: u32 = context.error_arena.buffer.count - message_offset;
+
+    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
     kai__debug_print_stacktrace();
     ret true;
 }
@@ -463,6 +484,7 @@ _error_fatal :: (context: *Compiler_Context, message: string) -> bool
 {
     context.error.result = KAI_ERROR_FATAL;
     context.error.message = message;
+    context.error.location.source = context.current_source;
     ret true;
 }
 
@@ -536,6 +558,7 @@ _evaluate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) ->
         }
         case KAI_TYPE_ID_NUMBER; {
             if op == {
+                case #multi "=="; ret Value.{u8 = number_equals(a.number, b.number)};
                 case #char "+"; ret Value.{number = number_add(a.number, b.number)};
                 case #char "-"; ret Value.{number = number_sub(a.number, b.number)};
                 case #char "*"; ret Value.{number = number_mul(a.number, b.number)};
@@ -615,13 +638,24 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 node_value = node.value;
             }
 
-            if node_type == null
+            if node_type == null {
+                if writer != null {
+                    _write(" - node: ");
+                    _write_string(expr.source_code);
+                    _write("\n");
+                }
                 ret _error_fatal(context, STRING("node type cannot be null"));
+            }
             
             if [expected_type] != null {
-                // TODO: type-check specific error
-                if [expected_type] != node_type
-                    ret _error_fatal(context, STRING("oh no, types not same for node"));
+                if [expected_type] != node_type {
+                    location: Location = Location.{
+                        source = context.current_source,
+                        string = expr.source_code,
+                        line = expr.line_number,
+                    };
+                    ret _error_type_check(context, location, [expected_type], node_type);
+                }
             }
             else [expected_type] = node_type;
             
@@ -632,6 +666,16 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
         case KAI_EXPR_NUMBER; {
             n: *Expr_Number = cast expr;
+            if out_value == null {
+                if [expected_type] == null {
+                    [expected_type] = context.number_type;
+                    n.this_type = context.number_type;
+                }
+                else {
+                    n.this_type = [expected_type];
+                }
+                ret false;
+            }
             if [expected_type] == null {
                 [out_value] = Value.{number = n.value};
                 [expected_type] = context.number_type;
@@ -674,6 +718,12 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             ret false;
         }
 
+        case KAI_EXPR_LITERAL; {
+            assert([expected_type] != null);
+            expr.this_type = [expected_type];
+            ret false;
+        }
+
         case KAI_EXPR_STRING; {
             s: *Expr_String = cast expr;
             [out_value] = Value.{string = s.value};
@@ -703,7 +753,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     ai.id = KAI_TYPE_ID_ARRAY;
                     assert(number_is_integer(rv.number));
                     ai.rows = number_to_u64(rv.number) -> u32;
-                    ai.cols = 0;
+                    ai.cols = 1;
                     ai.sub_type = ev.type;
                     type = ai -> Type;
                 }
@@ -762,15 +812,101 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
         case KAI_EXPR_BINARY; {
             b: *Expr_Binary = cast expr;
-            lt: *Type_Info;
-            rt: *Type_Info;
+
             lv: Value;
             rv: Value;
 
-            if _value_of_expr(context, b.left, *lv, *lt)
+            out_lv: *Value;
+            out_rv: *Value;
+            if out_value != null {
+                out_lv = *lv;
+                out_rv = *rv;
+            }
+
+            if b.op == {
+            case #multi "<<"; #through;
+            case #multi ">>"; {
+                lt: *Type_Info = [expected_type];
+                if _value_of_expr(context, b.left, out_lv, *lt)
+                    ret true;
+
+                rt: *Type_Info;
+                if _value_of_expr(context, b.right, out_rv, *rt)
+                    ret true;
+
+                if [expected_type] != null {
+                    [expected_type] = lt;
+                }
+                b.this_type = lt;
+                ret false;
+            }
+            case #multi "=="; #through;
+            case #multi "!="; #through;
+            case #multi "<"; #through;
+            case #multi ">"; #through;
+            case #multi "<="; #through;
+            case #multi ">="; {
+                expected: *Type_Info = [expected_type];
+                if expected != null && expected.id != KAI_TYPE_ID_BOOLEAN
+                    ret _error_fatal(context, STRING("must expect bool here"));
+
+                lt: *Type_Info;
+                rt: *Type_Info;
+
+                if _value_of_expr(context, b.left, out_lv, *lt)
+                    ret true;
+
+                if lt.id == KAI_TYPE_ID_NUMBER {
+                    if _value_of_expr(context, b.right, out_rv, *rt)
+                        ret true;
+                    lt = rt;
+                    if _value_of_expr(context, b.left, out_lv, *lt)
+                        ret true;
+                }
+                else {
+                    rt = lt;
+                    if _value_of_expr(context, b.right, out_rv, *rt)
+                        ret true;
+                }
+
+                if lt != rt
+                    ret _error_fatal(context, STRING("types no match, comparison"));
+
+                [expected_type] = context.bool_type;
+                b.this_type = context.bool_type;
+                ret false;
+            }
+            case #multi "->"; {
+                lt: *Type_Info = null;
+                if _value_of_expr(context, b.left, out_lv, *lt)
+                    ret true;
+
+                rt: *Type_Info = context.type_type;
+                out_rv = *rv; // need value of right to output a type
+                if _value_of_expr(context, b.right, out_rv, *rt)
+                    ret true;
+
+                if [expected_type] == null {
+                    [expected_type] = rv.type;
+                    b.this_type = rv.type;
+                    ret false;
+                }
+
+                if [expected_type] != rv.type
+                    ret _error_fatal(context, STRING("cast invalid"));
+
+                b.this_type = rv.type;
+                ret false;
+            }
+            }
+
+            lt: *Type_Info = [expected_type];
+            rt: *Type_Info = [expected_type];
+
+            if _value_of_expr(context, b.left, out_lv, *lt)
                 ret true;
 
-            if _value_of_expr(context, b.right, *rv, *rt)
+            if _value_of_expr(context, b.right, out_rv, *rt)
                 ret true;
 
             if lt != rt {
@@ -792,9 +928,38 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 else _error_fatal(context, STRING("invalid binary expression [todo]"));
             }
             if out_value != null {
-                [out_value] = _evaluate_binary_operation(b.op, lt, lv, rv);
+                value: Value = _evaluate_binary_operation(b.op, lt, lv, rv);
+                type: *Type_Info = context.number_type;
+
+                [out_value] = value;
+                if lt.id == KAI_TYPE_ID_NUMBER {
+                    if type.id == {
+                        case KAI_TYPE_ID_BOOLEAN; {
+                            if value.number.n != 0 && (value.number.n != 1 || value.number.d != 1 || value.number.e != 0 || value.number.is_neg != 0)
+                                ret _error_fatal(context, STRING("cannot convert number to bool"));
+                            out_value.u8 = value.number.n -> u8;
+                            ret false;
+                        }
+                        case KAI_TYPE_ID_INTEGER; {
+                            // TODO: bounds check
+                            out_value.u64 = number_to_u64(value.number);
+                            ret false;
+                        }
+                        case KAI_TYPE_ID_FLOAT; {
+                            // TODO: bounds check
+                            type_info: *Type_Info_Float = cast type;
+                            fv: f64 = number_to_f64(value.number);
+                            if type_info.bits == 32
+                                out_value.f32 = fv -> f32;
+                            else
+                                out_value.f64 = fv;
+                            ret false;
+                        }
+                    }
+                }
             }
             [expected_type] = lt;
+            b.this_type = lt;
             ret false;
         }
 
@@ -853,8 +1018,13 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                         continue;
 
                     t: *Type_Info;
-                    v: Value;
-                    if _value_of_expr(context, current, *v, *t)
+                    if pt.outputs.count != 0 {
+                        t = pt.outputs.data[0]; // HACK
+                    }
+                    if current.id == KAI_STMT_DECLARATION {
+                        t = null;
+                    }
+                    if _value_of_expr(context, current, null, *t)
                         ret true;
 
                     current = current.next;
@@ -1017,12 +1187,13 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     ret true;
                 current = current.next;
             }
-            // TODO: output value? type?
+            // TODO: output value?
+            expr.this_type = [expected_type];
             ret false;
         }
 
         case KAI_STMT_COMPOUND; {
-            kai__todo("similar to procedure here");
+            kai__todo("similar to procedure here (compound)");
             ret false;
         }
 
@@ -1039,12 +1210,19 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
             assert([expected_type] == null);
 
-            v: Value;
             type: *Type_Info;
-            if _value_of_expr(context, d.type, *v, *type)
-                ret true;
-            assert(type.id == KAI_TYPE_ID_TYPE);
-            type = v.type;
+            if d.type != null {
+                v: Value;
+                if _value_of_expr(context, d.type, *v, *type)
+                    ret true;
+                assert(type.id == KAI_TYPE_ID_TYPE);
+                type = v.type;
+            }
+
+            if d.expr != null {
+                if _value_of_expr(context, d.expr, null, *type)
+                    ret true;
+            }
 
             ref: Node_Reference = Node_Reference.{
                 flags = KAI_NODE_LOCAL,
@@ -1060,11 +1238,20 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             // TODO: NO OVERWRITING
             scope: *Scope = *array_last(*context.scopes);
             table_set(*scope.identifiers, d.name, ref);
-            
-            if _value_of_expr(context, d.expr, *v, *type)
-                ret true;
+
             d.this_type = type;
             [expected_type] = type;
+            ret false;
+        }
+
+        case KAI_STMT_ASSIGNMENT; {
+            a: *Stmt_Assignment = cast expr;
+            v: Value;
+            type: *Type_Info;
+            //if _value_of_expr(context, a.left, *v, *type)
+            //    ret true;
+            if _value_of_expr(context, a.expr, *v, *type)
+                ret true;
             ret false;
         }
 
@@ -1141,7 +1328,7 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type
 
         case KAI_EXPR_NUMBER; {
             // TODO make better
-            ref: Node_Reference = _lookup_node(context, STRING("s32"));
+            ref: Node_Reference = _lookup_node(context, STRING("f64"));
             if ref.flags & KAI_NODE_NOT_FOUND
                 kai__todo("how???");
             node: *Node = *context.nodes.data[ref.index];
@@ -1336,6 +1523,10 @@ _type_size :: (type: *Type_Info) -> u32
         case KAI_TYPE_ID_PROCEDURE; {
             ret sizeof(*void);
         }
+        case KAI_TYPE_ID_ARRAY; {
+            info: *Type_Info_Array = cast type;
+            ret info.rows * info.cols * _type_size(info.sub_type);
+        }
         case KAI_TYPE_ID_STRING; #through;
         case KAI_TYPE_ID_STRUCT; {
             info: *Type_Info_Struct = cast type;
@@ -1429,7 +1620,6 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
     writer: *Writer = context.debug_writer;
     scope: *Scope = *array_last(*context.scopes);
 
-    assert(context.scopes.count < 9);
     while scope.pending_nodes.count > 0 {
         wait: Node_Wait = scope.pending_nodes.data[0];
         array_remove(*scope.pending_nodes, 0);
@@ -1532,16 +1722,16 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
                     }
                     case KAI_TYPE_ID_PROCEDURE; {
                         _write("0x");
-                        context.debug_writer.write_value(context.debug_writer.user, KAI_U64,
-                            Value.{u64 = node.value.u64}, Write_Format.{flags = KAI_WRITE_FLAGS_HEXIDECIMAL});
+                        context.debug_writer.write(context.debug_writer.user, KAI_WRITE_U64,
+                            Value.{u64 = node.value.u64}, Write_Format.{flags = KAI_WRITE_FLAGS_BASE_16});
                     }
                 }
                 printf("\n");
             }
-            if node.flags & KAI_NODE_EXPORT {
-                location: u32 = _push_value(context, node.type, node.value);
-                table_set(*context.program.variable_table, node.location.string, Variable.{type = node.type, location = location});
-            }
+        }
+        if node.flags & (KAI_NODE_EXPORT|KAI_NODE_EVALUATED) {
+            location: u32 = _push_value(context, node.type, node.value);
+            table_set(*context.program.variable_table, node.location.string, Variable.{type = node.type, location = location});
         }
     }
     ret false;
@@ -1559,6 +1749,7 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
     };
     arena_create(*context.type_allocator, *info.allocator);
     arena_create(*context.temp_allocator, *info.allocator);
+    context.error_arena.allocator = info.allocator;
 
     if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN) {
         context.error.message = STRING("Code generation not currently supported :(");
@@ -1593,7 +1784,7 @@ find_variable :: (program: *Program, name: string, out_type: *Type) -> *void
 }
 //@doc_description (
 //"""
-//This procedure returns a pointer to a variable in the script.
+//Returns a pointer to an exported variable in the script.
 //Returning a pointer allows the host program to modify the variable at anytime
 //after the script is compiled, and it is the host programmer's responsibility
 //to handle things like race conditions.

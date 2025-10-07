@@ -21,8 +21,8 @@
 #endif
 
 #define exit_on_fail(E) if (!(E)) exit(1)
-#define len(ARRAY) (sizeof(ARRAY)/sizeof(ARRAY[0]))
-#define forn(LEN) for (int i = 0; i < (LEN); ++i)
+#define len(ARRAY) (int)(sizeof(ARRAY)/sizeof(ARRAY[0]))
+#define forn(LEN) for (Kai_u32 i = 0; i < (LEN); ++i)
 #define MACRO_STRING(S) #S
 #define MACRO_EXPSTR(S) MACRO_STRING(S)
 #define UNIQUE2(N,L) N ## L
@@ -60,15 +60,16 @@ Macro macros[] = {
 
 Macro function_macros[] = {
 	{"number_is_integer", "(N)", "((N).n == 0 || ((N).d == 1 && (N).e >= 0))"},
-	{"_write_u32", "(Value)", "writer->write_value(writer->user, KAI_U32, (Kai_Value){.u32 = Value}, (Kai_Write_Format){0})"},
-	{"_write_s32", "(Value)", "writer->write_value(writer->user, KAI_S32, (Kai_Value){.s32 = Value}, (Kai_Write_Format){0})"},
-	{"_write_u64", "(Value)", "writer->write_value(writer->user, KAI_U64, (Kai_Value){.u64 = Value}, (Kai_Write_Format){0})"},
-	{"_write_s64", "(Value)", "writer->write_value(writer->user, KAI_S64, (Kai_Value){.s64 = Value}, (Kai_Write_Format){0})"},
-	{"_write_f64", "(Value)", "writer->write_value(writer->user, KAI_F64, (Kai_Value){.f64 = Value}, (Kai_Write_Format){0})"},
-	{"_write", "(C_String)",  "writer->write_string(writer->user, KAI_STRING(C_String))"},
-	{"_write_string", "(...)", "writer->write_string(writer->user, __VA_ARGS__)"},
-	{"_set_color", "(Color)",  "if (writer->set_color != NULL) writer->set_color(writer->user, Color)"},
-	{"_write_fill", "(Char,Count)", "writer->write_value(writer->user, KAI_FILL, (Kai_Value){0}, (Kai_Write_Format){.min_count = Count, .fill_character = (Kai_u8)Char})"},
+	{"number_equals", "(A,B)", "((A).n == (B).n && (A).d == (B).d && (A).e == (B).e && (A).is_neg == (B).is_neg)"},
+	{"_write_u32", "(Value)", "writer->write(writer->user, KAI_WRITE_U32, (Kai_Value){.u32 = Value}, (Kai_Write_Format){0})"},
+	{"_write_s32", "(Value)", "writer->write(writer->user, KAI_WRITE_S32, (Kai_Value){.s32 = Value}, (Kai_Write_Format){0})"},
+	{"_write_u64", "(Value)", "writer->write(writer->user, KAI_WRITE_U64, (Kai_Value){.u64 = Value}, (Kai_Write_Format){0})"},
+	{"_write_s64", "(Value)", "writer->write(writer->user, KAI_WRITE_S64, (Kai_Value){.s64 = Value}, (Kai_Write_Format){0})"},
+	{"_write_f64", "(Value)", "writer->write(writer->user, KAI_WRITE_F64, (Kai_Value){.f64 = Value}, (Kai_Write_Format){0})"},
+	{"_write", "(LITERAL)",  "writer->write(writer->user, KAI_WRITE_STRING, (Kai_Value){.string = KAI_STRING(LITERAL)}, (Kai_Write_Format){0})"},
+	{"_write_string", "(...)", "writer->write(writer->user, KAI_WRITE_STRING, (Kai_Value){.string = __VA_ARGS__}, (Kai_Write_Format){0})"},
+	{"_write_fill", "(CHAR,COUNT)", "writer->write(writer->user, KAI_WRITE_FILL, (Kai_Value){0}, (Kai_Write_Format){.min_count = COUNT, .fill_character = (Kai_u8)CHAR})"},
+	{"_set_color", "(COLOR)",  "writer->write(writer->user, COLOR, (Kai_Value){0}, (Kai_Write_Format){0})"},
 	{"_next_character_equals", "(C)", "( (context->cursor+1) < context->source.count && C == context->source.data[context->cursor+1] )"},
 	{"_allocate", "(Old,New_Size,Old_Size)", "allocator->heap_allocate(allocator->user, Old, New_Size, Old_Size)"},
 	{"_free", "(Ptr,Size)", "allocator->heap_allocate(allocator->user, Ptr, 0, Size)"},
@@ -187,7 +188,7 @@ const char* format(const char *format, ...)
 {
     va_list args;
     va_start(args, format);
-    int n = vsnprintf((char*)temp_cstr_buffer, sizeof(temp_cstr_buffer), format, args);
+    vsnprintf((char*)temp_cstr_buffer, sizeof(temp_cstr_buffer), format, args);
     va_end(args);
     return (const char*)temp_cstr_buffer;
 }
@@ -552,7 +553,11 @@ void generate_struct_literal(String_Builder* builder, Kai_Expr* expr)
 	Kai_Expr_Literal* lit = (void*)expr;
 
 	sb_append(builder, "{");
-	for (Kai_Expr* m = lit->head; m != NULL; m = m->next)
+	if (lit->head == NULL)
+	{
+		da_append(builder, '0');
+	}
+	else for (Kai_Expr* m = lit->head; m != NULL; m = m->next)
 	{
 		if (m->id == KAI_STMT_ASSIGNMENT)
 		{
@@ -846,7 +851,6 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 
 void generate_all_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound* stmt)
 {
-	Kai_Stmt* current = stmt->head;
 	int count = 0;
 	for (Kai_Stmt* current = stmt->head; current != NULL; current = current->next)
 	{
@@ -886,7 +890,6 @@ void generate_all_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound* st
 
 void generate_all_non_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound* stmt)
 {
-	Kai_Stmt* current = stmt->head;
 	int count = 0;
 	for (Kai_Stmt* current = stmt->head; current != NULL; current = current->next)
 	{
@@ -1166,13 +1169,12 @@ Kai_bool enum_excludes_name(Kai_string name)
 	if (kai_string_equals(name, KAI_STRING("Node_Flags"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Token_Id"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Result"))) return true;
-	if (kai_string_equals(name, KAI_STRING("Primitive_Type"))) return true;
+	if (kai_string_equals(name, KAI_STRING("Write_Command"))) return true;
 	return false;
 }
 
 void generate_all_struct_definitions(String_Builder* builder, Kai_Stmt_Compound* stmt)
 {
-	Kai_Stmt* current = stmt->head;
 	for (Kai_Stmt* current = stmt->head; current != NULL; current = current->next)
 	{
 		if (current->id != KAI_STMT_DECLARATION) continue;
@@ -1220,7 +1222,6 @@ void generate_all_struct_definitions(String_Builder* builder, Kai_Stmt_Compound*
 
 void generate_all_function_definitions(String_Builder* builder, Kai_Stmt_Compound* stmt, int insert_newline_after)
 {
-	Kai_Stmt* current = stmt->head;
 	int count = 0;
 	for (Kai_Stmt* current = stmt->head; current != NULL; current = current->next)
 	{
@@ -1514,7 +1515,6 @@ void generate_constant(String_Builder* builder, Kai_Stmt_Declaration* decl)
 
 void generate_all_imports(String_Builder* builder, Kai_Stmt_Compound* stmt)
 {
-	Kai_Stmt* current = stmt->head;
 	for (Kai_Stmt* current = stmt->head; current != NULL; current = current->next)
 	{
 		if (current->id != KAI_EXPR_IMPORT) continue;
@@ -1535,7 +1535,6 @@ void generate_all_internal_function_definitions(String_Builder* builder)
 
 void generate_all_function_implementations(String_Builder* builder, Kai_Stmt_Compound* stmt)
 {
-	Kai_Stmt* current = stmt->head;
 	for (Kai_Stmt* current = stmt->head; current != NULL; current = current->next)
 	{
 		if (current->id != KAI_STMT_DECLARATION) continue;
@@ -1599,7 +1598,7 @@ Kai_Syntax_Tree create_tree_from_file(const char* path)
 	sb_appendf(&msg, "Parsed file \"\x1b[92m%s\x1b[0m\"", path);
 	int pad = 20 - strlen(path);
 	if (pad < 0) pad = 0;
-	forn(pad) da_append(&msg, ' ');
+	forn((Kai_u32)pad) da_append(&msg, ' ');
 	sb_appendf(&msg, " in \x1b[94m%f\x1b[0m ms", (double)(end - start)/(NANOS_PER_SEC/1000));
 	sb_append_null(&msg);
 	nob_log(INFO, "%s", msg.items);
@@ -1689,7 +1688,7 @@ void compile_playground(void)
 		Cmd cmd = {0};
 		cmd_append(&cmd, executable("clang"));
 		cmd_append(&cmd, "-Wall", "-Wextra");
-		cmd_append(&cmd, "-O2");
+		cmd_append(&cmd, "-g");
 		cmd_append(&cmd, "--target=wasm32", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic");
 		cmd_append(&cmd, "lib.c");
 		cmd_append(&cmd, "-o", "lib.wasm");

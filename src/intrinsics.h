@@ -95,6 +95,7 @@ static inline Kai_u32 kai_intrinsics_ctz64(Kai_u64 value)
     }
 #endif
 
+// TODO: only dev builds
 #if defined(KAI_PLATFORM_APPLE) || defined(KAI_PLATFORM_LINUX)
 #include "execinfo.h"
 void kai__debug_print_stacktrace(void) {
