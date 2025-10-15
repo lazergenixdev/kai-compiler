@@ -5,7 +5,7 @@ VERSION_MAJOR  :: #host_import;
 VERSION_MINOR  :: #host_import;
 VERSION_PATCH  :: #host_import;
 
-cstring :: #host_import;
+cstring :: *s8 @const;
 
 #export version_string :: () -> string
 {
@@ -158,6 +158,13 @@ string_hash_next :: (hash: u64, s: string) -> u64
     count    : u32;
     capacity : u32;
     data     : *void;
+}
+
+#export raw_array_reserve :: (array: *Raw_Dynamic_Array, new_capacity: u32, allocator: *Allocator, elem_size: u32)
+{    
+    //if new_capacity <= array.capacity ret;
+    //array.data = _allocate(array.data, new_capacity * elem_size, array.capacity * elem_size);
+    //array.capacity = new_capacity;
 }
 
 #export Type_Info :: struct {

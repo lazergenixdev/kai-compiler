@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20251015003404 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20251015051858 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -3857,7 +3857,7 @@ KAI_INTERNAL Kai_Expr* kai__parser_create_identifier(Kai_Parser* parser, Kai_Tok
     node->id = KAI_EXPR_IDENTIFIER;
     node->source_code = token.string;
     node->line_number = token.line_number;
-    return (Kai_Expr*)(node);
+    return kai_parse_tag_to_expr(parser, (Kai_Expr*)(node));
 }
 
 KAI_INTERNAL Kai_Expr* kai__parser_create_string(Kai_Parser* parser, Kai_Token token)
@@ -4218,24 +4218,23 @@ KAI_API(Kai_Expr*) kai_parse_expression(Kai_Parser* parser, Kai_u32 flags)
             kai__next_token();
             while (current->id!=125)
             {
+                Kai_Token token = *current;
+                Kai_string name = {0};
+                Kai_Token* peeked = kai__peek_token();
+                if (token.id==KAI_TOKEN_IDENTIFIER&&peeked->id==61)
+                {
+                    name = token.string;
+                    kai__next_token();
+                    kai__next_token();
+                }
                 Kai_Expr* expr = kai_parse_expression(parser, KAI_TOP_PRECEDENCE);
-                kai__expect(expr, "in literal expression", "should be an expression here");
+                kai__expect(expr!=NULL, "in literal expression", "should be an expression here");
+                expr->name = name;
                 kai__next_token();
                 if (current->id==44)
                     kai__next_token();
                 else
-                if (current->id==61)
-                {
-                    kai__next_token();
-                    Kai_Expr* right = kai_parse_expression(parser, KAI_TOP_PRECEDENCE);
-                    kai__expect(right, "in literal expression", "should be an expression here");
-                    kai__next_token();
-                    if (current->id==44)
-                        kai__next_token();
-                    expr = kai__parser_create_assignment(parser, 61, expr, right);
-                }
-                else
-                    kai__expect(current->id==125, "in literal expression", "'}' or ','");
+                    kai__expect(current->id==125, "in literal expression", "should be '}' or ',' here");
                 kai__linked_list_append(body, expr);
                 count += 1;
             }
@@ -5175,7 +5174,6 @@ KAI_INTERNAL Kai_bool kai__create_nodes(Kai_Compiler_Context* context, Kai_Expr*
                     kai__write_string(d->name);
                     kai__write("\"\n");
                 }
-                kai_array_push(&context->nodes, node);
                 kai_table_set(&scope->identifiers, d->name, reference);
                 Kai_Node_Reference type_reference = ((Kai_Node_Reference){.flags = KAI_NODE_TYPE, .index = reference.index});
                 kai_array_push(&scope->pending_nodes, ((Kai_Pending_Node){.ref = type_reference}));
@@ -5190,6 +5188,7 @@ KAI_INTERNAL Kai_bool kai__create_nodes(Kai_Compiler_Context* context, Kai_Expr*
                     kai_array_push(&value_dependencies, type_reference);
                     kai_array_push(&scope->pending_nodes, ((Kai_Pending_Node){.ref = reference, .dependencies = value_dependencies}));
                 }
+                kai_array_push(&context->nodes, node);
             }
         }
         break; case KAI_STMT_COMPOUND:
@@ -5643,27 +5642,60 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
         break; case KAI_EXPR_LITERAL:
         {
             kai_assert(*expected_type!=NULL);
+            if (out_value!=NULL)
+            {
+                kai__todo("generate literal value");
+            }
             Kai_Expr_Literal* l = (Kai_Expr_Literal*)(expr);
             Kai_Type_Info* expected = *expected_type;
             switch (expected->id)
             {
                 break; case KAI_TYPE_ID_ARRAY:
-                break; case KAI_TYPE_ID_STRING:
-                break; case KAI_TYPE_ID_STRUCT:
                 {
+                    Kai_Type_Info_Array* ai = (Kai_Type_Info_Array*)(expected);
+                    Kai_Type type = ai->sub_type;
+                    kai_assert(ai->cols==1);
+                    Kai_u32 count = 0;
                     Kai_Expr* current = l->head;
                     while (current!=NULL)
                     {
-                        if (current->id==KAI_STMT_ASSIGNMENT)
+                        if (kai__value_of_expr(context, current, NULL, &type))
+                            return KAI_TRUE;
+                        count += 1;
+                        current = current->next;
+                    }
+                    if (count!=ai->rows)
+                    {
+                        return kai__error_fatal(context, KAI_STRING("array count mismatch"));
+                    }
+                }
+                break; case KAI_TYPE_ID_STRING:
+                break; case KAI_TYPE_ID_STRUCT:
+                {
+                    Kai_Type_Info_Struct* si = (Kai_Type_Info_Struct*)(expected);
+                    Kai_Expr* current = l->head;
+                    while (current!=NULL)
+                    {
+                        if ((current->name).count==0)
                         {
-                            Kai_Type type = {0};
-                            if (kai__value_of_expr(context, current, NULL, &type))
-                                return KAI_TRUE;
+                            return kai__error_fatal(context, KAI_STRING("must use named assignments"));
                         }
-                        else
+                        Kai_Type type = {0};
+                        for (Kai_u32 i = 0; i < (si->fields).count; ++i)
                         {
-                            return kai__error_fatal(context, KAI_STRING("todo: literal without names? idk"));
+                            Kai_Struct_Field field = ((si->fields).data)[i];
+                            if (kai_string_equals(current->name, field.name))
+                            {
+                                type = field.type;
+                                break;
+                            }
                         }
+                        if (type==NULL)
+                        {
+                            return kai__error_fatal(context, KAI_STRING("struct member not found"));
+                        }
+                        if (kai__value_of_expr(context, current, NULL, &type))
+                            return KAI_TRUE;
                         current = current->next;
                     }
                 }
@@ -5686,6 +5718,7 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
                 *out_value = ((Kai_Value){.string = s->value});
             }
             *expected_type = context->string_type;
+            s->this_type = context->string_type;
             return KAI_FALSE;
         }
         break; case KAI_EXPR_ARRAY:
@@ -6149,7 +6182,6 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
         break; case KAI_STMT_ASSIGNMENT:
         {
             Kai_Stmt_Assignment* a = (Kai_Stmt_Assignment*)(expr);
-            Kai_Value v = {0};
             Kai_Type_Info* type = 0;
             if (kai__value_of_expr(context, a->dest, NULL, &type))
                 return KAI_TRUE;

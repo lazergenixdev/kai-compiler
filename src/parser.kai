@@ -942,7 +942,7 @@ _parser_create_identifier :: (parser: *Parser, token: Token) -> *Expr
     node.id = KAI_EXPR_IDENTIFIER;
     node.source_code = token.string;
     node.line_number = token.line_number;
-    ret node -> *Expr;
+    ret parse_tag_to_expr(parser, node -> *Expr);
 }
 _parser_create_string :: (parser: *Parser, token: Token) -> *Expr
 {
@@ -1285,20 +1285,22 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         _next_token(); // skip '{'
         while current.id != #char "}"
         {
-            expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
-            _expect(expr, "in literal expression", "should be an expression here");
-            _next_token();
-            if current.id == #char "," _next_token(); // TODO: need more expects here
-            else if current.id == #char "="
-            {
-                _next_token();
-                right: *Expr = parse_expression(parser, TOP_PRECEDENCE);
-                _expect(right, "in literal expression", "should be an expression here");
-                _next_token();
-                if current.id == #char "," _next_token();
-                expr = _parser_create_assignment(parser, #char "=", expr, right);
+            token: Token = [current];
+            name: string;
+            peeked: *Token = _peek_token();
+            if token.id == KAI_TOKEN_IDENTIFIER && peeked.id == #char "=" {
+                name = token.string;
+                _next_token(); // skip IDENTIFIER
+                _next_token(); // skip '='
             }
-            else _expect(current.id == #char "}", "in literal expression", "'}' or ','");
+
+            expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+            _expect(expr != null, "in literal expression", "should be an expression here");
+            expr.name = name;
+
+            _next_token();
+            if current.id == #char "," _next_token();
+            else _expect(current.id == #char "}", "in literal expression", "should be '}' or ',' here");
 
             _linked_list_append(body, expr);
             count += 1;

@@ -94,15 +94,12 @@ WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)
 	};
 	Kai_Result result = kai_create_syntax_tree(&info, &tree);
 
-    kai_write_error(&div_writer, &error);
-    if (0) {
     if (result != KAI_SUCCESS) {
         kai_write_error(&div_writer, &error);
 	}
     else {
         kai_write_expression(&div_writer, (Kai_Expr*)&tree.root, 0);
 	}
-    }
     return (result != KAI_SUCCESS);
 }
 

@@ -434,7 +434,6 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
                 _write("\"\n");
             }
 
-            array_push(*context.nodes, node);
             table_set(*scope.identifiers, d.name, reference);
 
             type_reference: Node_Reference = Node_Reference.{flags = KAI_NODE_TYPE, index = reference.index};
@@ -449,6 +448,7 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
                 array_push(*value_dependencies, type_reference);
                 array_push(*scope.pending_nodes, Pending_Node.{ref = reference, dependencies = value_dependencies});
             }
+            array_push(*context.nodes, node);
         }
     }
     case KAI_STMT_COMPOUND; {
@@ -869,23 +869,52 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
         case KAI_EXPR_LITERAL; {
             assert([expected_type] != null);
+            if out_value != null {
+                kai__todo("generate literal value");
+            }
             l: *Expr_Literal = cast expr;
             // Type must be struct, union, or array.
             expected: *Type_Info = [expected_type];
             if expected.id == {
-            case KAI_TYPE_ID_ARRAY;
-            case KAI_TYPE_ID_STRING;
-            case KAI_TYPE_ID_STRUCT; {
+            case KAI_TYPE_ID_ARRAY; {
+                ai: *Type_Info_Array = cast expected;
+                type: Type = ai.sub_type;
+                assert(ai.cols == 1);
+                count: u32 = 0;
                 current: *Expr = l.head;
                 while current != null {
-                    if current.id == KAI_STMT_ASSIGNMENT {
-                        type: Type;
-                        if _value_of_expr(context, current, null, *type)
-                            ret true;
+                    if _value_of_expr(context, current, null, *type)
+                        ret true;
+                    count += 1;
+                    current = current.next;
+                }
+                if count != ai.rows {
+                    ret _error_fatal(context, STRING("array count mismatch"));
+                }
+            }
+            case KAI_TYPE_ID_STRING;
+            case KAI_TYPE_ID_STRUCT; {
+                si: *Type_Info_Struct = cast expected;
+                current: *Expr = l.head;
+                while current != null {
+                    if current.name.count == 0 {
+                        ret _error_fatal(context, STRING("must use named assignments"));
                     }
-                    else {
-                        ret _error_fatal(context, STRING("todo: literal without names? idk"));
+
+                    type: Type;
+                    for i: 0..<si.fields.count {
+                        field: Struct_Field = si.fields.data[i];
+                        if string_equals(current.name, field.name) {
+                            type = field.type;
+                            break;
+                        }
                     }
+                    if type == null {
+                        ret _error_fatal(context, STRING("struct member not found"));
+                    }
+                    
+                    if _value_of_expr(context, current, null, *type)
+                        ret true;
                     current = current.next;
                 }
             }
@@ -906,6 +935,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 [out_value] = Value.{string = s.value};
             }
             [expected_type] = context.string_type;
+            s.this_type = context.string_type;
             ret false;
         }
 
@@ -1428,7 +1458,6 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
         case KAI_STMT_ASSIGNMENT; {
             a: *Stmt_Assignment = cast expr;
-            v: Value;
             type: *Type_Info;
             if _value_of_expr(context, a.dest, null, *type)
                 ret true;

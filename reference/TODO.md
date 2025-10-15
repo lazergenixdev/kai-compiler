@@ -3,7 +3,8 @@
 - [x] check if node's dependencies are evaluated before we compile this node
 - [x] need some way to only type-check without needing the value in `_value_of_expr`
 - [x] need a writer that writes into a buffer (just a Arena wrapper)
-- [ ] change literal type to not use assignment expression
+- [x] change literal type to not use assignment expression
+- [ ] compilation unit for compound statements
 - [ ] by default, we need to cache all types, and only create new types for ones we haven't seen (or marked "#distinct")
 - [ ] should print type look for recursive types?
 - [ ] better compilation for recusive types

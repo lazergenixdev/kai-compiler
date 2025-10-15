@@ -466,14 +466,12 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
         sb_append(builder, "{");
 		for (Kai_Stmt* current = l->head; current != NULL; current = current->next)
         {
-            if (current->id == KAI_STMT_ASSIGNMENT) {
-                Kai_Stmt_Assignment* a = (Kai_Stmt_Assignment*)current;
+            if (current->name.count != 0) {
                 sb_append(builder, ".");
-                generate_expression(builder, a->dest, TOP_PRECEDENCE, 0);
+                sb_append_string(builder, current->name);
                 sb_append(builder, "=");
-                generate_expression(builder, a->value, TOP_PRECEDENCE, 0);
             }
-            else generate_expression(builder, current, TOP_PRECEDENCE, 0);
+            generate_expression(builder, current, TOP_PRECEDENCE, 0);
             if (current->next != NULL) sb_append(builder, ", ");
         }
         sb_append(builder, "}");
@@ -492,15 +490,26 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
     }
     break;case KAI_EXPR_BINARY: {
         Kai_Expr_Binary* b = (Kai_Expr_Binary*)expr;
-        sb_append(builder, "(");
-        generate_expression(builder, b->left, TOP_PRECEDENCE, flags);
-        //if (b->op == '.' && b->left->this_type->id == KAI_TYPE_ID_POINTER) {
-        //    sb_append(builder, "->");
-        //}
-        //else
-        sb_append(builder, map_binary_operator(b->op));
-        generate_expression(builder, b->right, TOP_PRECEDENCE, flags);
-        sb_append(builder, ")");
+        if (b->op == KAI_MULTI('-', '>',,))
+        {
+            sb_append(builder, "(");
+            generate_expression(builder, b->right, TOP_PRECEDENCE, flags | GE_TYPE);
+            sb_append(builder, ")(");
+            generate_expression(builder, b->left, TOP_PRECEDENCE, flags);
+            sb_append(builder, ")");
+        }
+        else
+        {
+            sb_append(builder, "(");
+            generate_expression(builder, b->left, TOP_PRECEDENCE, flags);
+            //if (b->op == '.' && b->left->this_type->id == KAI_TYPE_ID_POINTER) {
+            //    sb_append(builder, "->");
+            //}
+            //else
+            sb_append(builder, map_binary_operator(b->op));
+            generate_expression(builder, b->right, TOP_PRECEDENCE, flags);
+            sb_append(builder, ")");
+        }
     }
     break;default: {
         sb_appendf(builder, "[expr (%i)]", expr->id);

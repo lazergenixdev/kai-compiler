@@ -561,18 +561,9 @@ void generate_struct_literal(String_Builder* builder, Kai_Expr* expr)
 	}
 	else for (Kai_Expr* m = lit->head; m != NULL; m = m->next)
 	{
-		if (m->id == KAI_STMT_ASSIGNMENT)
-		{
-			Kai_Stmt_Assignment* ass = (void*)m;
-			sb_append(builder, ".");
-			generate_expression(builder, ass->dest, TOP_PRECEDENCE, NO_RENAME);
-			sb_append(builder, " = ");
-			generate_expression(builder, ass->value, TOP_PRECEDENCE, NOT_TYPE);
-		}
-		else
-		{
-			generate_expression(builder, m, TOP_PRECEDENCE, NONE);
-		}
+		if (m->name.count != 0)
+			sb_appendf(builder, ".%.*s = ", (Kai_s32)(m->name.count), m->name.data);
+		generate_expression(builder, m, TOP_PRECEDENCE, NOT_TYPE);
 		if (m->next != NULL) sb_append(builder, ", ");
 	}
 	sb_append(builder, "}");
