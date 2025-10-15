@@ -164,7 +164,11 @@ _write_expression_name :: (writer: *Writer, expr: *Expr)
 {
     assert(expr != null);
     if expr.id == {
-        case KAI_EXPR_IDENTIFIER;     _write("identifier");
+        case KAI_EXPR_IDENTIFIER; {
+            _write("\"");
+            _write_string(expr.source_code);
+            _write("\"");
+        }
         case KAI_EXPR_STRING;         _write("string");
         case KAI_EXPR_NUMBER;         _write("number");
         case KAI_EXPR_LITERAL;        _write("literal");
@@ -191,6 +195,15 @@ _inside_procedure_scope :: (context: *Compiler_Context) -> bool
         if scope.is_proc_scope ret true;
     }
     ret false;
+}
+
+_error_fatal :: (context: *Compiler_Context, message: string) -> bool
+{
+    context.error.result = KAI_ERROR_FATAL;
+    context.error.message = message;
+    context.error.location.source = context.current_source;
+    kai__debug_print_stacktrace();
+    ret true;
 }
 
 _error_redefinition :: (context: *Compiler_Context, location: Location, original: u32) -> bool
@@ -347,7 +360,7 @@ _error_type_check :: (context: *Compiler_Context, expr: *Expr, expected: Type, g
     message_count: u32 = context.error_arena.buffer.count - message_offset;
 
     context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
-    kai__debug_print_stacktrace();
+    //kai__debug_print_stacktrace();
     ret true;
 }
 
@@ -630,14 +643,6 @@ _generate_builtin_types :: (context: *Compiler_Context) -> bool
     ret false;
 }
 
-_error_fatal :: (context: *Compiler_Context, message: string) -> bool
-{
-    context.error.result = KAI_ERROR_FATAL;
-    context.error.message = message;
-    context.error.location.source = context.current_source;
-    ret true;
-}
-
 _value_to_number :: (value: Value, type: *Type_Info, out_number: *Number) -> bool
 {
     if type.id == {
@@ -775,6 +780,8 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             node_value: Value;
 
             if ref.flags & KAI_NODE_LOCAL {
+                if !(ref.flags & KAI_NODE_TYPE)
+                    ret _error_fatal(context, STRING("cannot get value of a local node"));
                 local_node: *Local_Node = *context.local_nodes.data[ref.index];
                 node_type = local_node.type;
             }
@@ -1405,7 +1412,21 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
         }
 
         case KAI_STMT_COMPOUND; {
-            kai__todo("similar to procedure here (compound)");
+            // TODO: need to have a compilation unit here.
+            // Maybe only when there are const nodes..
+            allocator: *Allocator = *context.allocator;
+            array_push(*context.scopes, Scope.{});
+            
+            c: *Stmt_Compound = cast expr;
+            current: *Stmt = c.head;
+            while current != null {
+                t: Type = [expected_type];
+                if _value_of_expr(context, current, null, *t)
+                    ret true;
+                current = current.next;
+            }
+            
+            array_pop(*context.scopes);
             ret false;
         }
 

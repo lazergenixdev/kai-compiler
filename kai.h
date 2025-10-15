@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20251015051858 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20251015152538 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -1424,6 +1424,7 @@ KAI_INTERNAL Kai_bool kai__is_procedure_next(Kai_Parser* parser);
 KAI_INTERNAL Kai_bool kai__create_syntax_trees(Kai_Compiler_Context* context, Kai_Source_Slice sources);
 KAI_INTERNAL void kai__write_expression_name(Kai_Writer* writer, Kai_Expr* expr);
 KAI_INTERNAL Kai_bool kai__inside_procedure_scope(Kai_Compiler_Context* context);
+KAI_INTERNAL Kai_bool kai__error_fatal(Kai_Compiler_Context* context, Kai_string message);
 KAI_INTERNAL Kai_bool kai__error_redefinition(Kai_Compiler_Context* context, Kai_Location location, Kai_u32 original);
 KAI_INTERNAL Kai_bool kai__error_not_declared(Kai_Compiler_Context* context, Kai_Location location);
 KAI_INTERNAL void kai__write_node(Kai_Writer* writer, Kai_Node* node, Kai_Node_Flags flags);
@@ -1434,7 +1435,6 @@ KAI_INTERNAL Kai_bool kai__create_nodes(Kai_Compiler_Context* context, Kai_Expr*
 KAI_INTERNAL Kai_bool kai__generate_nodes(Kai_Compiler_Context* context);
 KAI_INTERNAL Kai_Node_Reference kai__lookup_node(Kai_Compiler_Context* context, Kai_string name);
 KAI_INTERNAL Kai_bool kai__generate_builtin_types(Kai_Compiler_Context* context);
-KAI_INTERNAL Kai_bool kai__error_fatal(Kai_Compiler_Context* context, Kai_string message);
 KAI_INTERNAL Kai_bool kai__value_to_number(Kai_Value value, Kai_Type_Info* type, Kai_Number* out_number);
 KAI_INTERNAL Kai_Value kai__evaluate_binary_operation(Kai_u32 op, Kai_Type_Info* type, Kai_Value a, Kai_Value b);
 KAI_INTERNAL void kai__add_dependency(Kai_Compiler_Context* context, Kai_Node_Reference ref);
@@ -4953,7 +4953,11 @@ KAI_INTERNAL void kai__write_expression_name(Kai_Writer* writer, Kai_Expr* expr)
     switch (expr->id)
     {
         break; case KAI_EXPR_IDENTIFIER:
-        kai__write("identifier");
+        {
+            kai__write("\"");
+            kai__write_string(expr->source_code);
+            kai__write("\"");
+        }
         break; case KAI_EXPR_STRING:
         kai__write("string");
         break; case KAI_EXPR_NUMBER:
@@ -4997,6 +5001,15 @@ KAI_INTERNAL Kai_bool kai__inside_procedure_scope(Kai_Compiler_Context* context)
             return KAI_TRUE;
     }
     return KAI_FALSE;
+}
+
+KAI_INTERNAL Kai_bool kai__error_fatal(Kai_Compiler_Context* context, Kai_string message)
+{
+    (context->error)->result = KAI_ERROR_FATAL;
+    (context->error)->message = message;
+    ((context->error)->location).source = context->current_source;
+    kai__debug_print_stacktrace();
+    return KAI_TRUE;
 }
 
 KAI_INTERNAL Kai_bool kai__error_redefinition(Kai_Compiler_Context* context, Kai_Location location, Kai_u32 original)
@@ -5107,7 +5120,6 @@ KAI_INTERNAL Kai_bool kai__error_type_check(Kai_Compiler_Context* context, Kai_E
     kai_write_type(writer, expected);
     Kai_u32 message_count = ((context->error_arena).buffer).count-message_offset;
     (context->error)->message = kai_string_from_data(((context->error_arena).buffer).data+message_offset, message_count);
-    kai__debug_print_stacktrace();
     return KAI_TRUE;
 }
 
@@ -5358,14 +5370,6 @@ KAI_INTERNAL Kai_bool kai__generate_builtin_types(Kai_Compiler_Context* context)
     return KAI_FALSE;
 }
 
-KAI_INTERNAL Kai_bool kai__error_fatal(Kai_Compiler_Context* context, Kai_string message)
-{
-    (context->error)->result = KAI_ERROR_FATAL;
-    (context->error)->message = message;
-    ((context->error)->location).source = context->current_source;
-    return KAI_TRUE;
-}
-
 KAI_INTERNAL Kai_bool kai__value_to_number(Kai_Value value, Kai_Type_Info* type, Kai_Number* out_number)
 {
     switch (type->id)
@@ -5531,6 +5535,8 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
             Kai_Value node_value = {0};
             if (ref.flags&KAI_NODE_LOCAL)
             {
+                if (!(ref.flags&KAI_NODE_TYPE))
+                    return kai__error_fatal(context, KAI_STRING("cannot get value of a local node"));
                 Kai_Local_Node* local_node = &((context->local_nodes).data)[ref.index];
                 node_type = local_node->type;
             }
@@ -6142,7 +6148,18 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
         }
         break; case KAI_STMT_COMPOUND:
         {
-            kai__todo("similar to procedure here (compound)");
+            Kai_Allocator* allocator = &context->allocator;
+            kai_array_push(&context->scopes, ((Kai_Scope){0}));
+            Kai_Stmt_Compound* c = (Kai_Stmt_Compound*)(expr);
+            Kai_Stmt* current = c->head;
+            while (current!=NULL)
+            {
+                Kai_Type t = *expected_type;
+                if (kai__value_of_expr(context, current, NULL, &t))
+                    return KAI_TRUE;
+                current = current->next;
+            }
+            kai_array_pop(&context->scopes);
             return KAI_FALSE;
         }
         break; case KAI_STMT_RETURN:

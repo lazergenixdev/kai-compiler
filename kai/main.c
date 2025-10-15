@@ -66,7 +66,7 @@ void help_parse()
 #define COMPILE_NO_PRINT     (1<<0)
 #define COMPILE_NO_CODE_GEN  (1<<1)
 #define COMPILE_OUTPUT_TREE  (1<<2)
-#define COMPILE_DEBUG  (1<<3)
+#define COMPILE_DEBUG        (1<<3)
 void help_compile()
 {
     printf(
@@ -125,9 +125,8 @@ int error_no_source_provided()
 
 int token(int argc, char** argv)
 {
-    if (argc == 0) return error_no_source_provided();
     Kai_u32 parse_options = 0;
-    Kai_u32 source_start = 0;
+    Kai_u32 source_start = -1;
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
@@ -139,6 +138,7 @@ int token(int argc, char** argv)
             break;
         }
     }
+    if (source_start < 0) return error_no_source_provided();
     Kai_Source source = load_source_file(argv[source_start]);
     Kai_Tokenizer tokenizer = {
         .source = source.contents,
@@ -166,9 +166,8 @@ int token(int argc, char** argv)
 
 int parse(int argc, char** argv)
 {
-    if (argc == 0) return error_no_source_provided();
     Kai_u32 parse_options = 0;
-    Kai_u32 source_start = 0;
+    Kai_s32 source_start = -1;
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
@@ -179,6 +178,7 @@ int parse(int argc, char** argv)
             break;
         }
     }
+    if (source_start < 0) return error_no_source_provided();
     Kai_Error error = {0};
 	Kai_Syntax_Tree tree = {0};
 	Kai_Syntax_Tree_Create_Info info = {
@@ -197,9 +197,8 @@ int parse(int argc, char** argv)
 
 int compile(int argc, char** argv)
 {
-    if (argc == 0) return error_no_source_provided();
     Kai_u32 parse_options = 0;
-    Kai_u32 source_start = 0;
+    Kai_s32 source_start = -1;
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
@@ -212,6 +211,7 @@ int compile(int argc, char** argv)
             break;
         }
     }
+    if (source_start < 0) return error_no_source_provided();
     Kai_Error error = {0};
 	Kai_Program program = {0};
     Kai_Source source = load_source_file(argv[source_start]);
