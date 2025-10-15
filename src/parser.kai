@@ -156,15 +156,16 @@ Stmt_Return :: struct {
 
 Stmt_Declaration :: struct {
     using Expr;
-    expr : *Expr; // TODO: rename -> value
-    type : *Expr; // optional
+//  more_names : [] string;
+    value : *Expr;
+    type  : *Expr; // optional
 }
 
 Stmt_Assignment :: struct {
     using Expr;
-    op   : u32;
-    left : *Expr; // TODO: rename -> target
-    expr : *Expr; // TODO: rename -> value
+    op    : u32;
+    dest  : *Expr;
+    value : *Expr;
 }
 
 Stmt_Compound :: struct {
@@ -174,14 +175,14 @@ Stmt_Compound :: struct {
 
 Stmt_If :: struct {
     using Expr;
-    expr      : *Expr; // TODO: rename -> condition
+    condition : *Expr;
     then_body : *Stmt;
     else_body : *Stmt; @comment ("optional")
 }
 
 Stmt_While :: struct {
     using Expr;
-    expr : *Expr;
+    condition : *Expr;
     body : *Stmt;
 }
 
@@ -309,6 +310,7 @@ Token_Id :: enum u32 {
     TOKEN_union      = 0x8C;
     TOKEN_using      = 0x8D;
     TOKEN_while      = 0x8E;
+    // multi-characters [0xFF, ..]
 }
 
 Token :: struct {
@@ -910,22 +912,22 @@ _operator_info :: (op: u32) -> _Operator
     if op == {
     case #multi "||"; ret _Operator.{0x0010, KAI__OPERATOR_TYPE_BINARY};
     case #multi "&&"; ret _Operator.{0x0011, KAI__OPERATOR_TYPE_BINARY};
-    case #char  "|";  ret _Operator.{0x0020, KAI__OPERATOR_TYPE_BINARY};
-    case #char  "^";  ret _Operator.{0x0021, KAI__OPERATOR_TYPE_BINARY};
-    case #char  "&";  ret _Operator.{0x0022, KAI__OPERATOR_TYPE_BINARY};
     case #multi "<="; ret _Operator.{0x0040, KAI__OPERATOR_TYPE_BINARY};
     case #multi ">="; ret _Operator.{0x0040, KAI__OPERATOR_TYPE_BINARY};
     case #char  "<";  ret _Operator.{0x0040, KAI__OPERATOR_TYPE_BINARY};
     case #char  ">";  ret _Operator.{0x0040, KAI__OPERATOR_TYPE_BINARY};
     case #multi "=="; ret _Operator.{0x0050, KAI__OPERATOR_TYPE_BINARY};
     case #multi "!="; ret _Operator.{0x0050, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "|";  ret _Operator.{0x0070, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "^";  ret _Operator.{0x0070, KAI__OPERATOR_TYPE_BINARY};
+    case #char  "&";  ret _Operator.{0x0070, KAI__OPERATOR_TYPE_BINARY};
+    case #multi "<<"; ret _Operator.{0x0080, KAI__OPERATOR_TYPE_BINARY};
+    case #multi ">>"; ret _Operator.{0x0080, KAI__OPERATOR_TYPE_BINARY};
     case #char  "+";  ret _Operator.{0x0100, KAI__OPERATOR_TYPE_BINARY};
     case #char  "-";  ret _Operator.{0x0100, KAI__OPERATOR_TYPE_BINARY};
     case #char  "*";  ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
     case #char  "/";  ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
     case #char  "%";  ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
-    case #multi "<<"; ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
-    case #multi ">>"; ret _Operator.{0x0200, KAI__OPERATOR_TYPE_BINARY};
     case #char  ".";  ret _Operator.{0xFFFF, KAI__OPERATOR_TYPE_BINARY};  // member access
     case #multi "->"; ret _Operator.{KAI__PREC_CAST, KAI__OPERATOR_TYPE_BINARY};
     case #char  "[";  ret _Operator.{0xBEEF, KAI__OPERATOR_TYPE_INDEX};
@@ -1085,7 +1087,7 @@ _parser_create_return :: (parser: *Parser, ret_token: Token, expr: *Expr) -> *Ex
     node.expr = expr;
     ret node -> *Expr;
 }
-_parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, expr: *Expr, flags: u8, line_number: u32) -> *Expr
+_parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, value: *Expr, flags: u8, line_number: u32) -> *Expr
 {
     node: *Stmt_Declaration = cast arena_allocate(*parser.arena, sizeof(Stmt_Declaration));
     node.id = KAI_STMT_DECLARATION;
@@ -1093,19 +1095,19 @@ _parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, expr:
     node.line_number = line_number;
     node.name = name;
     node.type = type;
-    node.expr = expr;
+    node.value = value;
     node.flags = flags;
     ret parse_tag_to_expr(parser, node -> *Expr);
 }
-_parser_create_assignment :: (parser: *Parser, op: u32, left: *Expr, expr: *Expr) -> *Expr
+_parser_create_assignment :: (parser: *Parser, op: u32, dest: *Expr, value: *Expr) -> *Expr
 {
     node: *Stmt_Assignment = cast arena_allocate(*parser.arena, sizeof(Stmt_Assignment));
     node.id = KAI_STMT_ASSIGNMENT;
-    node.source_code = left.source_code;
-    node.line_number = left.line_number;
+    node.source_code = dest.source_code;
+    node.line_number = dest.line_number;
     node.op = op;
-    node.left = left;
-    node.expr = expr;
+    node.dest = dest;
+    node.value = value;
     ret node -> *Expr;
 }
 _parser_create_if :: (parser: *Parser, if_token: Token, flags: u8, expr: *Expr, then_body: *Stmt, else_body: *Stmt) -> *Expr
@@ -1115,7 +1117,7 @@ _parser_create_if :: (parser: *Parser, if_token: Token, flags: u8, expr: *Expr, 
     node.source_code = if_token.string;
     node.line_number = if_token.line_number;
     node.flags = flags;
-    node.expr = expr;
+    node.condition = expr;
     node.then_body = then_body;
     node.else_body = else_body;
     ret node -> *Expr;
@@ -1127,7 +1129,7 @@ _parser_create_while :: (parser: *Parser, while_token: Token, expr: *Expr, body:
     node.source_code = while_token.string;
     node.line_number = while_token.line_number;
     node.body = body;
-    node.expr = expr;
+    node.condition = expr;
     ret node -> *Expr;
 }
 _parser_create_for :: (parser: *Parser, for_token: Token, name: string, from: *Expr, to: *Expr, body: *Stmt, flags: u8) -> *Expr

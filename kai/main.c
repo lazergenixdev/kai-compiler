@@ -172,8 +172,7 @@ int parse(int argc, char** argv)
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
-            if (strcmp(argv[i]+1, "p") == 0)
-                parse_options |= PARSE_NO_PRINT;
+            if (strcmp(argv[i]+1, "p") == 0) parse_options |= PARSE_NO_PRINT;
         }
         else {
             source_start = i;
@@ -204,12 +203,9 @@ int compile(int argc, char** argv)
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
-            if (strcmp(argv[i]+1, "p") == 0)
-                parse_options |= COMPILE_NO_PRINT;
-            if (strcmp(argv[i]+1, "t") == 0)
-                parse_options |= COMPILE_OUTPUT_TREE;
-            if (strcmp(argv[i]+1, "d") == 0)
-                parse_options |= COMPILE_DEBUG;
+            if (strcmp(argv[i]+1, "p") == 0) parse_options |= COMPILE_NO_PRINT;
+            if (strcmp(argv[i]+1, "t") == 0) parse_options |= COMPILE_OUTPUT_TREE;
+            if (strcmp(argv[i]+1, "d") == 0) parse_options |= COMPILE_DEBUG;
         }
         else {
             source_start = i;
@@ -224,7 +220,7 @@ int compile(int argc, char** argv)
         .error = &error,
         .sources = { .count = 1, .data = &source },
 		.options = { .flags = KAI_COMPILE_NO_CODE_GEN },
-        .debug_writer = parse_options & COMPILE_DEBUG ? writer : NULL,
+        .debug_writer = (parse_options & COMPILE_DEBUG) ? writer : NULL,
     };
     kai_create_program(&info, &program);
 

@@ -5,6 +5,8 @@ VERSION_MAJOR  :: #host_import;
 VERSION_MINOR  :: #host_import;
 VERSION_PATCH  :: #host_import;
 
+cstring :: #host_import;
+
 #export version_string :: () -> string
 {
     ret VERSION_STRING;
@@ -56,20 +58,19 @@ add_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
     sum := a + b;
     carry := sum < a;
 
-    //if !carry ret sum;
-    if carry ret sum;
+    if !carry ret sum;
 
-    // if sub { [exp] -= 1; }
-    // else   { [exp] += 1; }
+    //if sub { [exp] -= 1; }
+    //else   { [exp] += 1; }
     ret (1 << 63) | (sum >> 1);
 }
 
 // Memory Allocator
 
 #export Memory_Command :: enum u32 {
-    ALLOCATE_WRITE_ONLY :: 0; // input: Size
-    SET_EXECUTABLE      :: 1; // input: Ptr, Size
-    FREE                :: 2; // input: Ptr, Size
+    ALLOCATE_WRITE_ONLY :: 0;
+    SET_EXECUTABLE      :: 1;
+    FREE                :: 2;
 };
 
 #export P_Memory_Heap_Allocate     :: #proc (user: *void, ptr: *void, new_size: u32, old_size: u32) -> *void;
@@ -119,12 +120,12 @@ memory_fill :: (dst: *void, byte: u8, size: u32)
     //ret true;
 }
 
-//#export string_from_c :: (s: c.string) -> string
-//{
-//    //count: u32;
-//    //while (s[count] != 0) count += 1;
-//    ret {count = count, data = s->*u8};
-//}
+#export string_from_c :: (s: cstring) -> string
+{
+    count: u32;
+    //while (s[count] != 0) count += 1;
+    ret {count = count, data = s->*u8};
+}
 
 #export string_from_data :: (data: *u8, count: u32) -> string
 {
@@ -168,7 +169,8 @@ string_hash_next :: (hash: u64, s: string) -> u64
 #export Result :: enum u32 {
     SUCCESS        :: 0;
     ERROR_MEMORY   :: 1;
-    ERROR_SYNTAX   :: 2;
+    ERROR_SYNTAX   :: 2; @comment ("error from parsing")
+    ERROR_TYPE     :: 3; @comment ("error from type checking")
     ERROR_SEMANTIC :: 3;
     ERROR_INFO     :: 4;
     ERROR_FATAL    :: 5; @comment ("means compiler bug probably")

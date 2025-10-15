@@ -15,6 +15,61 @@ example :: ()
     memory := allocate(allocator, 100);
 }
 
+// Idea: Do tagged unions like in Odin?
+example :: ()
+{
+    Value :: union { u32, f32 };
+
+    value: Value = 56->u32;
+
+    if value == {
+        case u32; {
+            println("got u32");
+        }
+        case f32; {
+            println("got f32");
+        }
+    }
+}
+
+// Idea: Expand matrix type to be generic multidimensional array
+example :: ()
+{
+    mat: [4,4] f32;
+    last := mat[3,3];
+
+    generic: [3,4,10,2] f32;
+    last := generic[2,3,9,1];
+}
+
+// Idea: Assigning multiple return values to multiple declarations.
+example :: ()
+{
+    f1 :: () -> A {}
+    f2 :: () -> B, C {}
+    f3 :: () -> D, E, F {}
+
+    // a: A, b: B, c: C
+    a, b, c := f1(), f2();
+
+    d, e, f, b, c := f3(), f2();
+
+    d := f1(), f1(); // ERROR: cannot have more values than declarations.
+
+    // ~~~ each name can have a type? ~~~
+    a: u32, b: f32 = 10, 20;
+
+    // do same as argument list?
+    a, b: f32 = 10, 20; // #type(a) = #type(b)
+}
+
+example :: ()
+{
+    for ptr: head..tail {...}
+    // same as
+    //for (List* p = head; head != tail; p->next)
+}
+
 // Idea: multiline string
 //        start = "\"\"\"\n", end = "\n\"\"\""
 example :: ()
@@ -146,6 +201,56 @@ example :: (a: u64, b: u32) -> f32
 {
     ret (a - 1)->f32 + b->f32;
 }
+
+// Idea: New operators for bit flags, bit sets
+example :: (a: u64, b: u32) -> f32
+{
+    flags := 0b001010010110;
+    bits  := 0b001010000000;
+
+    flags &* bits; // check any of bits are set
+    flags & bits; // check all bits are set
+    flags | bits; // union
+
+    bits in flags; // all bits in bits are set in flags
+
+    // ???
+    // && -> and
+    // || -> or
+    if flags == 0 or flags == 1 then
+        ret 0;
+}
+
+// Idea: NO null value, no raw pointers
+example :: ()
+{
+    // union is a problem
+    union {
+        name: [..] u32;
+
+        value: struct {
+            pointer:  u64;
+            count:    u32;
+            capacity: u32;
+        };
+    };
+
+    // solutions?:
+    // -> union is tagged, cannot change tag without changing the value
+
+    // tree structures are a problem
+    // -> no, just use arrays and store index's NOT pointers
+
+    // main issue: performance
+    arr: [..] u32;
+    initialize(*arr);
+
+    for i: some_number {
+        // need to bounds check for every call!
+        sum += arr[f(i)];
+    }
+}
+
 
 // NOTES SECTION
 

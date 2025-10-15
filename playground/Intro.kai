@@ -32,6 +32,6 @@ ceil_div_fast :: (num: u64, exp: u32) -> u64
 #export l1 :: 100_000;     // can use any number of '_' for readability (does not affect the value)
 #export l2 :: 0b01011;     // Binary (base 2)
 #export l3 :: 0xFE;        // Hexidecimal (base 16)
-#export l5 :: 1.23e-5;     // Can use exp notation (reads as 1.23 times 10 to the power -5)
+//#export l5 :: 1.23e-5;     // Can use exp notation (reads as 1.23 times 10 to the power -5)
 #export l7 :: #char "전";   // Single character (Unicode codepoint value)
 #export l8 :: #multi "->"; // Multi character

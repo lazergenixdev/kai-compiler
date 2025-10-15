@@ -14,13 +14,12 @@ int main()
     kai_create_program(&info, &program);
     assert_no_error();
 
-    write_expression((Kai_Expr*)&program.code.trees.data[0].root);
+    // TODO: complete test
+    //write_expression((Kai_Expr*)&program.code.trees.data[0].root);
 
     //Kai_Type type = NULL;
     //void* ptr = xkai_find_variable(&program, KAI_STRING("A"), &type);
 //    assert_true(type != NULL);
 //    assert_true(ptr != NULL);
 //    assert_true(type->id == KAI_TYPE_ID_PROCEDURE);
-
-    // TODO: do more checking here
 }

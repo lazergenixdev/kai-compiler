@@ -14,7 +14,8 @@ int main()
     assert_no_error();
 
     Kai_Type type = NULL;
-    void* ptr = kai_find_variable(&program, KAI_STRING("E"), &type);
+    Kai_s32* value = (Kai_s32*)kai_find_variable(&program, KAI_STRING("E"), &type);
+    assert_true(value != NULL);
     assert_true(type != NULL);
     assert_true(type->id == KAI_TYPE_ID_INTEGER);
 
@@ -22,7 +23,5 @@ int main()
     assert_true(type_info->is_signed == true);
     assert_true(type_info->bits == 32);
 
-    Kai_s32* value = (Kai_s32*)ptr;
-    assert_true(value != NULL);
     assert_true(*value == 369);
 }

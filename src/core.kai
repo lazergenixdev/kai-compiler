@@ -39,11 +39,12 @@ Result :: enum u32 {
     SUCCESS        = 0;
     ERROR_MEMORY   = 1; // allocator failed
     ERROR_SYNTAX   = 2;
-    ERROR_SEMANTIC = 3;
-    ERROR_INFO     = 4;
-    ERROR_FATAL    = 5; // means compiler bug probably
-    ERROR_INTERNAL = 6; // means compiler error unrelated to source code (e.g. out of memory)
-    RESULT_COUNT   = 7;
+    ERROR_TYPE     = 3;
+    ERROR_SEMANTIC = 4;
+    ERROR_INFO     = 5;
+    ERROR_FATAL    = 6; // means compiler bug probably
+    ERROR_INTERNAL = 7; // means compiler error unrelated to source code (e.g. out of memory)
+    RESULT_COUNT   = 8;
 }
 
 Source :: struct {
@@ -64,6 +65,7 @@ Error :: struct {
     context   : string;
     memory    : Memory;
     next      : *Error;
+    //count     : u32;
 }
 
 _range_to_string :: (range: Range, memory: Memory) -> string
@@ -484,8 +486,8 @@ Type_Id :: enum u8 {
     STRUCT    = 8;
     ENUM      = 9;
     STRING    = 10;
-    // compiler internal only
     NUMBER    = 11;
+    UNSIGNED_INTEGER = 12; // for type checking
 }
 
 Type :: *Type_Info;
@@ -1224,10 +1226,11 @@ _write_source_code_fill :: (writer: *Writer, src: *u8, end: *u8, first: u8, ch: 
     }
 }
 
-result_string_map: [7] string = .{
+result_string_map: [8] string = .{
     CONST_STRING("Success"),
     CONST_STRING("Memory Error"),
     CONST_STRING("Syntax Error"),
+    CONST_STRING("Type Error"),
     CONST_STRING("Error"), // Semantic errors are the default
     CONST_STRING("Info"),
     CONST_STRING("Fatal Error"),
@@ -1809,14 +1812,14 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             }
             _write("\n");
 
-            has_expr: bool = d.expr != null;
+            has_value: bool = d.value != null;
 
             if d.type {
                 context.prefix = STRING("type");
-                _explore(d.type, !has_expr);
+                _explore(d.type, !has_value);
             }
 
-            if has_expr _explore(d.expr, !has_tag);
+            if has_value _explore(d.value, !has_tag);
         }
         case KAI_STMT_ASSIGNMENT; {
             a: *Stmt_Assignment = cast expr;
@@ -1831,9 +1834,9 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write("\n");
 
             context.prefix = STRING("left ");
-            _explore(a.left, false);
+            _explore(a.dest, false);
             context.prefix = STRING("right");
-            _explore(a.expr, true);
+            _explore(a.value, true);
         }
         case KAI_STMT_COMPOUND; {
             c: *Stmt_Compound = cast expr;
@@ -1855,7 +1858,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write("\n");
 
             context.prefix = STRING("expr");
-            _explore(i.expr, false);
+            _explore(i.condition, false);
             _explore(i.then_body, i.else_body == null);
             if i.else_body != null {
                 _explore(i.else_body, true);
@@ -1879,7 +1882,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             w: *Stmt_While = cast expr;
             _write_expr_id_with_name(writer, STRING("while"), expr);
             _write("\n");
-            _explore(w.expr, false);
+            _explore(w.condition, false);
             _explore(w.body, true);
         }
         case KAI_STMT_CONTROL; {

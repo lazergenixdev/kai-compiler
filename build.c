@@ -2,6 +2,7 @@
 #define NOB_STRIP_PREFIX
 #include "3rd-party/nob.h"
 #define sb_append nob_sb_append_cstr
+#define nob_cc_debug(cmd) cmd_append(cmd, "-g")
 #define ASSERT NOB_ASSERT
 
 #define STB_DS_IMPLEMENTATION
@@ -108,6 +109,7 @@ const char* intrinsics[] = {
 
 Kai_Allocator g_allocator = {0};
 Kai_Writer g_writer = {0};
+bool compile_debug = false;
 
 typedef struct {
     Kai_string *items;
@@ -563,9 +565,9 @@ void generate_struct_literal(String_Builder* builder, Kai_Expr* expr)
 		{
 			Kai_Stmt_Assignment* ass = (void*)m;
 			sb_append(builder, ".");
-			generate_expression(builder, ass->left, TOP_PRECEDENCE, NO_RENAME);
+			generate_expression(builder, ass->dest, TOP_PRECEDENCE, NO_RENAME);
 			sb_append(builder, " = ");
-			generate_expression(builder, ass->expr, TOP_PRECEDENCE, NOT_TYPE);
+			generate_expression(builder, ass->value, TOP_PRECEDENCE, NOT_TYPE);
 		}
 		else
 		{
@@ -857,22 +859,22 @@ void generate_all_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound* st
 		if (current->id != KAI_STMT_DECLARATION) continue;
 		Kai_Stmt_Declaration* decl = (void*)current;
 
-		if (decl->expr == NULL)
+		if (decl->value == NULL)
 			continue;
 
-		switch (decl->expr->id)
+		switch (decl->value->id)
 		{
 			case KAI_EXPR_STRUCT: {
 				const char* t = temp_cstr_from_string(decl->name);
 				sb_appendf(builder, "typedef %s Kai_%s Kai_%s;\n",
-					decl->expr->flags & KAI_FLAG_STRUCT_UNION? "union":"struct", t, t);
+					decl->value->flags & KAI_FLAG_STRUCT_UNION? "union":"struct", t, t);
 				shput(g_identifier_map, t, Identifier_Type_Struct);
-				shput(g_struct_map, t, (void*)decl->expr);
+				shput(g_struct_map, t, (void*)decl->value);
 				count += 1;
 			} break;
 			
 			case KAI_EXPR_ENUM: {
-				Kai_Expr_Enum* _enum = (void*)decl->expr;
+				Kai_Expr_Enum* _enum = (void*)decl->value;
 				sb_append(builder, "typedef ");
 				generate_expression(builder, _enum->type, TOP_PRECEDENCE, NONE);
 				const char* t = temp_cstr_from_string(decl->name);
@@ -896,10 +898,10 @@ void generate_all_non_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound
 		if (current->id != KAI_STMT_DECLARATION) continue;
 		Kai_Stmt_Declaration* decl = (void*)current;
 
-		if (decl->expr == NULL)
+		if (decl->value == NULL)
 			continue;
 
-		switch (decl->expr->id)
+		switch (decl->value->id)
 		{
 			case KAI_EXPR_STRUCT: break;
 			case KAI_EXPR_ENUM: break;
@@ -907,14 +909,14 @@ void generate_all_non_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound
 			case KAI_EXPR_ARRAY:
 			case KAI_EXPR_PROCEDURE_CALL: {
 				sb_append(builder, "typedef ");
-				generate_expression(builder, decl->expr, TOP_PRECEDENCE, KEEP_ALL_PARENTHESIS);
+				generate_expression(builder, decl->value, TOP_PRECEDENCE, KEEP_ALL_PARENTHESIS);
 				const char* name = temp_cstr_from_string(decl->name);
 				sb_appendf(builder, " Kai_%s;\n", name);
 				shput(g_identifier_map, name, Identifier_Type_Struct);
 			} break;
 
 			case KAI_EXPR_PROCEDURE_TYPE: {
-				Kai_Expr_Procedure_Type* proc = (void*)decl->expr;
+				Kai_Expr_Procedure_Type* proc = (void*)decl->value;
 				sb_append(builder, "typedef ");
 				
 				String_Builder def = {0};
@@ -950,18 +952,18 @@ void generate_all_non_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound
 			} break;
 
 			default: {
-				if (decl->expr->id == KAI_EXPR_UNARY)
+				if (decl->value->id == KAI_EXPR_UNARY)
 				{
-					Kai_Expr_Unary* una = (void*)decl->expr;
+					Kai_Expr_Unary* una = (void*)decl->value;
 					if (una->op == '.')
 						break;
 				}
 
 				count += 1;
-				if (is_type_expression(decl->expr))
+				if (is_type_expression(decl->value))
 				{
 					sb_append(builder, "typedef ");
-					generate_expression(builder, decl->expr, TOP_PRECEDENCE, NONE);
+					generate_expression(builder, decl->value, TOP_PRECEDENCE, NONE);
 					const char* t = temp_cstr_from_string(decl->name);
 					sb_appendf(builder, " Kai_%s;\n", t);
 					shput(g_identifier_map, t, Identifier_Type_Type);
@@ -973,7 +975,7 @@ void generate_all_non_struct_typedefs(String_Builder* builder, Kai_Stmt_Compound
 					String_Builder def = {0};
 					sb_appendf(&def, "#define KAI_%s ", name);
 					shput(g_identifier_map, name, Identifier_Type_Macro);
-					generate_expression(&def, decl->expr, TOP_PRECEDENCE, KEEP_ALL_PARENTHESIS);
+					generate_expression(&def, decl->value, TOP_PRECEDENCE, KEEP_ALL_PARENTHESIS);
 					sb_append(&def, "\n");
 
 					if (!internal)
@@ -1084,14 +1086,14 @@ void generate_all_data_structure_types(String_Builder* builder, Kai_Stmt* stmt)
 		Kai_Stmt_Declaration* decl = (void*)stmt;
 		if (decl->type != NULL)
 			generate_all_data_structure_types(builder, decl->type);
-		if (decl->expr != NULL)
-			generate_all_data_structure_types(builder, decl->expr);
+		if (decl->value != NULL)
+			generate_all_data_structure_types(builder, decl->value);
 	} break;
 	
 	case KAI_STMT_ASSIGNMENT: {
 		Kai_Stmt_Assignment* ass = (void*)stmt;
-		generate_all_data_structure_types(builder, ass->left);
-		generate_all_data_structure_types(builder, ass->expr);
+		generate_all_data_structure_types(builder, ass->dest);
+		generate_all_data_structure_types(builder, ass->value);
 	} break;
 	
 	case KAI_STMT_RETURN: {
@@ -1102,7 +1104,7 @@ void generate_all_data_structure_types(String_Builder* builder, Kai_Stmt* stmt)
 	
 	case KAI_STMT_IF: {
 		Kai_Stmt_If* _if = (void*)stmt;
-		generate_all_data_structure_types(builder, _if->expr);
+		generate_all_data_structure_types(builder, _if->condition);
 		if (_if->then_body != NULL)
 			generate_all_data_structure_types(builder, _if->then_body);
 		if (_if->else_body != NULL)
@@ -1111,7 +1113,7 @@ void generate_all_data_structure_types(String_Builder* builder, Kai_Stmt* stmt)
 	
 	case KAI_STMT_WHILE: {
 		Kai_Stmt_While* whi = (void*)stmt;
-		generate_all_data_structure_types(builder, whi->expr);
+		generate_all_data_structure_types(builder, whi->condition);
 		if (whi->body != NULL)
 			generate_all_data_structure_types(builder, whi->body);
 	} break;
@@ -1170,6 +1172,7 @@ Kai_bool enum_excludes_name(Kai_string name)
 	if (kai_string_equals(name, KAI_STRING("Token_Id"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Result"))) return true;
 	if (kai_string_equals(name, KAI_STRING("Write_Command"))) return true;
+	if (kai_string_equals(name, KAI_STRING("_Builtin_Type_ID"))) return true;
 	return false;
 }
 
@@ -1180,21 +1183,21 @@ void generate_all_struct_definitions(String_Builder* builder, Kai_Stmt_Compound*
 		if (current->id != KAI_STMT_DECLARATION) continue;
 		Kai_Stmt_Declaration* decl = (void*)current;
 
-		if (decl->expr == NULL)
+		if (decl->value == NULL)
 			continue;
 
-		if (decl->expr->id == KAI_EXPR_STRUCT)
+		if (decl->value->id == KAI_EXPR_STRUCT)
 		{
-			Kai_Expr_Struct* str = (void*)decl->expr;
+			Kai_Expr_Struct* str = (void*)decl->value;
 			
 			sb_appendf(builder, "%s Kai_%.*s {\n", str->flags & KAI_FLAG_STRUCT_UNION? "union":"struct",
 				(int)decl->name.count, decl->name.data);
 			generate_all_struct_members(builder, str);
 			sb_append(builder, "};\n\n");
 		}
-		else if (decl->expr->id == KAI_EXPR_ENUM)
+		else if (decl->value->id == KAI_EXPR_ENUM)
 		{
-			Kai_Expr_Enum* _enum = (void*)decl->expr;
+			Kai_Expr_Enum* _enum = (void*)decl->value;
 			
 			const char* name = temp_cstr_from_string(decl->name);
 			sb_appendf(builder, "// Type: Kai_%s\n", name);
@@ -1209,10 +1212,10 @@ void generate_all_struct_definitions(String_Builder* builder, Kai_Stmt_Compound*
 					sb_append(builder, "KAI_");
 				else
 					sb_appendf(builder, "KAI_%s_", temp_cstr_upper(decl->name));
-				generate_expression(builder, ass->left, TOP_PRECEDENCE, NO_RENAME);
+				generate_expression(builder, ass->dest, TOP_PRECEDENCE, NO_RENAME);
 				ASSERT(ass->op == '=');
 				sb_append(builder, " = ");
-				generate_expression(builder, ass->expr, TOP_PRECEDENCE, NONE);
+				generate_expression(builder, ass->value, TOP_PRECEDENCE, NONE);
 				sb_append(builder, ",\n");
 			}
 			sb_append(builder, "};\n\n");
@@ -1228,10 +1231,10 @@ void generate_all_function_definitions(String_Builder* builder, Kai_Stmt_Compoun
 		if (current->id != KAI_STMT_DECLARATION) continue;
 		Kai_Stmt_Declaration* decl = (void*)current;
 		
-		if (decl->expr == NULL || decl->expr->id != KAI_EXPR_PROCEDURE)
+		if (decl->value == NULL || decl->value->id != KAI_EXPR_PROCEDURE)
 			continue;
 			
-		Kai_Expr_Procedure* proc = (void*)decl->expr;
+		Kai_Expr_Procedure* proc = (void*)decl->value;
 
 		const char* t = temp_cstr_from_string(decl->name);
 		shput(g_identifier_map, t, Identifier_Type_Function);
@@ -1357,14 +1360,14 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 		}
 		sb_append(builder, " = ");
 		define(name, (Variable_Type){.expr = decl->type});
-		if (decl->expr == NULL)
+		if (decl->value == NULL)
 		{
 			sb_append(builder, type == Identifier_Type_Struct || is_array? "{0}":"0");
 		}
 		else
 		{
 			g_current_decl_type = decl->type;
-			generate_expression(builder, decl->expr, TOP_PRECEDENCE, NOT_TYPE);
+			generate_expression(builder, decl->value, TOP_PRECEDENCE, NOT_TYPE);
 			g_current_decl_type = NULL;
 		}
 		sb_append(builder, ";\n");
@@ -1373,7 +1376,7 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 	case KAI_STMT_ASSIGNMENT: {
 		Kai_Stmt_Assignment* ass = (void*)stmt;
 		tab(depth);
-		generate_expression(builder, ass->left, TOP_PRECEDENCE, NONE);
+		generate_expression(builder, ass->dest, TOP_PRECEDENCE, NONE);
 		const char* op = "ASSIGN";
 		switch (ass->op)
 		{
@@ -1386,7 +1389,7 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 			case KAI_MULTI('/', '=',,): op = "/=" ;break;
 		}
 		sb_appendf(builder, " %s ", op);
-		generate_expression(builder, ass->expr, TOP_PRECEDENCE, NOT_TYPE);
+		generate_expression(builder, ass->value, TOP_PRECEDENCE, NOT_TYPE);
 		sb_append(builder, ";\n");
 	} break;
 	
@@ -1411,7 +1414,7 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 			sb_append(builder, "switch (");
 		}
 		else sb_append(builder, "if (");
-		generate_expression(builder, _if->expr, TOP_PRECEDENCE, NONE);
+		generate_expression(builder, _if->condition, TOP_PRECEDENCE, NONE);
 		sb_append(builder, ")\n");
 		generate_statement(builder, _if->then_body, depth, true);
 		if (_if->else_body != NULL)
@@ -1426,7 +1429,7 @@ void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int 
 	case KAI_STMT_WHILE: {
 		Kai_Stmt_While* whi = (void*)stmt;
 		tab(depth); sb_append(builder, "while (");
-		generate_expression(builder, whi->expr, TOP_PRECEDENCE, NONE);
+		generate_expression(builder, whi->condition, TOP_PRECEDENCE, NONE);
 		sb_append(builder, ")\n");
 		generate_statement(builder, whi->body, depth, true);
 	} break;
@@ -1476,9 +1479,9 @@ void generate_constant(String_Builder* builder, Kai_Stmt_Declaration* decl)
 	ASSERT(decl->type != NULL);
 	if (decl->type->id == KAI_EXPR_ARRAY)
 	{
-		ASSERT(decl->expr->id == KAI_EXPR_UNARY);
+		ASSERT(decl->value->id == KAI_EXPR_UNARY);
 		Kai_Expr_Array* arr = (void*)decl->type;
-		Kai_Expr_Unary* una = (void*)decl->expr;
+		Kai_Expr_Unary* una = (void*)decl->value;
 		ASSERT(una->expr != NULL && una->expr->id == KAI_EXPR_LITERAL);
 		Kai_Expr_Literal* lit = (void*)una->expr;
 		sb_append(builder, "static ");
@@ -1540,15 +1543,15 @@ void generate_all_function_implementations(String_Builder* builder, Kai_Stmt_Com
 		if (current->id != KAI_STMT_DECLARATION) continue;
 		Kai_Stmt_Declaration* decl = (void*)current;
 
-		if (decl->expr == NULL)
+		if (decl->value == NULL)
 		{
 			generate_constant(builder, decl);
 			continue;
 		}
 		
-		if (decl->expr->id == KAI_EXPR_UNARY)
+		if (decl->value->id == KAI_EXPR_UNARY)
 		{
-			Kai_Expr_Unary* una = (void*)decl->expr;
+			Kai_Expr_Unary* una = (void*)decl->value;
 			if (una->op != '.') continue;
 
 			generate_constant(builder, decl);
@@ -1556,10 +1559,10 @@ void generate_all_function_implementations(String_Builder* builder, Kai_Stmt_Com
 			continue;
 		}
 		
-		if (decl->expr->id != KAI_EXPR_PROCEDURE)
+		if (decl->value->id != KAI_EXPR_PROCEDURE)
 			continue;
 
-		Kai_Expr_Procedure* proc = (void*)decl->expr;
+		Kai_Expr_Procedure* proc = (void*)decl->value;
 		const char* name = temp_cstr_from_string(decl->name);	
 		const char* def = shget(g_function_cache, name);
 		sb_appendf(builder, "%s\n", def);
@@ -1645,7 +1648,7 @@ void run_tests(void)
 			const char* output = executable(name);
 			nob_cc(&cmd);
 			nob_cc_flags(&cmd);
-			nob_cmd_append(&cmd, "-g"); // DEBUG
+        	if (compile_debug) nob_cc_debug(&cmd);
 			nob_cc_inputs(&cmd, temp_sprintf("%s.c", name));
 			nob_cc_output(&cmd, temp_sprintf("../bin/%s", output));
 			exit_on_fail(cmd_run_sync_and_reset(&cmd));
@@ -1658,10 +1661,6 @@ void run_tests(void)
 	set_current_dir("..");
 	minimal_log_level = 0;
 }
-
-bool compile_debug = false;
-
-#define nob_cc_debug(cmd) cmd_append(cmd, "-g")
 
 void compile_command_line_tool(void)
 {
@@ -1688,7 +1687,7 @@ void compile_playground(void)
 		Cmd cmd = {0};
 		cmd_append(&cmd, executable("clang"));
 		cmd_append(&cmd, "-Wall", "-Wextra");
-		cmd_append(&cmd, "-g");
+		if (compile_debug) nob_cc_debug(&cmd);
 		cmd_append(&cmd, "--target=wasm32", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic");
 		cmd_append(&cmd, "lib.c");
 		cmd_append(&cmd, "-o", "lib.wasm");

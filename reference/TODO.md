@@ -3,8 +3,11 @@
 - [x] check if node's dependencies are evaluated before we compile this node
 - [x] need some way to only type-check without needing the value in `_value_of_expr`
 - [x] need a writer that writes into a buffer (just a Arena wrapper)
+- [ ] change literal type to not use assignment expression
 - [ ] by default, we need to cache all types, and only create new types for ones we haven't seen (or marked "#distinct")
-- [ ] cached typed need to be per-scope
+- [ ] should print type look for recursive types?
+- [ ] better compilation for recusive types
+- [ ] cached typed need to be per-scope?
 - [ ] add keywords `then`, (separator) `null`, `true`, `false` (Special)
 - [ ] add statement tags {}
 - [ ] add `#optional_export` and `#require_export` directives
@@ -15,10 +18,13 @@
 - [ ] fix parser so that `#array` and `#map` can be removed
 - [ ] fix nested constant declarations
 
-# Optional / Later
+# Optional / Extra
 - [ ] utility (function + commandline) to generate C/C++ bindings from script
+- [ ] add flag `KAI_FLAG_CODEPOINT` to number expressions that came from `#char`
+- [ ] procedure arguments can have no type, then the type used will be the type of the next argument
+- [ ] declarations should be able to declare multiple names
 - [ ] errors should use an arena so that `destroy_error` can be removed
-- [ ] figure out how to do multi declaration statements `a, b, c: int;` (in AST)
+- [ ] remove unused `loop` keyword
 - [ ] remove `;` from case statements?
 - [ ] measure performance impact of `occupied` in hash table
 - [ ] add multi-line string literals
