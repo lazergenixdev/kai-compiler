@@ -172,8 +172,8 @@ _write_expression_name :: (writer: *Writer, expr: *Expr)
         case KAI_EXPR_STRING;         _write("string");
         case KAI_EXPR_NUMBER;         _write("number");
         case KAI_EXPR_LITERAL;        _write("literal");
-        case KAI_EXPR_UNARY;          _write("unary");
-        case KAI_EXPR_BINARY;         _write("binary");
+        case KAI_EXPR_UNARY;          _write("expression");
+        case KAI_EXPR_BINARY;         _write("expression");
         case KAI_EXPR_PROCEDURE_TYPE; _write("procedure type");
         case KAI_EXPR_PROCEDURE_CALL; _write("procedure call");
         case KAI_EXPR_PROCEDURE;      _write("procedure");
@@ -1015,23 +1015,27 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 case KAI_SPECIAL_TYPE; {
                     out_value.type = context.type_type;
                     [expected_type] = context.type_type;
+                    s.this_type = context.type_type;
                     ret false;
                 }
                 case KAI_SPECIAL_NUMBER; {
                     out_value.type = context.number_type;
                     [expected_type] = context.type_type;
+                    s.this_type = context.type_type;
                     ret false;
                 }
                 case KAI_SPECIAL_TRUE; {
                     if out_value != null
                         out_value.u8 = 1;
                     [expected_type] = context.bool_type;
+                    s.this_type = context.bool_type;
                     ret false;
                 }
                 case KAI_SPECIAL_FALSE; {
                     if out_value != null
                         out_value.u8 = 0;
                     [expected_type] = context.bool_type;
+                    s.this_type = context.bool_type;
                     ret false;
                 }
             }
@@ -1209,6 +1213,42 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     kai__todo("need to implement (left type id: %i)", lt.id);
                 }
                 }
+            }
+            case #multi "["; {
+                if out_value != null
+                    ret _error_fatal(context, STRING("value not implemented for index operation"));
+
+                lt: *Type_Info = null;
+                if _value_of_expr(context, b.left, null, *lt)
+                    ret true;
+
+                if lt.id != KAI_TYPE_ID_POINTER
+                    ret _error_fatal(context, STRING("left side of index is not a pointer"));
+
+                pt: *Type_Info_Pointer = cast lt;
+
+                rt: *Type_Info;
+                if _value_of_expr(context, b.right, null, *rt)
+                    ret true;
+
+                if rt.id == {
+                    case KAI_TYPE_ID_INTEGER; #through;
+                    case KAI_TYPE_ID_NUMBER; {
+                        // good
+                    }
+                    case; {
+                        ret _error_fatal(context, STRING("must index by a integer value"));
+                    }
+                }
+
+                if [expected_type] == null {
+                    [expected_type] = pt.sub_type;
+                }
+                else if [expected_type] != pt.sub_type
+                    ret _error_type_check(context, expr, [expected_type], pt.sub_type);
+
+                b.this_type = pt.sub_type;
+                ret false;
             }
             }
 

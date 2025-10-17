@@ -125,7 +125,8 @@ memory_fill :: (dst: *void, byte: u8, size: u32)
 #export string_from_c :: (s: cstring) -> string
 {
     count: u32;
-    //while (s[count] != 0) count += 1;
+    while s[count] != 0
+        count += 1;
     ret {count = count, data = s->*u8};
 }
 

@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20251017155150 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20251017170639 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -5013,9 +5013,9 @@ KAI_INTERNAL void kai__write_expression_name(Kai_Writer* writer, Kai_Expr* expr)
         break; case KAI_EXPR_LITERAL:
         kai__write("literal");
         break; case KAI_EXPR_UNARY:
-        kai__write("unary");
+        kai__write("expression");
         break; case KAI_EXPR_BINARY:
-        kai__write("binary");
+        kai__write("expression");
         break; case KAI_EXPR_PROCEDURE_TYPE:
         kai__write("procedure type");
         break; case KAI_EXPR_PROCEDURE_CALL:
@@ -5834,12 +5834,14 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
                 {
                     out_value->type = context->type_type;
                     *expected_type = context->type_type;
+                    s->this_type = context->type_type;
                     return KAI_FALSE;
                 }
                 break; case KAI_SPECIAL_NUMBER:
                 {
                     out_value->type = context->number_type;
                     *expected_type = context->type_type;
+                    s->this_type = context->type_type;
                     return KAI_FALSE;
                 }
                 break; case KAI_SPECIAL_TRUE:
@@ -5847,6 +5849,7 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
                     if (out_value!=NULL)
                         out_value->u8 = 1;
                     *expected_type = context->bool_type;
+                    s->this_type = context->bool_type;
                     return KAI_FALSE;
                 }
                 break; case KAI_SPECIAL_FALSE:
@@ -5854,6 +5857,7 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
                     if (out_value!=NULL)
                         out_value->u8 = 0;
                     *expected_type = context->bool_type;
+                    s->this_type = context->bool_type;
                     return KAI_FALSE;
                 }
             }
@@ -6030,6 +6034,40 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
                             kai__todo("need to implement (left type id: %i)", lt->id);
                         }
                     }
+                }
+                break; case 91:
+                {
+                    if (out_value!=NULL)
+                        return kai__error_fatal(context, KAI_STRING("value not implemented for index operation"));
+                    Kai_Type_Info* lt = NULL;
+                    if (kai__value_of_expr(context, b->left, NULL, &lt))
+                        return KAI_TRUE;
+                    if (lt->id!=KAI_TYPE_ID_POINTER)
+                        return kai__error_fatal(context, KAI_STRING("left side of index is not a pointer"));
+                    Kai_Type_Info_Pointer* pt = (Kai_Type_Info_Pointer*)(lt);
+                    Kai_Type_Info* rt = 0;
+                    if (kai__value_of_expr(context, b->right, NULL, &rt))
+                        return KAI_TRUE;
+                    switch (rt->id)
+                    {
+                        break; case KAI_TYPE_ID_INTEGER:
+                        case KAI_TYPE_ID_NUMBER:
+                        {
+                        }
+                        break; default:
+                        {
+                            return kai__error_fatal(context, KAI_STRING("must index by a integer value"));
+                        }
+                    }
+                    if (*expected_type==NULL)
+                    {
+                        *expected_type = pt->sub_type;
+                    }
+                    else
+                    if (*expected_type!=pt->sub_type)
+                        return kai__error_type_check(context, expr, *expected_type, pt->sub_type);
+                    b->this_type = pt->sub_type;
+                    return KAI_FALSE;
                 }
             }
             Kai_Type_Info* lt = *expected_type;

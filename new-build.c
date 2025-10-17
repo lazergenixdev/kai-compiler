@@ -514,6 +514,14 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
             generate_expression(builder, b->left, TOP_PRECEDENCE, flags);
             sb_append(builder, ")");
         }
+        else if (b->op == '[')
+        {
+            sb_append(builder, "(");
+            generate_expression(builder, b->left, TOP_PRECEDENCE, flags);
+            sb_append(builder, ")[");
+            generate_expression(builder, b->right, TOP_PRECEDENCE, flags);
+            sb_append(builder, "]");
+        }
         else
         {
             sb_append(builder, "(");
