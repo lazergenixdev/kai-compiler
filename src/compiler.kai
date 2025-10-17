@@ -271,14 +271,6 @@ _error_not_declared :: (context: *Compiler_Context, location: Location) -> bool
     ret true;
 }
 
-_write_node :: (writer: *Writer, node: *Node, flags: Node_Flags)
-{
-    if flags & KAI_NODE_TYPE _write("type of \"");
-    else _write("value of \"");
-    _write_string(node.location.string);
-    _write("\"");
-}
-
 _error_circular_dependency :: (context: *Compiler_Context) -> bool
 {
     // NOTE: `current_node` is expected to be the root,
@@ -330,8 +322,6 @@ _error_circular_dependency :: (context: *Compiler_Context) -> bool
         prev_node = node;
     }
     context.debug_writer = temp;
-
-    kai__debug_print_stacktrace();
     ret true;
 }
 
@@ -364,6 +354,34 @@ _error_type_check :: (context: *Compiler_Context, expr: *Expr, expected: Type, g
     ret true;
 }
 
+_error_no_member :: (context: *Compiler_Context, type: Type, identifier: *Expr) -> bool
+{
+    location: Location = Location.{
+        source = context.current_source,
+        string = identifier.source_code,
+        line = identifier.line_number,
+    };
+
+    [context.error] = Error.{
+        result = KAI_ERROR_SEMANTIC,
+        location = location,
+    };
+    error_writer: Writer = writer_from_arena(*context.error_arena);
+    writer: *Writer = *error_writer;
+
+    message_offset: u32 = context.error_arena.buffer.count;
+    _write("type ");
+    write_type(writer, type);
+    _write(" has no member named \"");
+    _write_string(identifier.source_code);
+    _write("\"");
+    message_count: u32 = context.error_arena.buffer.count - message_offset;
+
+    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
+    //kai__debug_print_stacktrace();
+    ret true;
+}
+
 _error_host_import_not_found :: (context: *Compiler_Context, location: Location) -> bool
 {
     [context.error] = Error.{
@@ -378,6 +396,14 @@ _error_host_import_not_found :: (context: *Compiler_Context, location: Location)
     context.error.memory = _buffer_done(*buffer);
     context.error.message = _range_to_string(range, context.error.memory);
     ret true;
+}
+
+_write_node :: (writer: *Writer, node: *Node, flags: Node_Flags)
+{
+    if flags & KAI_NODE_TYPE _write("type of \"");
+    else _write("value of \"");
+    _write_string(node.location.string);
+    _write("\"");
 }
 
 _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
@@ -996,35 +1022,62 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     [expected_type] = context.type_type;
                     ret false;
                 }
+                case KAI_SPECIAL_TRUE; {
+                    if out_value != null
+                        out_value.u8 = 1;
+                    [expected_type] = context.bool_type;
+                    ret false;
+                }
+                case KAI_SPECIAL_FALSE; {
+                    if out_value != null
+                        out_value.u8 = 0;
+                    [expected_type] = context.bool_type;
+                    ret false;
+                }
             }
-            kai__todo("special value not implemented");
+            kai__todo("special value not implemented for %i", s.kind);
         }
 
         case KAI_EXPR_UNARY; {
             u: *Expr_Unary = cast expr;
 
-            et: *Type_Info;
-            if _value_of_expr(context, u.expr, out_value, *et)
+            expr_type: *Type_Info;
+            if _value_of_expr(context, u.expr, out_value, *expr_type)
                 ret true;
 
             if u.op == #char "*" {
-                if et.id == KAI_TYPE_ID_TYPE {
+                // Pointer to type
+                if expr_type.id == KAI_TYPE_ID_TYPE {
                     pt: *Type_Info_Pointer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Pointer));
                     pt.id = KAI_TYPE_ID_POINTER;
                     pt.sub_type = out_value.type;
-                    out_value.type = pt -> Type;
+                    if out_value != null
+                        out_value.type = pt -> Type;
                     [expected_type] = context.type_type;
+                    u.this_type = context.type_type;
                     ret false;
                 }
+                // Pointer to value
                 else {
                     kai__todo("pointer to value");
                 }
             }
 
+            if u.op == #char "[" {
+                if expr_type.id != KAI_TYPE_ID_POINTER
+                    ret _error_fatal(context, STRING("can only dereference pointers"));
+                pt: *Type_Info_Pointer = cast expr_type;
+                if out_value != null
+                    kai__todo("evaluate dereference");
+                [expected_type] = pt.sub_type;
+                u.this_type = pt.sub_type;
+                ret false;
+            }
+
             if out_value != null {
                 kai__todo("evaluate unary operator");
             }
-            [expected_type] = et;
+            [expected_type] = expr_type;
             ret false;
         }
 
@@ -1115,6 +1168,47 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
                 b.this_type = rv.type;
                 ret false;
+            }
+            case #multi "."; {
+                lt: *Type_Info;
+                if _value_of_expr(context, b.left, out_lv, *lt)
+                    ret true;
+
+                if lt.id == {
+                case KAI_TYPE_ID_TYPE; {
+                    rt: *Type_Info;
+                    if _value_of_expr(context, b.right, out_rv, *rt)
+                        ret true;
+                }
+                case KAI_TYPE_ID_POINTER; {
+                    pt: *Type_Info_Pointer = cast lt;
+                    type: *Type_Info = cast pt.sub_type;
+                    if type.id != KAI_TYPE_ID_STRUCT
+                        ret _error_fatal(context, STRING("must be pointer to struct in member access"));
+                    lt = type;
+                } #through;
+                case KAI_TYPE_ID_STRING; #through;
+                case KAI_TYPE_ID_STRUCT; {
+                    if b.right.id != KAI_EXPR_IDENTIFIER
+                        ret _error_fatal(context, STRING("must be identifer in struct access"));
+
+                    name: string = b.right.source_code;
+                    st: *Type_Info_Struct = cast lt;
+                    for i: 0..<st.fields.count {
+                        field: Struct_Field = st.fields.data[i];
+                        if string_equals(name, field.name) {
+                            [expected_type] = field.type;
+                            b.this_type = field.type;
+                            ret false;
+                        }
+                    }
+
+                    ret _error_no_member(context, lt, b.right);
+                }
+                case; {
+                    kai__todo("need to implement (left type id: %i)", lt.id);
+                }
+                }
             }
             }
 
@@ -1268,6 +1362,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             st.fields.data = arena_allocate(*context.type_allocator, sizeof(Struct_Field) * st.fields.count) -> *Struct_Field;
             st.size = 0;
 
+            // HACK
             node: *Node = *context.nodes.data[context.current_node.index];
             node.flags |= KAI_NODE_VALUE_EVALUATED;
             node.value.type = st -> Type;
@@ -1432,6 +1527,10 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
         case KAI_STMT_RETURN; {
             r: *Stmt_Return = cast expr;
+            if r.expr == null {
+                // TODO: need to make sure that function does not have a return
+                ret false;
+            }
             if _value_of_expr(context, r.expr, out_value, expected_type)
                 ret true;
             ret false;
@@ -1605,6 +1704,11 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type
                 case KAI_SPECIAL_NUMBER; #through;
                 case KAI_SPECIAL_TYPE; {
                     [out_type] = context.type_type;
+                    ret false;
+                }
+                case KAI_SPECIAL_TRUE; #through;
+                case KAI_SPECIAL_FALSE; {
+                    [out_type] = context.bool_type;
                     ret false;
                 }
             }
@@ -2068,6 +2172,7 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
 
 create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
 {
+    // context := defer create_context(info);
     context: Compiler_Context = Compiler_Context.{
         error = info.error,
         allocator = info.allocator,

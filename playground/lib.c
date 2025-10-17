@@ -43,6 +43,7 @@ void* _Heap_Allocate(void* user, void* ptr, Kai_u32 new_size, Kai_u32 old_size)
 	if (new_size > old_size) {
         // NOTE: allocated memory is set to zero by default
 		void* new_ptr = __env_allocate(new_size);
+        memset(new_ptr, 0, new_size);
 		if (ptr) {
 			memcpy(new_ptr, ptr, old_size);
 		}
@@ -60,7 +61,13 @@ void* _Platform_Allocate(void* user, void* ptr, Kai_u32 size, Kai_Memory_Command
 	return NULL;
 }
 
+void null_write(void* user, Kai_Write_Command command, Kai_Value value, Kai_Write_Format format)
+{
+    unused(user, command, value, format);    
+}
+
 static Kai_Writer div_writer = {
+	//.write = &null_write,
 	.write = &__env_write,
 };
 static Kai_Error error;
@@ -92,8 +99,8 @@ WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)
             .contents = (Kai_string){.count = count, .data = data}
         },
 	};
-	Kai_Result result = kai_create_syntax_tree(&info, &tree);
 
+	Kai_Result result = kai_create_syntax_tree(&info, &tree);
     if (result != KAI_SUCCESS) {
         kai_write_error(&div_writer, &error);
 	}

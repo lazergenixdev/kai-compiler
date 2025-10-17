@@ -42,11 +42,11 @@ min_u32 :: (a: u32, b: u32) -> u32
 gcd :: (a: u64, b: u64) -> u64
 {
     r: u64 = 1;
-    //while r != 0 {
-    //    r = a % b;
-    //    b = r;
-    //    a = b;
-    //}
+    while r != 0 {
+        r = a % b;
+        b = r;
+        a = b;
+    }
     ret r;
 }
 //ldexp :: #host_import;
@@ -60,8 +60,10 @@ add_with_shift :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
 
     if !carry ret sum;
 
-    //if sub { [exp] -= 1; }
-    //else   { [exp] += 1; }
+    if sub then
+        [exp] -= 1;
+    else
+        [exp] += 1;
     ret (1 << 63) | (sum >> 1);
 }
 
@@ -113,11 +115,11 @@ memory_fill :: (dst: *void, byte: u8, size: u32)
 
 #export string_equals :: (left: string, right: string) -> bool
 {
-    //if left.count != right.count ret false;
+    if left.count != right.count ret false;
     //for i: 0..<left.count {
     //    if left.data[i] != right.data[i] ret false;
     //}
-    //ret true;
+    ret true;
 }
 
 #export string_from_c :: (s: cstring) -> string
@@ -160,11 +162,12 @@ string_hash_next :: (hash: u64, s: string) -> u64
     data     : *void;
 }
 
-#export raw_array_reserve :: (array: *Raw_Dynamic_Array, new_capacity: u32, allocator: *Allocator, elem_size: u32)
+#export raw_array_reserve :: (array: *Raw_Dynamic_Array, allocator: *Allocator, new_capacity: u32, elem_size: u32)
 {    
-    //if new_capacity <= array.capacity ret;
+    if new_capacity <= array.capacity ret;
     //array.data = _allocate(array.data, new_capacity * elem_size, array.capacity * elem_size);
-    //array.capacity = new_capacity;
+    //array.data = null;
+    array.capacity = new_capacity;
 }
 
 #export Type_Info :: struct {

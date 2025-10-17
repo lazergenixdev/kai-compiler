@@ -3,8 +3,8 @@
 //         by searching for a matching identifier in the local scope
 example :: ()
 {
-    Allocator :: struct {}
-    allocate :: (allocator: Allocator, size: u32) { ret null; }
+    Allocator :: struct {};
+    allocate :: (allocator: Allocator, size: u32) { ret null; };
 
     allocator: Allocator = get_allocator();
 
@@ -61,6 +61,81 @@ example :: ()
 
     // do same as argument list?
     a, b: f32 = 10, 20; // #type(a) = #type(b)
+}
+
+// Idea: scope keyword, replaces defer
+example :: ()
+{
+    value = 1;
+    {
+        scope {value = 3} : {value = 1};
+        print(value); // print 3
+    }
+    print(value); // print 1
+
+    // ------------------------------------------------------------------------------
+
+    open_file :: (filename: string) -> File
+        defer close_file
+    {
+        // ...
+    }
+
+    close_file :: (file: File)
+    {
+        // ...
+    }
+
+    {
+        file := defer open_file("a.txt");
+
+        write(file, "hello");
+
+        // file gets closed automatically
+    }
+
+    // ------------------------------------------------------------------------------
+
+    // Change the meaning of defer to always be attached to functions
+    
+    // but with `{}` it works like in other languages
+
+    defer { print("bye!"); }
+
+    mutex_lock :: (mutex: Mutex, timeout: f64 = #infinity)
+        defer mutex_unlock
+    {
+        // ...
+    }
+
+    mutex_unlock :: (mutex: Mutex)
+    {
+        // ...
+    }
+
+    mutex: Mutex = create_mutex();
+
+    {
+        // When defining a variable, defer will match on the procedure return type.
+        // But when used as a statement, defer will match on the procedure arguments.
+        defer mutex_lock(mutex);
+
+        // thread unsafe code here ...
+
+        // mutex gets unlocked on scope end
+    }
+
+    // AFTER TYPE CHECK
+    {
+        file := open_file("a.txt");
+        write(file, "hello");
+        close_file(file);
+    }
+    {
+        mutex_lock(mutex);
+        // ...
+        mutex_unlock(mutex);
+    }
 }
 
 example :: ()

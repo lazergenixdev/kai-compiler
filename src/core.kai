@@ -1699,11 +1699,14 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write(" \"");
             _set_color(KAI_WRITE_COLOR_IMPORTANT);
             if s.kind == {
-                case KAI_SPECIAL_EVAL_TYPE; _write("type"); // #type
-                case KAI_SPECIAL_EVAL_SIZE; _write("size"); // #size
-                case KAI_SPECIAL_TYPE; _write("Type"); // #Type
-                case KAI_SPECIAL_NUMBER; _write("Number"); // #Number
-                case KAI_SPECIAL_CODE; _write("Code"); // #Code
+                case KAI_SPECIAL_EVAL_TYPE; _write("type");
+                case KAI_SPECIAL_EVAL_SIZE; _write("size");
+                case KAI_SPECIAL_TYPE;      _write("Type");
+                case KAI_SPECIAL_NUMBER;    _write("Number");
+                case KAI_SPECIAL_CODE;      _write("Code");
+                case KAI_SPECIAL_TRUE;      _write("true");
+                case KAI_SPECIAL_FALSE;     _write("false");
+                case KAI_SPECIAL_NULL;      _write("null");
             }
             _set_color(KAI_WRITE_COLOR_DEFAULT);
             _write("\"\n");
@@ -1794,7 +1797,8 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             r: *Stmt_Return = cast expr;
             _write_expr_id_with_name(writer, STRING("return"), expr);
             _write("\n");
-            _explore(r.expr, true);
+            if r.expr != null
+                _explore(r.expr, true);
         }
         case KAI_STMT_DECLARATION; {
             d: *Stmt_Declaration = cast expr;

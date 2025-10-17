@@ -299,7 +299,7 @@ int main(int argc, char** argv)
     if (strcmp(argv[-1], "version") == 0)
     {
         Kai_string version = kai_version_string();
-        printf("\x1b[1;97mKai v%.*s\x1b[0;90m (build %s)\x1b[0m\n",
+        printf("\x1b[1;97mKai %.*s\x1b[0;90m (build %s)\x1b[0m\n",
             (int)(version.count), version.data, S2(KAI_BUILD_DATE));
         exit(0);
     }

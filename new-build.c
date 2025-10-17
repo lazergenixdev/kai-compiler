@@ -476,6 +476,15 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
         }
         sb_append(builder, "}");
     }
+    break;case KAI_EXPR_SPECIAL: {
+        Kai_Expr_Special* s = (Kai_Expr_Special*)expr;
+        switch (s->kind)
+        {
+            break;case KAI_SPECIAL_TRUE:  sb_append(builder, "KAI_TRUE");
+            break;case KAI_SPECIAL_FALSE: sb_append(builder, "KAI_FALSE");
+            break;default:                sb_append(builder, "SPECIAL");
+        }
+    }
     break;case KAI_EXPR_UNARY: {
         Kai_Expr_Unary* u = (Kai_Expr_Unary*)expr;
         if (flags&GE_TYPE) {
@@ -484,8 +493,15 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
             da_append(builder, '*');
         }
         else {
-            sb_appendf(builder, "%c", u->op);
-            generate_expression(builder, u->expr, TOP_PRECEDENCE, flags);
+            if (u->op == '[') {
+                sb_append(builder, "*(");
+                generate_expression(builder, u->expr, TOP_PRECEDENCE, flags);
+                sb_append(builder, ")");
+            }
+            else {
+                sb_appendf(builder, "%c", u->op);
+                generate_expression(builder, u->expr, TOP_PRECEDENCE, flags);
+            }
         }
     }
     break;case KAI_EXPR_BINARY: {
@@ -502,10 +518,10 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
         {
             sb_append(builder, "(");
             generate_expression(builder, b->left, TOP_PRECEDENCE, flags);
-            //if (b->op == '.' && b->left->this_type->id == KAI_TYPE_ID_POINTER) {
-            //    sb_append(builder, "->");
-            //}
-            //else
+            if (b->op == '.' && b->left->this_type->id == KAI_TYPE_ID_POINTER) {
+                sb_append(builder, "->");
+            }
+            else
             sb_append(builder, map_binary_operator(b->op));
             generate_expression(builder, b->right, TOP_PRECEDENCE, flags);
             sb_append(builder, ")");
@@ -853,9 +869,12 @@ int main(int argc, char** argv)
         load_source_file("src/new-core.kai"),
     };
     Kai_Type_Info cstring_type = {.id = 0x80};
-    Kai_Import imports[2+4] = {
+    Kai_Import imports[5+4] = {
         {.name = KAI_CONST_STRING("BUILD_DATE"), .type = KAI_CONST_STRING("u64"),   .value = {.u64 = current_build_date}},
         {.name = KAI_CONST_STRING("cstring"),    .type = KAI_CONST_STRING("#Type"), .value = {.type = &cstring_type}},
+        {.name = KAI_CONST_STRING("true"),       .type = KAI_CONST_STRING("bool"),  .value = {.u8 = 1}},
+        {.name = KAI_CONST_STRING("false"),      .type = KAI_CONST_STRING("bool"),  .value = {.u8 = 0}},
+        {.name = KAI_CONST_STRING("null"),       .type = KAI_CONST_STRING("*void"), .value = {0}},
     };
     forn (len(g_macros)) {
         if (kai_string_equals(g_macros[i].import.name, KAI_STRING("VERSION_STRING"))) {
@@ -865,7 +884,7 @@ int main(int argc, char** argv)
 				g_macros[i].value = KAI_STRING("\"" MACRO_EXPSTR(VERSION_MAJOR) "." MACRO_EXPSTR(VERSION_MINOR) "." MACRO_EXPSTR(VERSION_PATCH) " " VERSION_EXTRA "\"");
             g_macros[i].import.value.string = g_macros[i].value;
         }
-        imports[2+i] = g_macros[i].import;
+        imports[5+i] = g_macros[i].import;
     }
     Kai_Error error = {0};
     Kai_Program_Create_Info program_ci = {
@@ -932,7 +951,7 @@ int main(int argc, char** argv)
     cmd_append(&cmd, "clang", "-Wall", "-Wextra");
     cmd_append(&cmd, "-Wall", "-Wextra", "-pedantic");
     cmd_append(&cmd, "-Wno-unused-parameter");
-    cmd_append(&cmd, "-o new-kai");
+    cmd_append(&cmd, "-o", "new-kai");
     cmd_append(&cmd, "test.c");
     cmd_run_sync_and_reset(&cmd);
 

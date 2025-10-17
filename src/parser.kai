@@ -26,11 +26,14 @@ Expr_Id :: enum u8 {
 }
 
 Special_Kind :: enum u8 {
-    SPECIAL_EVAL_TYPE   = 0; // #type
-    SPECIAL_EVAL_SIZE   = 1; // #size
-    SPECIAL_TYPE        = 2; // #Type
-    SPECIAL_NUMBER      = 3; // #Number
-    SPECIAL_CODE        = 4; // #Code
+    SPECIAL_TRUE        = 0; // true
+    SPECIAL_FALSE       = 1; // false
+    SPECIAL_NULL        = 2; // null
+    SPECIAL_EVAL_TYPE   = 3; // #type
+    SPECIAL_EVAL_SIZE   = 4; // #size
+    SPECIAL_TYPE        = 5; // #Type
+    SPECIAL_NUMBER      = 6; // #Number
+    SPECIAL_CODE        = 7; // #Code
 }
 
 Control_Kind :: enum u8 {
@@ -222,67 +225,36 @@ Stmt_List :: LINKED_LIST(Stmt);
 
 // Keywords
 
-_keyword_map: [32] u8 = .{
-    8, // if
-    10, // ret
-    1, // case
-    14, // while
-    4, // defer
-    8, // if
-    8, // if
-    8, // if
-    13, // using
-    8, // if
-    12, // union
-    8, // if
-    0, // break
-    9, // loop
-    8, // if
-    8, // if
-    3, // continue
-    2, // cast
-    8, // if
-    6, // enum
-    5, // else
-    11, // struct
-    7, // for
-    8, // if
-    8, // if
-    8, // if
-    8, // if
-    8, // if
-    8, // if
-    8, // if
-    8, // if
-    8, // if
-};
-
-_keywords: [15] string = .{
-    CONST_STRING("break"),
-    CONST_STRING("case"),
-    CONST_STRING("cast"),
-    CONST_STRING("continue"),
-    CONST_STRING("defer"),
-    CONST_STRING("else"),
-    CONST_STRING("enum"),
-    CONST_STRING("for"),
+_keywords: [18] string = .{
     CONST_STRING("if"),
-    CONST_STRING("loop"),
-    CONST_STRING("ret"),
     CONST_STRING("struct"),
-    CONST_STRING("union"),
     CONST_STRING("using"),
+    CONST_STRING("defer"),
+    CONST_STRING("null"),
+    CONST_STRING("false"),
+    CONST_STRING("then"),
+    CONST_STRING("enum"),
+    CONST_STRING("continue"),
+    CONST_STRING("else"),
     CONST_STRING("while"),
+    CONST_STRING("union"),
+    CONST_STRING("for"),
+    CONST_STRING("break"),
+    CONST_STRING("cast"),
+    CONST_STRING("case"),
+    CONST_STRING("ret"),
+    CONST_STRING("true"),
 };
 
-_hash_keyword :: (s: string) -> u32 {
-    h: u32 = 0;
-    i: u32 = 0;
-    while i < 8 && i < s.count {
-        h = ((h << 4) + h) + s.data[i] + #char "a";
-        i += 1;
-    }
-    ret h % 27;
+_keyword_hash :: (kw: string) -> u32 {
+    hash: u32 = 0;
+    if (0 < kw.count) hash |= ((kw.data[0] >> 2) & 1) << 2; // d
+    if (1 < kw.count) hash |= ((kw.data[1] >> 3) & 1) << 3; // c
+    if (2 < kw.count) hash |= ((kw.data[2] >> 3) & 1) << 1; // e
+    if (2 < kw.count) hash |= ((kw.data[2] >> 2) & 1) << 4; // b
+    if (2 < kw.count) hash |= ((kw.data[2]) & 1) << 5; // a
+    if (3 < kw.count) hash |= ((kw.data[3]) & 1); // f
+    ret hash % 18;
 }
 
 // Tokenizer
@@ -295,21 +267,24 @@ Token_Id :: enum u32 {
     TOKEN_TAG        = 4;
     TOKEN_STRING     = 5;
     // ASCII [33, 126] 
-    TOKEN_break      = 0x80;
-    TOKEN_case       = 0x81;
-    TOKEN_cast       = 0x82;
-    TOKEN_continue   = 0x83; // ? rename to skip
-    TOKEN_defer      = 0x84;
-    TOKEN_else       = 0x85;
-    TOKEN_enum       = 0x86;
-    TOKEN_for        = 0x87;
-    TOKEN_if         = 0x88;
-    TOKEN_loop       = 0x89;
-    TOKEN_ret        = 0x8A;
-    TOKEN_struct     = 0x8B;
-    TOKEN_union      = 0x8C;
-    TOKEN_using      = 0x8D;
-    TOKEN_while      = 0x8E;
+    TOKEN_if         = 0x80;
+    TOKEN_struct     = 0x81;
+    TOKEN_using      = 0x82;
+    TOKEN_defer      = 0x83;
+    TOKEN_null       = 0x84;
+    TOKEN_false      = 0x85;
+    TOKEN_then       = 0x86;
+    TOKEN_enum       = 0x87;
+    TOKEN_continue   = 0x88;
+    TOKEN_else       = 0x89;
+    TOKEN_while      = 0x8A;
+    TOKEN_union      = 0x8B;
+    TOKEN_for        = 0x8C;
+    TOKEN_break      = 0x8D;
+    TOKEN_cast       = 0x8E;
+    TOKEN_case       = 0x8F;
+    TOKEN_ret        = 0x90;
+    TOKEN_true       = 0x91;
     // multi-characters [0xFF, ..]
 }
 
@@ -377,12 +352,15 @@ token_string :: (id: Token_Id, dst: string) -> string
     case KAI_TOKEN_enum; ret string_copy_from_c(dst, "'enum'");
     case KAI_TOKEN_for; ret string_copy_from_c(dst, "'for'");
     case KAI_TOKEN_if; ret string_copy_from_c(dst, "'if'");
-    case KAI_TOKEN_loop; ret string_copy_from_c(dst, "'loop'");
     case KAI_TOKEN_ret; ret string_copy_from_c(dst, "'ret'");
     case KAI_TOKEN_struct; ret string_copy_from_c(dst, "'struct'");
     case KAI_TOKEN_union; ret string_copy_from_c(dst, "'union'");
     case KAI_TOKEN_using; ret string_copy_from_c(dst, "'using'");
     case KAI_TOKEN_while; ret string_copy_from_c(dst, "'while'");
+    case KAI_TOKEN_null; ret string_copy_from_c(dst, "'null'");
+    case KAI_TOKEN_false; ret string_copy_from_c(dst, "'false'");
+    case KAI_TOKEN_then; ret string_copy_from_c(dst, "'then'");
+    case KAI_TOKEN_true; ret string_copy_from_c(dst, "'true'");
     case;
         dst.data[0] = #char "'";
         i: u32 = 0;
@@ -546,7 +524,7 @@ _token_lookup_table: [128] u8 = .{
    _G,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 4
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, _T, _T, _T, _T,  0, // 5
    _T,  0, _K, _K, _K, _K, _K,  0,  0, _K,  0,  0, _K,  0,  0,  0, // 6
-    0,  0, _K, _K,  0, _K,  0, _K,  0,  0,  0, _T, _T, _T, _T, _W, // 7
+    0,  0, _K, _K, _K, _K,  0, _K,  0,  0,  0, _T, _T, _T, _T, _W, // 7
 };
 
 _tokenizer_advance_to_identifier_end :: (context: *Tokenizer)
@@ -675,10 +653,9 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
             token.string.count = context.cursor - start;
 
             // Check if the string we just parsed is a keyword
-            hash: u32 = _hash_keyword(token.string);
-            keyword_index: u8 = _keyword_map[hash];
-            if string_equals(_keywords[keyword_index], token.string) {
-                token.id = 0x80 | keyword_index;
+            index: u32 = _keyword_hash(token.string);
+            if string_equals(_keywords[index], token.string) {
+                token.id = 0x80 | index;
                 ret token;
             }
             ret token;
@@ -1249,6 +1226,23 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
     case KAI_TOKEN_NUMBER;     left = _parser_create_number(parser, [current]);
     case KAI_TOKEN_STRING;     left = _parser_create_string(parser, [current]);
     ///////////////////////////////////////////////////////////////////////////////////////////////
+    // Special
+    case KAI_TOKEN_true; #through;
+    case KAI_TOKEN_false; #through;
+    case KAI_TOKEN_null; #through; {
+        if current.id == {
+            case KAI_TOKEN_true; {
+                left = _parser_create_special(parser, [current], KAI_SPECIAL_TRUE);
+            }
+            case KAI_TOKEN_false; {
+                left = _parser_create_special(parser, [current], KAI_SPECIAL_FALSE);
+            }
+            case KAI_TOKEN_null; {
+                left = _parser_create_special(parser, [current], KAI_SPECIAL_NULL);
+            }
+        }
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Parenthesis
     case #char "("; {
         tokenizer_next(*parser.tokenizer);
@@ -1418,7 +1412,6 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         }
         else if (string_equals(current.value.string, STRING("Julie")))
         {
-            current.string = STRING("\"<3\"");
             current.value.string = STRING("<3");
             left = _parser_create_string(parser, [current]);
         }
@@ -1876,6 +1869,9 @@ parse_statement :: (parser: *Parser) -> *Stmt
         _expect(expr, "in if statement", "should be an expression here");
         _next_token();
         flags: u8 = 0;
+        if current.id == KAI_TOKEN_then {
+            _next_token();
+        }
         if current.id == #multi "==" {
             _next_token();
             flags |= KAI_FLAG_IF_CASE;

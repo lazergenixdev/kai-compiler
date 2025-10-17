@@ -119,3 +119,7 @@ void kai__debug_print_stacktrace(void) {
 void kai__debug_print_stacktrace(void) {}
 #endif
 
+#if !defined(KAI_PLATFORM_WASM)
+#define __env_console_log(...) (void)0
+#endif
+
