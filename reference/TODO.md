@@ -20,12 +20,12 @@
 - [ ] fix crash on circular dependencies on types
 
 # Optional / Extra
+- [x] remove unused `loop` keyword
 - [ ] utility (function + commandline) to generate C/C++ bindings from script
 - [ ] add flag `KAI_FLAG_CODEPOINT` to number expressions that came from `#char`
 - [ ] procedure arguments can have no type, then the type used will be the type of the next argument
 - [ ] declarations should be able to declare multiple names
 - [ ] errors should use an arena so that `destroy_error` can be removed
-- [ ] remove unused `loop` keyword
 - [ ] remove `;` from case statements?
 - [ ] measure performance impact of `occupied` in hash table
 - [ ] add multi-line string literals

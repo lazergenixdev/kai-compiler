@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20251017170639 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20251018215908 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -420,7 +420,9 @@ enum {
     KAI_TYPE_ID_ENUM = 9,
     KAI_TYPE_ID_STRING = 10,
     KAI_TYPE_ID_NUMBER = 11,
-    KAI_TYPE_ID_UNSIGNED_INTEGER = 12,
+    KAI_TYPE_ID_TYPELESS_POINTER = 12,
+    KAI_TYPE_ID_TYPELESS_UNSIGNED_INTEGER = 12,
+    KAI_TYPE_ID_TYPELESS_NUMBER = 13,
 };
 
 struct Kai_Type_Info {
@@ -6022,6 +6024,8 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
                                 Kai_Struct_Field field = ((st->fields).data)[i];
                                 if (kai_string_equals(name, field.name))
                                 {
+                                    if (*expected_type!=NULL&&*expected_type!=field.type)
+                                        return kai__error_type_check(context, expr, *expected_type, field.type);
                                     *expected_type = field.type;
                                     b->this_type = field.type;
                                     return KAI_FALSE;
@@ -6414,6 +6418,26 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
                 return KAI_TRUE;
             if (kai__value_of_expr(context, w->body, NULL, expected_type))
                 return KAI_TRUE;
+            return KAI_FALSE;
+        }
+        break; case KAI_STMT_FOR:
+        {
+            Kai_Stmt_For* f = (Kai_Stmt_For*)(expr);
+            kai_assert(f->from!=NULL);
+            kai_assert(f->to!=NULL);
+            Kai_Expr_Binary b_expr = ((Kai_Expr_Binary){.id = KAI_EXPR_BINARY, .op = 60, .left = f->from, .right = f->to});
+            Kai_Type_Info* type = 0;
+            if (kai__value_of_expr(context, (Kai_Expr*)(&b_expr), NULL, &type))
+                return KAI_TRUE;
+            Kai_Allocator* allocator = &context->allocator;
+            Kai_Node_Reference ref = ((Kai_Node_Reference){.flags = KAI_NODE_LOCAL, .index = (context->local_nodes).count});
+            kai_array_push(&context->local_nodes, ((Kai_Local_Node){.type = (f->from)->this_type, .location = ((Kai_Location){.string = f->iterator_name, .line = f->line_number})}));
+            kai_array_push(&context->scopes, ((Kai_Scope){0}));
+            Kai_Scope* scope = &kai_array_last(&context->scopes);
+            kai_table_set(&scope->identifiers, f->iterator_name, ref);
+            if (kai__value_of_expr(context, f->body, NULL, expected_type))
+                return KAI_TRUE;
+            kai_array_pop(&context->scopes);
             return KAI_FALSE;
         }
         break; default:

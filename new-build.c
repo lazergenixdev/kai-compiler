@@ -30,10 +30,12 @@ typedef void (*Expr_Visitor)(String_Builder* builder, Kai_Expr* expr);
 // TODO: remove this
 typedef enum {
 	Identifier_Type_Invalid,
-	Identifier_Type_Macro,    // KAI_
-	Identifier_Type_Type,     // Kai_
-	Identifier_Type_Struct,   // Kai_
-	Identifier_Type_Function, // kai_
+	Identifier_Type_Macro,             // KAI_
+	Identifier_Type_Type,              // Kai_
+	Identifier_Type_Struct,            // Kai_
+	Identifier_Type_Function,          // kai_
+	Identifier_Type_Internal_Type,     // Kai__
+	Identifier_Type_Internal_Function, // kai__
 } Identifier_Type;
 
 typedef struct {
@@ -207,7 +209,7 @@ void generate_zero_value(String_Builder* builder, Kai_Type type)
         case KAI_TYPE_ID_STRING:
         case KAI_TYPE_ID_ARRAY:
         case KAI_TYPE_ID_STRUCT: {
-            sb_append(builder, "string");
+            sb_append(builder, "{0}");
         }
         break;default: {
             sb_appendf(builder, "[todo zero value %i]", type->id);
@@ -231,6 +233,10 @@ void generate_type(String_Builder* builder, Kai_Type type, Kai_u32 flags)
             Kai_Type_Info_Integer* info = (Kai_Type_Info_Integer*)type;
             sb_appendf(builder, "%s%u", info->is_signed? "s" : "u", info->bits);
         }
+        break;case KAI_TYPE_ID_FLOAT: {
+            Kai_Type_Info_Float* info = (Kai_Type_Info_Float*)type;
+            sb_appendf(builder, "f%u", info->bits);
+        }
         break;case KAI_TYPE_ID_POINTER: {
             Kai_Type_Info_Pointer* info = (Kai_Type_Info_Pointer*)type;
             generate_type(builder, info->sub_type, flags);
@@ -245,6 +251,9 @@ void generate_type(String_Builder* builder, Kai_Type type, Kai_u32 flags)
         }
         break;case KAI_TYPE_ID_STRING: {
             sb_append(builder, "string");
+        }
+        break;case KAI_TYPE_ID_STRUCT: {
+            sb_append(builder, "STRUCT");
         }
         break;default: {
             sb_appendf(builder, "[todo %i]", type->id);
@@ -325,6 +334,11 @@ void generate_procedure_definition(String_Builder* builder, Kai_Expr* expr)
     sb_append_null(&def);
 
     shput(g_function_def_cache, cstr(name), def.items);
+
+    Kai_bool api = KAI_BOOL(d->flags & KAI_FLAG_DECL_EXPORT);
+    shput(g_identifier_map, cstr(name),
+        api ? Identifier_Type_Function : Identifier_Type_Internal_Function);
+
     if (d->flags & KAI_FLAG_DECL_EXPORT)
         sb_appendf(builder, "%s;\n", def.items);
 }
@@ -333,14 +347,14 @@ const char* map_binary_operator(Kai_u32 op)
 {
     switch (op)
     {
-    case '<':  return "<";
-    case '>':  return ">";
-    case '+':  return "+";
-    case '-':  return "-";
-    case '*':  return "*";
-    case '/':  return "/";
-    case '%':  return "%";
-    case '.':  return ".";
+    case '<': return "<";
+    case '>': return ">";
+    case '+': return "+";
+    case '-': return "-";
+    case '*': return "*";
+    case '/': return "/";
+    case '%': return "%";
+    case '.': return ".";
 	case '&': return "&";
 	case '^': return "^";
 	case '|': return "|";
@@ -352,9 +366,9 @@ const char* map_binary_operator(Kai_u32 op)
     case KAI_MULTI('>', '=',,): return ">=";
     case KAI_MULTI('<', '<',,): return "<<";
     case KAI_MULTI('>', '>',,): return ">>";
-    case KAI_MULTI('-', '>',,): return NULL; // special case
-    case '[': return NULL; // special case
-    default:   return "BINOP";
+    case KAI_MULTI('-', '>',,): return "CAST"; // special case
+    case '[': return "INDEX"; // special case
+    default:  return "BINOP";
     }
 }
 
@@ -396,6 +410,11 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
         kai__debug_print_stacktrace();
     }
     ASSERT(expr != NULL);
+    if (expr->tag != NULL) // keep?
+    {
+        if (kai_string_equals(expr->tag->name, KAI_STRING("const")))
+            sb_append(builder, "const ");
+    }
 	switch (expr->id)
 	{
 	break;case KAI_EXPR_IDENTIFIER: {
@@ -414,10 +433,12 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
         const char* name = cstr(expr->source_code);
         Identifier_Type identifier_type = shget(g_identifier_map, name);
         switch (identifier_type) {
-        break;case Identifier_Type_Macro:    prefix = "KAI_";
-        break;case Identifier_Type_Function: prefix = "kai_";
-        break;case Identifier_Type_Type:     prefix = "Kai_";
-        break;case Identifier_Type_Struct:   prefix = "Kai_";
+        break;case Identifier_Type_Macro:             prefix = "KAI_";
+        break;case Identifier_Type_Type:              prefix = "Kai_";
+        break;case Identifier_Type_Struct:            prefix = "Kai_";
+        break;case Identifier_Type_Function:          prefix = "kai_";
+        break;case Identifier_Type_Internal_Type:     prefix = "Kai__";
+        break;case Identifier_Type_Internal_Function: prefix = "kai__";
         break;default: {
             if (flags & GE_TYPE)
                 prefix = "Kai_";
@@ -526,14 +547,24 @@ void generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, Kai_
         {
             sb_append(builder, "(");
             generate_expression(builder, b->left, TOP_PRECEDENCE, flags);
-            if (b->op == '.' && b->left->this_type->id == KAI_TYPE_ID_POINTER) {
+            if (b->op == '.' && b->left->this_type->id == KAI_TYPE_ID_POINTER)
                 sb_append(builder, "->");
-            }
-            else
-            sb_append(builder, map_binary_operator(b->op));
+            else sb_append(builder, map_binary_operator(b->op));
             generate_expression(builder, b->right, TOP_PRECEDENCE, flags);
             sb_append(builder, ")");
         }
+    }
+    break;case KAI_EXPR_PROCEDURE_CALL: {
+        Kai_Expr_Procedure_Call* p = (Kai_Expr_Procedure_Call*)expr;
+        generate_expression(builder, p->proc, TOP_PRECEDENCE, flags);
+        sb_append(builder, "(");
+		for (Kai_Expr* current = p->arg_head; current != NULL; current = current->next)
+        {
+            generate_expression(builder, current, TOP_PRECEDENCE, flags);
+            if (current->next != NULL)
+                sb_append(builder, ",");
+        }
+        sb_append(builder, ")");
     }
     break;default: {
         sb_appendf(builder, "[expr (%i)]", expr->id);
@@ -720,7 +751,7 @@ void generate_procedure_typedef(String_Builder* builder, Kai_Expr* expr)
             generate_expression(builder, current, TOP_PRECEDENCE, GE_TYPE);
         }
         else sb_append(builder, "void");
-        sb_appendf(builder, " Kai_%s(", cstr(d->name));
+        sb_appendf(builder, " (*Kai_%s)(", cstr(d->name));
         Kai_Expr* current = p->in_out_expr;
         forn (p->in_count) {
             generate_expression(builder, current, TOP_PRECEDENCE, GE_TYPE);
@@ -877,12 +908,12 @@ int main(int argc, char** argv)
         load_source_file("src/new-core.kai"),
     };
     Kai_Type_Info cstring_type = {.id = 0x80};
-    Kai_Import imports[5+4] = {
+    shput(g_identifier_map, "ldexp", Identifier_Type_Internal_Function);
+    Kai_Import imports[4+4] = {
         {.name = KAI_CONST_STRING("BUILD_DATE"), .type = KAI_CONST_STRING("u64"),   .value = {.u64 = current_build_date}},
         {.name = KAI_CONST_STRING("cstring"),    .type = KAI_CONST_STRING("#Type"), .value = {.type = &cstring_type}},
-        {.name = KAI_CONST_STRING("true"),       .type = KAI_CONST_STRING("bool"),  .value = {.u8 = 1}},
-        {.name = KAI_CONST_STRING("false"),      .type = KAI_CONST_STRING("bool"),  .value = {.u8 = 0}},
         {.name = KAI_CONST_STRING("null"),       .type = KAI_CONST_STRING("*void"), .value = {0}},
+        {.name = KAI_CONST_STRING("ldexp"),      .type = KAI_CONST_STRING("(f64,s32)->f64"), .value = {0}},
     };
     forn (len(g_macros)) {
         if (kai_string_equals(g_macros[i].import.name, KAI_STRING("VERSION_STRING"))) {
@@ -892,7 +923,7 @@ int main(int argc, char** argv)
 				g_macros[i].value = KAI_STRING("\"" MACRO_EXPSTR(VERSION_MAJOR) "." MACRO_EXPSTR(VERSION_MINOR) "." MACRO_EXPSTR(VERSION_PATCH) " " VERSION_EXTRA "\"");
             g_macros[i].import.value.string = g_macros[i].value;
         }
-        imports[5+i] = g_macros[i].import;
+        imports[4+i] = g_macros[i].import;
     }
     Kai_Error error = {0};
     Kai_Program_Create_Info program_ci = {
@@ -916,7 +947,7 @@ int main(int argc, char** argv)
 	sb_append(&builder, "#ifndef KAI__H\n#define KAI__H\n\n");
 	sb_append(&builder, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n");
 	sb_append(&builder,
-		"#include <stdio.h>\n" // TODO: only dev builds
+		"#include <stdio.h>\n"  // TODO: only dev builds
 		"#include <stdlib.h>\n" // TODO: only dev builds
 		"#include <stdint.h>\n"
 		"#include <stddef.h>\n");

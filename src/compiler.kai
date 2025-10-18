@@ -1201,6 +1201,8 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     for i: 0..<st.fields.count {
                         field: Struct_Field = st.fields.data[i];
                         if string_equals(name, field.name) {
+                            if [expected_type] != null && [expected_type] != field.type
+                                ret _error_type_check(context, expr, [expected_type], field.type);
                             [expected_type] = field.type;
                             b.this_type = field.type;
                             ret false;
@@ -1654,6 +1656,46 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 ret true;
             if _value_of_expr(context, w.body, null, expected_type)
                 ret true;
+            ret false;
+        }
+
+        case KAI_STMT_FOR; {
+            f: *Stmt_For = cast expr;
+
+            assert(f.from != null);
+            assert(f.to != null);
+
+            // HACK (logic is very similar to binary comparisons, so reuse same logic)
+            b_expr: Expr_Binary = Expr_Binary.{
+                id = KAI_EXPR_BINARY,
+                op = #char "<",
+                left = f.from,
+                right = f.to,
+            };
+            type: *Type_Info;
+            if _value_of_expr(context, *b_expr -> *Expr, null, *type)
+                ret true;
+
+            allocator: *Allocator = *context.allocator;
+            ref: Node_Reference = Node_Reference.{
+                flags = KAI_NODE_LOCAL,
+                index = context.local_nodes.count,
+            };
+            array_push(*context.local_nodes, Local_Node.{
+                type = f.from.this_type,
+                location = Location.{
+                    string = f.iterator_name,
+                    line = f.line_number
+                },
+            });
+            array_push(*context.scopes, Scope.{});
+            scope: *Scope = *array_last(*context.scopes);
+            table_set(*scope.identifiers, f.iterator_name, ref);
+
+            if _value_of_expr(context, f.body, null, expected_type)
+                ret true;
+
+            array_pop(*context.scopes);
             ret false;
         }
 

@@ -136,6 +136,28 @@ example :: ()
         // ...
         mutex_unlock(mutex);
     }
+
+    arr := [..] int.{1, 2, 3, 4};
+    defer { array_free(&arr); }
+
+}
+
+// Idea: Procedure for converting value into a byte slice
+example :: ()
+{
+    Data :: struct {
+        name: string;
+        id: u32;
+        num1: u32;
+        num2: f32;
+    };
+
+    data: Data = get_data();
+
+    // #bytes gives you a `[] u8`
+    for byte: #bytes(data) {
+        libc.printf("%02x ", byte);
+    }
 }
 
 example :: ()
