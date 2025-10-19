@@ -6,3 +6,4 @@ if [ ! -f "build" ]; then
 fi
 
 alias kai=./bin/kai
+alias build=./build
