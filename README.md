@@ -1,7 +1,20 @@
 # Kai Scripting Language
 AOT data-oriented scripting language designed for embedding, without sacrificing performance.
 
-[Preview online now!](https://lazergenixdev.github.io/kai-compiler/playground/)
+> [!WARNING]
+> This library is still in development! Do not expect things to just work (yet!)
+
+## [Preview online now!](https://lazergenixdev.github.io/kai-compiler/playground/)
+
+```odin
+print :: #host_import;
+
+#export
+main :: () -> int {
+    print("Example Program!");
+    ret 0;
+}
+```
 
 ## Features
 ✅ Header only stb-style C library with no external dependencies \
