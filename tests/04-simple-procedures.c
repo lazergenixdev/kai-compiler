@@ -4,10 +4,6 @@ void check_procedure(Kai_Program* program, Kai_string name)
 {
     void* proc = kai_find_procedure(program, name, (Kai_string){});
     assert_true(proc != NULL);
-    
-    Kai_Expr* expr = *(Kai_Expr**)proc;
-    assert_true(expr != NULL);
-    assert_true(expr->id == KAI_EXPR_PROCEDURE);
 }
 
 int main()

@@ -75,8 +75,8 @@ example :: ()
 
     // ------------------------------------------------------------------------------
 
-    open_file :: (filename: string) -> File
-        defer close_file
+    open_file :: (filename: string) -> (file: File)
+        defer close_file(file)
     {
         // ...
     }
@@ -103,7 +103,7 @@ example :: ()
     defer { print("bye!"); }
 
     mutex_lock :: (mutex: Mutex, timeout: f64 = #infinity)
-        defer mutex_unlock
+        defer mutex_unlock(mutex)
     {
         // ...
     }
@@ -140,6 +140,29 @@ example :: ()
     arr := [..] int.{1, 2, 3, 4};
     defer { array_free(&arr); }
 
+    arena: Arena;
+
+    arena_temp :: (arena: *Arena, size: u32) -> *void
+        defer arena_rewind(arena, arena_checkpoint(arena))
+    {
+        // ...
+    }
+
+    scratch := defer arena_temp(*arena, 100);
+    // ...
+}
+
+// Idea: Import scopes
+example :: ()
+{
+    #import "base"; // just import will create namespace in current scope
+    using #import "base"; // with 'using' will place all names in current scope
+    b :: #import "base"; // declaration will rename the namespace
+    
+    // Maybe have different types of import?
+    #import "builtin"; // default to module
+    #import module "builtin";
+    #import file "../utils.kai";
 }
 
 // Idea: Procedure for converting value into a byte slice
@@ -368,6 +391,24 @@ array :: [] int;   // `[]` is not a valid expression
 array :: [..] int; // `[..]` is also not a valid expression
 
 // Too soon to think about macros
-macro :: (code: #Code, expr: #Code) #expand {
-    expr = code;
+macro :: #macro (code: #Code, expr: #Code) {
+    #insert expr = #insert code;
 }
+
+generics :: (map: [K] $T, key: $K) ->  {
+    i := table_find(*map, key);
+    ret map.values[i];
+}
+
+// Explicit overloading like in Odin?
+remove :: #overload {
+    array_remove,
+    table_remove,
+}
+
+// The default type for numbers is
+s32
+// unless the value cannot fit, then it will be
+s64
+// if the value has a fractional part, then it will be
+f32

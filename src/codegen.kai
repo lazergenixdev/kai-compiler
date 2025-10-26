@@ -1,0 +1,128 @@
+// TODO: backend shouldn't be public API
+
+Backend :: enum u32 {
+    AST    = 0;
+    ARM    = 1;
+    ARM64  = 2;
+    x86    = 3;
+    x86_64 = 4;
+}
+
+Condition :: enum u8 {
+    EQ = 0b0000;
+    NE = 0b0001;
+    CS = 0b0010;
+    CC = 0b0011;
+    MI = 0b0100;
+    PL = 0b0101;
+    VS = 0b0110;
+    VC = 0b0111;
+    HI = 0b1000;
+    LS = 0b1001;
+    GE = 0b1010;
+    LT = 0b1011;
+    GT = 0b1100;
+    LE = 0b1101;
+    AL = 0b1110;
+    NV = 0b1111;
+}
+
+// TODO: need some way to pick current architecture
+Assembler :: struct {
+    backend: Backend;
+    allocator: *Allocator;
+    code: [..] u32;
+    stack_index: u32;
+}
+
+asm_create_label :: (assembler: *Assembler) -> u32
+{
+    ret assembler.code.count * 4;
+}
+asm_relative_location :: (label_from: u32, label_to: u32) -> s32
+{
+    ret (label_to>>2)->s32 - (label_from>>2)->s32;
+}
+asm_insert_jump :: (assembler: *Assembler, condition: u32, relative: s32) -> u32
+{
+    if assembler.backend <= 0 ret 0;
+    allocator: *Allocator = assembler.allocator;
+    label: u32 = assembler.code.count * 4;
+    array_push(*assembler.code, _arm64_b(relative, condition));
+    ret label;
+}
+asm_modify_jump :: (assembler: *Assembler, label: u32, relative: s32)
+{
+    if assembler.backend <= 0 ret;
+    // NOTE: assumes relative was 0 when jump was first created
+    assembler.code.data[label/4] |= _arm64_b(relative, 0);
+}
+asm_insert_ret :: (assembler: *Assembler)
+{
+    if assembler.backend <= 0 ret;
+    allocator: *Allocator = assembler.allocator;
+    array_push(*assembler.code, _arm64_ret());
+}
+asm_insert_load_constant :: (assembler: *Assembler, value: u64)
+{
+    if assembler.backend <= 0 ret;
+    allocator: *Allocator = assembler.allocator;
+    array_push(*assembler.code, _arm64_movz(0, (value)->u16, 0));
+    value = value >> 16;
+    while value != 0 {
+        array_push(*assembler.code, _arm64_movk(0, value->u16, 1));
+        value = value >> 16;
+    }
+}
+asm_insert_stack_load :: (assembler: *Assembler, index: u32, reg: u32)
+{
+    if assembler.backend <= 0 ret;
+    allocator: *Allocator = assembler.allocator;
+    array_push(*assembler.code, _arm64_ldr(31, reg, -index*8));
+}
+asm_insert_stack_store :: (assembler: *Assembler, index: u32, reg: u32)
+{
+    if assembler.backend <= 0 ret;
+    allocator: *Allocator = assembler.allocator;
+    array_push(*assembler.code, _arm64_str(31, reg, -index*8));
+}
+asm_insert_add :: (assembler: *Assembler, dst: u32, a: u32, b: u32)
+{
+    if assembler.backend <= 0 ret;
+    allocator: *Allocator = assembler.allocator;
+    array_push(*assembler.code, _arm64_add(dst, a, b, 1));
+}
+asm_insert_sub :: (assembler: *Assembler, dst: u32, a: u32, b: u32)
+{
+    if assembler.backend <= 0 ret;
+    allocator: *Allocator = assembler.allocator;
+    array_push(*assembler.code, _arm64_sub(dst, a, b, 1));
+}
+asm_insert_cmp :: (assembler: *Assembler, a: u32, b: u32)
+{
+    if assembler.backend <= 0 ret;
+    allocator: *Allocator = assembler.allocator;
+    array_push(*assembler.code, _arm64_cmp(a, b, 1));
+}
+asm_insert_test :: (assembler: *Assembler, reg: u32)
+{
+    if assembler.backend <= 0 ret;
+    allocator: *Allocator = assembler.allocator;
+    array_push(*assembler.code, _arm64_tst_1(reg, 1));
+}
+
+_arm64_add    :: (Rd: u32, Rn: u32, Rm: u32, sf: u8) -> u32 { ret (sf << 31) | (0b0001011 << 24) | (Rn << 5) | (Rm << 16) | Rd; }
+_arm64_sub    :: (Rd: u32, Rn: u32, Rm: u32, sf: u8) -> u32 { ret (sf << 31) | (0b1001011 << 24) | (Rn << 5) | (Rm << 16) | Rd; }
+_arm64_subs   :: (imm12: u32, Rn: u32, sf: u8)       -> u32 { ret (sf << 31) | (0b11100010 << 23) | (imm12 << 10) | (Rn << 5) | 0b11111; }
+_arm64_cmp    :: (Rm: u32, Rn: u32, sf: u8)          -> u32 { ret (sf << 31) | (0b1101011 << 24) | (Rm << 16) | (Rn << 5) | 0b11111; }
+_arm64_tst_1  :: (Rn: u32, sf: u8)                   -> u32 { ret (sf << 31) | (0b111001001 << 22) | (Rn << 5) | 0b11111; }
+_arm64_mov    :: (Rd: u32, Rs: u32, sf: u8)          -> u32 { ret sizeof(Rd, Rs, sf); }
+_arm64_movz   :: (Rd: u32, imm16: u16, sf: u8)       -> u32 { ret (sf << 31) | (0b10100101 << 23) | (imm16 << 5) | Rd; }
+_arm64_movk   :: (Rd: u32, imm16: u16, shift: u8)    -> u32 { ret (0b111100101 << 23) | ((shift & 0x3) << 21) | (imm16 << 5) | Rd; }
+_arm64_bl     :: (imm26: s32)                        -> u32 { ret (0b100101 << 26) | (imm26 & 0x3FFFFFF); }
+_arm64_b      :: (imm19: s32, cond: u8)              -> u32 { ret (0b01010100 << 24) | ((imm19&0x7FFFF) << 5) | cond; }
+_arm64_str_12 :: (Rn: u32, Rt: u32, offset12: u16)   -> u32 { ret (0b1111100100 << 22) | (offset12 << 10) | (Rn << 5) | Rt; } // Rn: base, Rt: reg
+_arm64_ldr_12 :: (Rn: u32, Rt: u32, offset12: u16)   -> u32 { ret (0b1111100101 << 22) | (offset12 << 10) | (Rn << 5) | Rt; } // Rn: base, Rt: reg
+_arm64_str    :: (Rn: u32, Rt: u32, offset9: s16)    -> u32 { ret (0b11111000000 << 21) | ((offset9&0b111111111)->u32 << 12) | (Rn << 5) | Rt; } // Rn: base, Rt: reg
+_arm64_ldr    :: (Rn: u32, Rt: u32, offset9: s16)    -> u32 { ret (0b11111000010 << 21) | ((offset9&0b111111111)->u32 << 12) | (Rn << 5) | Rt; } // Rn: base, Rt: reg
+_arm64_ret    :: ()                                  -> u32 { ret 0xd65f03c0; }

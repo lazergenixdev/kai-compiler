@@ -19,6 +19,7 @@ main :: () -> int {
 ## Features
 ✅ Header only stb-style C library with no external dependencies \
 ✅ Strict static type checking \
+✅ Zero runtime overhead \
 ✅ Modern programming features (slices, defer, ...)
 
 # Usage

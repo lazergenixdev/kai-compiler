@@ -64,9 +64,8 @@ void help_parse()
 }
 
 #define COMPILE_NO_PRINT     (1<<0)
-#define COMPILE_NO_CODE_GEN  (1<<1)
-#define COMPILE_OUTPUT_TREE  (1<<2)
-#define COMPILE_DEBUG        (1<<3)
+#define COMPILE_OUTPUT_TREE  (1<<1)
+#define COMPILE_DEBUG        (1<<2)
 void help_compile()
 {
     printf(
@@ -76,7 +75,22 @@ void help_compile()
         "   -d, --debug          Enable debug printing\n"
         "   -p, --no-print       Do not print compilation results\n"
         "   -t, --tree           Print type-checked syntax tree\n"
-        "   -c, --no-code-gen    Do not generate machine code\n"
+        "\n"
+        "OPTIONS:\n"
+        "   -D, --define         Define a host import\n"
+        "                        <NAME>:<TYPE>:<VALUE>\n"
+        "\n"
+    );
+}
+
+#define RUN_DEBUG (1<<0)
+void help_run()
+{
+    printf(
+        "Usage: kai run [FLAGS] [OPTIONS] <files...>\n"
+        "\n"
+        "FLAGS:\n"
+        "   -d, --debug          Enable debug printing\n"
         "\n"
         "OPTIONS:\n"
         "   -D, --define         Define a host import\n"
@@ -92,9 +106,10 @@ int help(int argc, char** argv)
         for (int i = 0; i < argc; ++i)
         {
             if (argv[i][0] == '-') continue;
-            if (strcmp(argv[i], "token") == 0)   { help_token(); continue; }
-            if (strcmp(argv[i], "parse") == 0)   { help_parse(); continue; }
+            if (strcmp(argv[i], "token"  ) == 0) { help_token();   continue; }
+            if (strcmp(argv[i], "parse"  ) == 0) { help_parse();   continue; }
             if (strcmp(argv[i], "compile") == 0) { help_compile(); continue; }
+            if (strcmp(argv[i], "run"    ) == 0) { help_run();     continue; }
             printf("no help info for \"%s\"\n", argv[i]);
         }
         return 1;
@@ -108,9 +123,10 @@ int help(int argc, char** argv)
         "      token     Tokenize file\n"
         "      parse     Parse file\n"
         "      compile   Compile file\n"
+        "      run       Run file\n"
         "      bind      Generate host language bindings\n"
         "\n"
-        "Examples:\n"
+        "More help:\n"
         "    kai help <command>\n"
         "\n"
     );
@@ -228,7 +244,7 @@ int compile(int argc, char** argv)
     {
         if (parse_options & COMPILE_OUTPUT_TREE)
         {
-            kai_write_expression(writer, (Kai_Expr*)&program.code.trees.data[0].root, 0);
+            kai_write_expression(writer, (Kai_Expr*)&program.trees.data[0].root, 0);
         }
         else
         {
@@ -251,6 +267,48 @@ int compile(int argc, char** argv)
 	if (error.result != KAI_SUCCESS) {
 		kai_write_error(writer, &error);
 	}
+	return error.result != KAI_SUCCESS;
+}
+
+int run(int argc, char** argv)
+{
+    Kai_u32 parse_options = 0;
+    Kai_s32 source_start = -1;
+    for (int i = 0; i < argc; ++i) {
+        if (argv[i][0] == '-') {
+            // -> Possible Flag
+            if (strcmp(argv[i]+1, "d") == 0) parse_options |= COMPILE_DEBUG;
+        }
+        else {
+            source_start = i;
+            break;
+        }
+    }
+    if (source_start < 0) return error_no_source_provided();
+    Kai_Error error = {0};
+	Kai_Program program = {0};
+    Kai_Source source = load_source_file(argv[source_start]);
+    Kai_Program_Create_Info info = {
+        .allocator = allocator,
+        .error = &error,
+        .sources = { .count = 1, .data = &source },
+        .debug_writer = (parse_options & COMPILE_DEBUG) ? writer : NULL,
+    };
+    kai_create_program(&info, &program);
+
+	if (error.result != KAI_SUCCESS) {
+		kai_write_error(writer, &error);
+	}
+    else {
+        typedef Kai_s64 (*Main)();
+        Main main_proc = (Main)kai_find_procedure(&program, KAI_STRING("main"), KAI_STRING("()"));
+        if (main_proc == NULL) {
+            nob_log(ERROR, "Could not find main procedure");
+            return 1;
+        }
+        Kai_s64 return_value = main_proc();
+        printf("main exited with code %lli\n", return_value);
+    }
 	return error.result != KAI_SUCCESS;
 }
 
@@ -291,6 +349,7 @@ int main(int argc, char** argv)
     if (strcmp(argv[-1], "token"  ) == 0) return token(argc, argv);
     if (strcmp(argv[-1], "parse"  ) == 0) return parse(argc, argv);
     if (strcmp(argv[-1], "compile") == 0) return compile(argc, argv);
+    if (strcmp(argv[-1], "run"    ) == 0) return run(argc, argv);
     if (strcmp(argv[-1], "bind"   ) == 0) return bind(argc, argv);
     if (strcmp(argv[-1], "help"   ) == 0
     ||  strcmp(argv[-1], "--help" ) == 0
@@ -303,5 +362,5 @@ int main(int argc, char** argv)
             (int)(version.count), version.data, S2(KAI_BUILD_DATE));
         exit(0);
     }
-    return help(0, 0);
+    return run(argc + 1, argv - 1);
 }

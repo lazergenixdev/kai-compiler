@@ -1,0 +1,6 @@
+
+u128 :: #builtin;
+
+#export u128_multiply        :: (a: u64, b: u64) -> u128 #builtin;
+#export count_leading_zeros  :: (x: u64) -> u32          #builtin;
+#export count_trailing_zeros :: (x: u64) -> u32          #builtin;

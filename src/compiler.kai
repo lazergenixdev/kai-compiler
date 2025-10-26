@@ -40,10 +40,9 @@ Variable :: struct {
 
 Program :: struct {
     data            : [..] u8; // All exported variables are stored here
-    code: union {
-        machine     : [] u8; // Machine code
-        trees       : [] Syntax_Tree;
-    };
+    backend         : Backend;
+    code            : [] u8;
+    trees           : [] Syntax_Tree;
     procedure_table : [string] u32;
     variable_table  : [string] Variable;
     type_table      : [string] Type;
@@ -78,12 +77,14 @@ Node :: struct {
     location:     Location;
     value_expr:  *Expr;       // d : type : [value];
     type_expr:   *Expr;       // d : [type] : value;
+    decl:        *Expr;
     flags:        Node_Flags;
 }
 
 Local_Node :: struct {
-    type:     *Type_Info;
-    location:  Location;
+    type:       *Type_Info;
+    location:    Location;
+    stack_index: u32;
 }
 
 Scope :: struct {
@@ -118,23 +119,35 @@ _Builtin_Type_ID :: enum u8 {
 }
 
 Compiler_Context :: struct {
-    error:                 *Error; // TODO: set to the last error in chain?
-    error_arena:            Growing_Arena;
+    // Memory management
     allocator:              Allocator;
-    program:               *Program;
-    options:                Compile_Options;
-    scopes:                 [..] Scope;
-    nodes:                  [..] Node;
-    local_nodes:            [..] Local_Node;
-    imports:                [] Import;
+    error_arena:            Growing_Arena;
     type_allocator:         Arena_Allocator;
     temp_allocator:         Arena_Allocator;
-    current_source:         Source;
-    current_node:           Node_Reference;
-    current_dependencies:   [..] Node_Reference;
-    builtin_types:          [] Type; // TODO: need fixed size arrays
 
-    // TEMP
+    // Global context
+    error:                 *Error; // TODO: set to the last error in chain?
+    program:               *Program;
+    options:                Compile_Options;
+    imports:                [] Import;
+    builtin_types:          [] Type; // TODO: need fixed size arrays
+    nodes:                  [..] Node;
+    local_nodes:            [..] Local_Node;
+    trees:                  [] Syntax_Tree;
+    type_cache:             [string] Type;
+    scopes:                 [..] Scope;
+
+    // Info about what is currently being compiled
+    current_node:           Node_Reference;
+    current_source:         Source;
+    current_dependencies:   [..] Node_Reference;
+
+    // Code Generation
+    assembler:              Assembler;
+    stack_index:            u32;
+    last_variable_index:    u32;
+
+    // TODO: use builtin types
     number_type:           *Type_Info;
     string_type:           *Type_Info;
     type_type:             *Type_Info;
@@ -146,15 +159,15 @@ Compiler_Context :: struct {
 _create_syntax_trees :: (context: *Compiler_Context, sources: [] Source) -> bool
 {
     allocator: *Allocator = *context.allocator;
-    context.program.code.trees.data = _allocate(null, sources.count * sizeof(Syntax_Tree), 0) -> *Syntax_Tree;
-    context.program.code.trees.count = sources.count;
+    context.trees.data = _allocate(null, sources.count * sizeof(Syntax_Tree), 0) -> *Syntax_Tree;
+    context.trees.count = sources.count;
     for i: 0..<sources.count {
         info: Syntax_Tree_Create_Info = Syntax_Tree_Create_Info.{
             source = sources[i],
             allocator = context.allocator,
             error = context.error,
         };
-        if create_syntax_tree(*info, *array_last(*context.program.code.trees)) != KAI_SUCCESS
+        if create_syntax_tree(*info, *array_last(*context.trees)) != KAI_SUCCESS
             ret true;
     }
     ret false;
@@ -182,7 +195,9 @@ _write_expression_name :: (writer: *Writer, expr: *Expr)
         case KAI_EXPR_STRUCT;         _write("struct");
         case KAI_EXPR_ENUM;           _write("enum");
         case KAI_EXPR_ARRAY;          _write("array");
-        case KAI_EXPR_SPECIAL;        _write("special");
+        case KAI_EXPR_SPECIAL; {
+            _write_string(expr.source_code);
+        }
         case;                         _write("UNKNOWN");
     }
 }
@@ -267,7 +282,7 @@ _error_not_declared :: (context: *Compiler_Context, location: Location) -> bool
     message_count: u32 = context.error_arena.buffer.count - message_offset;
 
     context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
-    kai__debug_print_stacktrace();
+    //kai__debug_print_stacktrace();
     ret true;
 }
 
@@ -416,6 +431,16 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
     allocator: *Allocator = *context.allocator;
 
     if expr.id == {
+    case KAI_EXPR_IMPORT; {
+        writer: *Writer = context.debug_writer;
+        if writer != null {
+            _write("import: \"");
+            _write_string(expr.name);
+            _write("\"\n");
+        }
+        
+        kai__todo("what's an import again?");
+    }
     case KAI_STMT_DECLARATION; {
         d: *Stmt_Declaration = cast expr;
 
@@ -443,7 +468,7 @@ _create_nodes :: (context: *Compiler_Context, expr: *Expr) -> bool
         // Push node onto scope
         {
             reference: Node_Reference = Node_Reference.{index = context.nodes.count};
-            node: Node = Node.{location = location, value_expr = d.value, type_expr = d.type};
+            node: Node = Node.{location = location, value_expr = d.value, type_expr = d.type, decl = expr};
 
             if d.flags & KAI_FLAG_DECL_HOST_IMPORT
             {
@@ -514,8 +539,8 @@ _generate_nodes :: (context: *Compiler_Context) -> bool
         ret true;
 
     // Insert nodes from syntax tree
-    for i: 0..<context.program.code.trees.count {
-        tree: *Syntax_Tree = *context.program.code.trees.data[i];
+    for i: 0..<context.trees.count {
+        tree: *Syntax_Tree = *context.trees.data[i];
         context.current_source = tree.source;
         current: *Stmt = tree.root.head;
         while current {
@@ -654,7 +679,7 @@ _generate_builtin_types :: (context: *Compiler_Context) -> bool
     context.string_type = string_type -> Type;
     context.builtin_types.data[KAI_BUILTIN_STRING] = string_type -> Type;
 
-    for i: 0..<context.builtin_types.count {
+    /*for i: 0..<context.builtin_types.count {
         type: Type = context.builtin_types.data[i];
         writer: *Writer = context.debug_writer;
         if writer != null {
@@ -664,7 +689,7 @@ _generate_builtin_types :: (context: *Compiler_Context) -> bool
             write_type(writer, type);
             _write("\n");
         }
-    }
+    }*/
 
     ret false;
 }
@@ -810,10 +835,14 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     ret _error_fatal(context, STRING("cannot get value of a local node"));
                 local_node: *Local_Node = *context.local_nodes.data[ref.index];
                 node_type = local_node.type;
+                if out_value == null {
+                    asm_insert_stack_load(*context.assembler, local_node.stack_index, 0);
+                }
+                context.last_variable_index = local_node.stack_index;
             }
             else {
                 node: *Node = *context.nodes.data[ref.index];
-                if (node.flags & KAI_NODE_EVALUATED) != KAI_NODE_EVALUATED {
+                if !(node.flags & KAI_NODE_TYPE_EVALUATED) {
                     if writer != null {
                         _write(" - this compilation depends on ");
                         _write_node_ref(context, ref);
@@ -823,7 +852,18 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     ret true;
                 }
                 node_type = node.type;
-                node_value = node.value;
+                if out_value != null {
+                    if !(node.flags & KAI_NODE_VALUE_EVALUATED) {
+                        if writer != null {
+                            _write(" - this compilation depends on ");
+                            _write_node_ref(context, ref);
+                            _write("\n");
+                        }
+                        _add_dependency(context, ref);
+                        ret true;
+                    }
+                    node_value = node.value;
+                }
             }
 
             if node_type == null {
@@ -849,11 +889,25 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
         case KAI_EXPR_NUMBER; {
             n: *Expr_Number = cast expr;
             if out_value == null {
+                asm_insert_load_constant(*context.assembler, number_to_u64(n.value));
                 if [expected_type] == null {
                     [expected_type] = context.number_type;
                     n.this_type = context.number_type;
                 }
                 else {
+                    type: *Type_Info = [expected_type];
+                    if type.id == {
+                        case KAI_TYPE_ID_INTEGER;
+                        case KAI_TYPE_ID_FLOAT;
+                        case KAI_TYPE_ID_NUMBER;
+                        case; {
+                            if writer != null {
+                                write_type(writer, type);
+                                _write("\n");
+                            }
+                            ret _error_fatal(context, STRING("invalid number"));
+                        }
+                    }
                     n.this_type = [expected_type];
                 }
                 ret false;
@@ -961,13 +1015,14 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
         case KAI_EXPR_STRING; {
             s: *Expr_String = cast expr;
-            expected: Type = [expected_type];
-            if expected != context.string_type
-                ret _error_type_check(context, expr, expected, context.string_type);
+            if [expected_type] == null {
+                [expected_type] = context.string_type;
+            }
+            else if [expected_type] != context.string_type
+                ret _error_type_check(context, expr, [expected_type], context.string_type);
             if out_value != null {
                 [out_value] = Value.{string = s.value};
             }
-            [expected_type] = context.string_type;
             s.this_type = context.string_type;
             ret false;
         }
@@ -981,7 +1036,8 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             if _value_of_expr(context, a.expr, *ev, *et)
                 ret true;
 
-            assert(et.id == KAI_TYPE_ID_TYPE);
+            if et.id != KAI_TYPE_ID_TYPE
+                ret _error_type_check(context, a.expr, context.type_type, et);
                 
             rv: Value;
             if a.rows != null {
@@ -1003,6 +1059,9 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     kai__todo("array type, type inside rows");
                 }
             }
+            else {
+                kai__todo("need a slice type");
+            }
             // TODO: use cols for matrices
             [out_value] = Value.{type = type};
             [expected_type] = context.type_type;
@@ -1011,77 +1070,97 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
         
         case KAI_EXPR_SPECIAL; {
             s: *Expr_Special = cast expr;
+            type: *Type_Info;
             if s.kind == {
                 case KAI_SPECIAL_TYPE; {
-                    out_value.type = context.type_type;
-                    [expected_type] = context.type_type;
-                    s.this_type = context.type_type;
-                    ret false;
+                    if out_value != null
+                        out_value.type = context.type_type;
+                    type = context.type_type;
                 }
                 case KAI_SPECIAL_NUMBER; {
-                    out_value.type = context.number_type;
-                    [expected_type] = context.type_type;
-                    s.this_type = context.type_type;
-                    ret false;
+                    if out_value != null
+                        out_value.type = context.number_type;
+                    type = context.type_type;
                 }
                 case KAI_SPECIAL_TRUE; {
                     if out_value != null
                         out_value.u8 = 1;
-                    [expected_type] = context.bool_type;
-                    s.this_type = context.bool_type;
-                    ret false;
+                    type = context.bool_type;
                 }
                 case KAI_SPECIAL_FALSE; {
                     if out_value != null
                         out_value.u8 = 0;
-                    [expected_type] = context.bool_type;
-                    s.this_type = context.bool_type;
-                    ret false;
+                    type = context.bool_type;
+                }
+                case; {
+                    kai__todo("special value not implemented for %i", s.kind);
                 }
             }
-            kai__todo("special value not implemented for %i", s.kind);
+            if [expected_type] == null {
+                [expected_type] = type;
+            }
+            else if [expected_type] != type
+                ret _error_type_check(context, expr, [expected_type], type);
+            s.this_type = type;
+            ret false;
         }
 
         case KAI_EXPR_UNARY; {
             u: *Expr_Unary = cast expr;
 
-            expr_type: *Type_Info;
-            if _value_of_expr(context, u.expr, out_value, *expr_type)
-                ret true;
-
-            if u.op == #char "*" {
-                // Pointer to type
-                if expr_type.id == KAI_TYPE_ID_TYPE {
-                    pt: *Type_Info_Pointer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Pointer));
-                    pt.id = KAI_TYPE_ID_POINTER;
-                    pt.sub_type = out_value.type;
+            if u.op == {
+                case #char "*"; {
+                    // TODO: type checking is incomplete
+                    expr_type: *Type_Info;
+                    if _value_of_expr(context, u.expr, out_value, *expr_type)
+                        ret true;
+                        
+                    // Pointer to type
+                    if expr_type.id == KAI_TYPE_ID_TYPE {
+                        pt: *Type_Info_Pointer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Pointer));
+                        pt.id = KAI_TYPE_ID_POINTER;
+                        pt.sub_type = out_value.type;
+                        if out_value != null
+                            out_value.type = pt -> Type;
+                        [expected_type] = context.type_type;
+                        u.this_type = context.type_type;
+                        ret false;
+                    }
+                    // Pointer to value
+                    else {
+                        pt: *Type_Info_Pointer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Pointer));
+                        pt.id = KAI_TYPE_ID_POINTER;
+                        pt.sub_type = expr_type;
+                        if out_value != null
+                            kai__todo("evaluate pointer to value");
+                        [expected_type] = pt -> Type;
+                        u.this_type = pt -> Type;
+                        ret false;
+                    }
+                }
+                case #char "["; {
+                    expr_type: *Type_Info;
+                    if _value_of_expr(context, u.expr, out_value, *expr_type)
+                        ret true;
+                    if expr_type.id != KAI_TYPE_ID_POINTER
+                        ret _error_fatal(context, STRING("can only dereference pointers"));
+                    pt: *Type_Info_Pointer = cast expr_type;
                     if out_value != null
-                        out_value.type = pt -> Type;
-                    [expected_type] = context.type_type;
-                    u.this_type = context.type_type;
+                        kai__todo("evaluate dereference");
+                    [expected_type] = pt.sub_type;
+                    u.this_type = pt.sub_type;
                     ret false;
                 }
-                // Pointer to value
-                else {
-                    kai__todo("pointer to value");
-                }
             }
 
-            if u.op == #char "[" {
-                if expr_type.id != KAI_TYPE_ID_POINTER
-                    ret _error_fatal(context, STRING("can only dereference pointers"));
-                pt: *Type_Info_Pointer = cast expr_type;
-                if out_value != null
-                    kai__todo("evaluate dereference");
-                [expected_type] = pt.sub_type;
-                u.this_type = pt.sub_type;
-                ret false;
-            }
-
+            expr_type: *Type_Info = [expected_type];
+            if _value_of_expr(context, u.expr, out_value, *expr_type)
+                ret true;
             if out_value != null {
                 kai__todo("evaluate unary operator");
             }
             [expected_type] = expr_type;
+            u.this_type = expr_type;
             ret false;
         }
 
@@ -1123,29 +1202,51 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             case #multi ">="; {
                 expected: *Type_Info = [expected_type];
                 if expected != null && expected.id != KAI_TYPE_ID_BOOLEAN
-                    ret _error_fatal(context, STRING("must expect bool here"));
+                    ret _error_type_check(context, expr, expected, context.bool_type);
 
                 lt: *Type_Info;
                 rt: *Type_Info;
+
+                start: u32 = context.assembler.code.count;
+                left_first: bool = true;
 
                 if _value_of_expr(context, b.left, out_lv, *lt)
                     ret true;
 
                 if lt.id == KAI_TYPE_ID_NUMBER {
+                    left_first = false;
+                    context.assembler.code.count = start;
                     if _value_of_expr(context, b.right, out_rv, *rt)
                         ret true;
+                    context.stack_index += 1;
+                    asm_insert_stack_store(*context.assembler, context.stack_index, 0);
                     lt = rt;
                     if _value_of_expr(context, b.left, out_lv, *lt)
                         ret true;
+                    asm_insert_stack_load(*context.assembler, context.stack_index, 1);
+                    context.stack_index -= 1;
                 }
                 else {
+                    context.stack_index += 1;
+                    asm_insert_stack_store(*context.assembler, context.stack_index, 0);
                     rt = lt;
                     if _value_of_expr(context, b.right, out_rv, *rt)
                         ret true;
+                    asm_insert_stack_load(*context.assembler, context.stack_index, 1);
+                    context.stack_index -= 1;
                 }
 
                 if lt != rt
-                    ret _error_fatal(context, STRING("types no match, comparison"));
+                    ret _error_fatal(context, STRING("types no match, boolean comparison"));
+
+                if left_first
+                    asm_insert_cmp(*context.assembler, 1, 0);
+                else
+                    asm_insert_cmp(*context.assembler, 0, 1);
+                
+                // eor x0, x0, x0
+                // cinc x0, x0, <cond>
+                //asm_insert_bool_from_condition(*context.assembler, KAI_CONDITION_EQ);
 
                 [expected_type] = context.bool_type;
                 b.this_type = context.bool_type;
@@ -1168,7 +1269,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 }
 
                 if [expected_type] != rv.type
-                    ret _error_fatal(context, STRING("cast invalid"));
+                    ret _error_type_check(context, expr, [expected_type], rv.type);
 
                 b.this_type = rv.type;
                 ret false;
@@ -1257,30 +1358,50 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             lt: *Type_Info = [expected_type];
             rt: *Type_Info = [expected_type];
 
+            start: u32 = context.assembler.code.count;
+            left_first: bool = true;
+
             if _value_of_expr(context, b.left, out_lv, *lt)
                 ret true;
 
-            if _value_of_expr(context, b.right, out_rv, *rt)
-                ret true;
-
-            if lt != rt {
-                // TODO: number => concrete type (except shift)
-                if lt.id == KAI_TYPE_ID_NUMBER {
-                    // rt => Number
-                    if _value_to_number(rv, rt, *rv.number)
-                        ret _error_fatal(context, STRING("cannot convert value to number"));
-
-                    rt = context.number_type;
-                }
-                else if rt.id == KAI_TYPE_ID_NUMBER {
-                    // lt => Number
-                    if _value_to_number(lv, lt, *lv.number)
-                        ret _error_fatal(context, STRING("cannot convert value to number"));
-
-                    lt = context.number_type;
-                }
-                else _error_fatal(context, STRING("invalid binary expression [todo]"));
+            if lt.id == KAI_TYPE_ID_NUMBER {
+                left_first = false;
+                context.assembler.code.count = start;
+                if _value_of_expr(context, b.right, out_rv, *rt)
+                    ret true;
+                context.stack_index += 1;
+                asm_insert_stack_store(*context.assembler, context.stack_index, 0);
+                lt = rt;
+                if _value_of_expr(context, b.left, out_lv, *lt)
+                    ret true;
+                asm_insert_stack_load(*context.assembler, context.stack_index, 1);
+                context.stack_index -= 1;
             }
+            else {
+                context.stack_index += 1;
+                asm_insert_stack_store(*context.assembler, context.stack_index, 0);
+                rt = lt;
+                if _value_of_expr(context, b.right, out_rv, *rt)
+                    ret true;
+                asm_insert_stack_load(*context.assembler, context.stack_index, 1);
+                context.stack_index -= 1;
+            }
+
+            if b.op == {
+                case #char "+"; {
+                    asm_insert_add(*context.assembler, 0, 0, 1);
+                }
+                case #char "-"; {
+                    if left_first
+                        asm_insert_sub(*context.assembler, 0, 1, 0);
+                    else
+                        asm_insert_sub(*context.assembler, 0, 0, 1);
+                }
+            }
+
+            if lt != rt
+                ret _error_fatal(context, STRING("types no match, comparison"));
+                
             if out_value != null {
                 value: Value = _evaluate_binary_operation(b.op, lt, lv, rv);
                 type: *Type_Info = context.number_type;
@@ -1330,12 +1451,6 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             scope: *Scope = *array_last(*context.scopes);
             prev_node_count: u32 = context.nodes.count;
             local_node_count: u32 = context.local_nodes.count;
-
-            if writer != null {
-                _write("compiling procedure ");
-                _write_node_ref(context, context.current_node);
-                _write("\n");
-            }
             
             // Compile procedure body as compilation unit
             if _create_nodes(context, p.body)
@@ -1360,6 +1475,13 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 });
                 table_set(*scope.identifiers, current.name, ref);
                 current = current.next;
+            }
+
+            if out_value != null {
+                if context.options.flags & KAI_COMPILE_NO_CODE_GEN
+                    out_value.ptr = p;
+                else
+                    out_value.u32 = asm_create_label(*context.assembler);
             }
 
             // Type-check procedure body
@@ -1390,7 +1512,6 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             array_pop(*context.scopes);
             context.nodes.count = prev_node_count;
             context.local_nodes.count = local_node_count;
-            out_value.ptr = p;
             p.this_type = [expected_type]; // ???
             ret false;
         }
@@ -1499,7 +1620,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 if _value_of_expr(context, current, *value, *type)
                     ret true;
                 if type.id != KAI_TYPE_ID_TYPE
-                    ret true;
+                    ret _error_type_check(context, current, context.type_type, type);
                 pt.inputs.data[i] = value.type;
                 current = current.next;
             }
@@ -1509,7 +1630,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 if _value_of_expr(context, current, *value, *type)
                     ret true;
                 if type.id != KAI_TYPE_ID_TYPE
-                    ret true;
+                    ret _error_type_check(context, current, context.type_type, type);
                 if value.type.id == KAI_TYPE_ID_VOID && p.out_count == 1 {
                     pt.outputs.count = 0;
                     break;
@@ -1526,10 +1647,13 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
         case KAI_EXPR_PROCEDURE_CALL; {
             c: *Expr_Procedure_Call = cast expr;
+
             // TODO: Something else needs to happen here to actually call the procedure
             // when an output value is required.
+            assert(out_value == null);
+
             t: *Type_Info;
-            if _value_of_expr(context, c.proc, out_value, *t)
+            if _value_of_expr(context, c.proc, null, *t)
                 ret true;
 
             assert(t.id == KAI_TYPE_ID_PROCEDURE);
@@ -1544,7 +1668,19 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     ret true;
                 current = current.next;
             }
-            expr.this_type = [expected_type];
+
+            output_type: Type = context.builtin_types.data[KAI_BUILTIN_VOID];
+            if pt.outputs.count > 0 {
+                output_type = pt.outputs.data[0];
+            }
+
+            if [expected_type] == null {
+                [expected_type] = output_type;
+            }
+            if [expected_type] != output_type
+                ret _error_type_check(context, expr, [expected_type], output_type);
+
+            expr.this_type = output_type;
             ret false;
         }
 
@@ -1568,13 +1704,16 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
         }
 
         case KAI_STMT_RETURN; {
+            assert(out_value == null); // return does not have a value
+
             r: *Stmt_Return = cast expr;
-            if r.expr == null {
+            if r.expr != null {
+                if _value_of_expr(context, r.expr, null, expected_type)
+                    ret true;
+            } else {
                 // TODO: need to make sure that function does not have a return
-                ret false;
             }
-            if _value_of_expr(context, r.expr, out_value, expected_type)
-                ret true;
+            asm_insert_ret(*context.assembler);
             ret false;
         }
 
@@ -1582,20 +1721,26 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             allocator: *Allocator = *context.allocator;
             d: *Stmt_Declaration = cast expr;
 
-            assert([expected_type] == null);
+            //assert([expected_type] == null);
 
             type: *Type_Info;
             if d.type != null {
                 v: Value;
                 if _value_of_expr(context, d.type, *v, *type)
                     ret true;
-                assert(type.id == KAI_TYPE_ID_TYPE);
+                if type.id != KAI_TYPE_ID_TYPE
+                    ret _error_type_check(context, d.type, context.type_type, type);
                 type = v.type;
             }
 
             if d.value != null {
                 if _value_of_expr(context, d.value, null, *type)
                     ret true;
+            }
+
+            if out_value == null {
+                context.stack_index += 1;
+                asm_insert_stack_store(*context.assembler, context.stack_index, 0);
             }
 
             ref: Node_Reference = Node_Reference.{
@@ -1606,30 +1751,32 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 type = type,
                 location = Location.{
                     string = d.name,
-                    line = d.line_number
+                    line = d.line_number,
                 },
+                stack_index = context.stack_index,
             });
             // TODO: NO OVERWRITING
             scope: *Scope = *array_last(*context.scopes);
             table_set(*scope.identifiers, d.name, ref);
 
             d.this_type = type;
-            [expected_type] = type;
+        //    [expected_type] = type;
             ret false;
         }
 
         case KAI_STMT_ASSIGNMENT; {
             a: *Stmt_Assignment = cast expr;
             type: *Type_Info;
+            start: u32 = context.assembler.code.count;
             if _value_of_expr(context, a.dest, null, *type)
                 ret true;
-            if writer != null {
-                _write("assignment type: ");
-                write_type(writer, type);
-                _write("\n");
-            }
+            stack_index: u32 = context.last_variable_index;
+            context.assembler.code.count = start;
             if _value_of_expr(context, a.value, null, *type)
                 ret true;
+            if out_value == null {
+                asm_insert_stack_store(*context.assembler, stack_index, 0);
+            }
             ret false;
         }
 
@@ -1639,12 +1786,21 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             type: *Type_Info = context.bool_type;
             if _value_of_expr(context, i.condition, null, *type)
                 ret true;
+            asm_insert_test(*context.assembler, 0);
+            then_jump: u32 = asm_insert_jump(*context.assembler, KAI_CONDITION_EQ, 0);
             if _value_of_expr(context, i.then_body, null, expected_type)
                 ret true;
+            end_jump: u32 = asm_insert_jump(*context.assembler, KAI_CONDITION_AL, 0);
+            then_label: u32 = asm_create_label(*context.assembler);
             if i.else_body != null {
                 if _value_of_expr(context, i.else_body, null, expected_type)
                     ret true;
             }
+            end_label: u32 = asm_create_label(*context.assembler);
+            then_relative: s32 = asm_relative_location(then_jump, then_label);
+            end_relative: s32 = asm_relative_location(end_jump, end_label);
+            asm_modify_jump(*context.assembler, then_jump, then_relative);
+            asm_modify_jump(*context.assembler, end_jump, end_relative);
             ret false;
         }
 
@@ -1738,7 +1894,12 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type
             ref: Node_Reference = _lookup_node(context, expr.source_code);
 
             if ref.flags & KAI_NODE_NOT_FOUND {
-                ret _error_fatal(context, STRING("cant find node [todo]"));
+                location: Location = Location.{
+                    source = context.current_source,
+                    string = expr.source_code,
+                    line = expr.line_number,
+                };
+                ret _error_not_declared(context, location);
             }
 
             node: *Node = *context.nodes.data[ref.index];
@@ -1766,10 +1927,9 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type
         }
 
         case KAI_EXPR_NUMBER; {
-            // TODO make better
+            // TODO: make better
             ref: Node_Reference = _lookup_node(context, STRING("s32"));
-            if ref.flags & KAI_NODE_NOT_FOUND
-                kai__todo("how???");
+            assert(!(ref.flags & KAI_NODE_NOT_FOUND));
             node: *Node = *context.nodes.data[ref.index];
             [out_type] = node.value.type;
             ret false;
@@ -1878,7 +2038,7 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type
                 if _value_of_expr(context, current, *value, *type)
                     ret true;
                 if type.id != KAI_TYPE_ID_TYPE
-                    kai__todo("proc input must be type");
+                    ret _error_type_check(context, current, context.type_type, type);
                 pt.inputs.data[i] = value.type;
                 current = current.next;
             }
@@ -1888,7 +2048,7 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type
                 if _value_of_expr(context, current, *value, *type)
                     ret true;
                 if type.id != KAI_TYPE_ID_TYPE
-                    kai__todo("proc output must be type");
+                    ret _error_type_check(context, current, context.type_type, type);
                 pt.outputs.data[i] = value.type;
                 current = current.next;
             }
@@ -2067,10 +2227,10 @@ _push_value :: (context: *Compiler_Context, type: *Type_Info, value: Value) -> u
 
 _node_reference_equals :: (a: Node_Reference, b: Node_Reference) -> bool
 {
-    ret (a.flags == b.flags) && (a.index == b.index);
+    ret ((a.flags&(~KAI_NODE_VISITED)) == (b.flags&(~KAI_NODE_VISITED))) && (a.index == b.index);
 }
 
-_explore_nodes :: (context: *Compiler_Context, pending: Pending_Node) -> bool
+_explore_nodes :: (context: *Compiler_Context, pending: *Pending_Node) -> bool
 {
     allocator: *Allocator = *context.allocator;
     scope: *Scope = *array_last(*context.scopes);
@@ -2084,7 +2244,7 @@ _explore_nodes :: (context: *Compiler_Context, pending: Pending_Node) -> bool
             ret _error_circular_dependency(context);
         }
         for j: 0..<scope.pending_nodes.count {
-            other: Pending_Node = scope.pending_nodes.data[j];
+            other: *Pending_Node = *scope.pending_nodes.data[j];
             if !(other.ref.flags & KAI_NODE_VISITED)
             && _node_reference_equals(other.ref, dep) {
                 array_push(*context.current_dependencies, other.ref);
@@ -2094,6 +2254,8 @@ _explore_nodes :: (context: *Compiler_Context, pending: Pending_Node) -> bool
             }
         }
     }
+
+    pending.ref.flags &= (~KAI_NODE_VISITED);
     ret false;
 }
 
@@ -2131,7 +2293,13 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
             if writer != null {
                 _write("dependencies for ");
                 _write_node_ref(context, pending.ref);
-                _write(" are not resolved\n");
+                _write(" are not resolved: ");
+                for i: 0..<pending.dependencies.count {
+                    dep: Node_Reference = pending.dependencies.data[i];
+                    _write_node_ref(context, dep);
+                    _write(" ");
+                }
+                _write("\n");
                 for i: 0..<scope.pending_nodes.count {
                     pending: Pending_Node = scope.pending_nodes.data[i];
                     _write(".. ");
@@ -2146,8 +2314,8 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
                 }
             }
 
-            if _explore_nodes(context, pending)
-                ret false;
+            if _explore_nodes(context, *pending)
+                ret true;
             array_push(*scope.pending_nodes, pending);
             context.current_dependencies.count = 0;
             continue;
@@ -2181,6 +2349,7 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
                 context.current_dependencies.capacity = 0;
             }
             else {
+                node.decl.this_type = node.type;
                 node.flags |= KAI_NODE_TYPE_EVALUATED;
             }
             if writer != NULL {
@@ -2231,18 +2400,14 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
                 printf("\n");
             }
         }
-    
-        if writer != NULL {
-            _write("flags = ");
-            _write_u32(node.flags);
-            _write("\n");
-        }
 
         if (node.flags & (KAI_NODE_EXPORT|KAI_NODE_EVALUATED)) == (KAI_NODE_EXPORT|KAI_NODE_EVALUATED) {
             if writer != NULL {
                 _write("exporting ");
                 _write_string(node.location.string);
-                _write("\n");
+                _write(" [");
+                write_type(writer, node.type);
+                _write("]\n");
             }
 
             location: u32 = _push_value(context, node.type, node.value);
@@ -2266,20 +2431,39 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
     arena_create(*context.type_allocator, *info.allocator);
     arena_create(*context.temp_allocator, *info.allocator);
     context.error_arena.allocator = info.allocator;
+    context.assembler.allocator = *info.allocator;
 
-    if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN) {
-        context.error.message = STRING("Code generation not currently supported :(");
-        context.error.result = KAI_ERROR_INTERNAL;
-        ret KAI_ERROR_INTERNAL;
-    }
+    if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN)
+        context.assembler.backend = KAI_BACKEND_ARM64;
 
     while context.error.result == KAI_SUCCESS {
         if _create_syntax_trees(*context, info.sources) break;
         if _generate_nodes(*context) break;
         if _compile_all_nodes_in_scope(*context) break;
+        if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN)
+        {
+            allocator: Allocator = info.allocator;
+            machine_code: *void = allocator.platform_allocate(
+                allocator.user, null, 0x10000, KAI_MEMORY_COMMAND_ALLOCATE_WRITE_ONLY);
+            _memory_copy(machine_code, context.assembler.code.data, context.assembler.code.count*4);
+            if context.debug_writer != null {
+                printf("---Machine-Code---\n");
+                for i: 0..<context.assembler.code.count {
+                    instr: u32 = context.assembler.code.data[i];
+                    printf("%02X%02X%02X%02X\n", (instr >> 0) & 0xFF, (instr >> 8) & 0xFF, (instr >> 16) & 0xFF, (instr >> 24) & 0xFF);
+                    // printf("%08X\n", instr);
+                }
+                printf("------------------\n");
+            }
+            allocator.platform_allocate(
+                allocator.user, machine_code, context.assembler.code.count*4, KAI_MEMORY_COMMAND_SET_EXECUTABLE);
+            context.program.code.data = machine_code;
+            context.program.code.count = context.assembler.code.count*4;
+        }
         break;
     }
 
+    context.program.trees = context.trees;
     ret context.error.result;
 }
 
@@ -2306,22 +2490,18 @@ find_variable :: (program: *Program, name: string, out_type: *Type) -> *void
 //to handle things like race conditions.
 //"""
 //)
-//@doc_warning ("If you wish to modify the variable, then make sure the variable is not declared as a constant in the script!")
+@doc_warning ("If you wish to modify the variable, then make sure the variable is not declared as a constant in the script!")
 
 find_procedure :: (program: *Program, name: string, type: string) -> *void
 {
-    type->void;
+    type->void; // TODO: use type for something?
+    
     t: *Type_Info;
     ptr: *void = find_variable(program, name, *t);
-    if t == null || t.id != KAI_TYPE_ID_PROCEDURE ret null;
-    ret ptr;
 
-    //data: *u8 = cast malloc(name.count + type.count);
-    //_memory_copy(data, name.data, name.count);
-    //_memory_copy(data + name.count, type.data, type.count);
-    //index: int = table_find(*program.procedure_table, string.{count = name.count + type.count, data = data});
-    //free(data);
-    //if index == -1
-    //    ret null;
-    //ret program.code.data + program.procedure_table.values[index];
+    // Check variable is a procedure
+    if t == null || t.id != KAI_TYPE_ID_PROCEDURE ret null;
+    
+    offset: u32 = [ptr -> *u32];
+    ret program.code.data + offset;
 }

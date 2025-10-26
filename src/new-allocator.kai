@@ -1,0 +1,16 @@
+#import "stdlib.h";
+
+#export
+Memory_Metadata :: struct {
+    total_allocated: u64;
+}
+
+#export
+allocator_platform_allocate :: #host_import;
+
+#export
+memory_usage :: (allocator: *Allocator) -> u64
+{
+    metadata: *Memory_Metadata = cast allocator.user;
+    ret metadata.total_allocated;
+}

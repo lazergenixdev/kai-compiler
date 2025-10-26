@@ -54,7 +54,7 @@ Macro macros[] = {
 	{"CONST_STRING", "(LITERAL)", "{.count = (Kai_u32)(sizeof(LITERAL)-1), .data = (Kai_u8*)(LITERAL)}"},
 	{"SLICE", "(TYPE)", "struct { Kai_u32 count; TYPE* data; }"},
 	{"DYNAMIC_ARRAY", "(T)", "struct { Kai_u32 count; Kai_u32 capacity; T* data; }"},
-	{"HASH_TABLE", "(T)", "struct { Kai_u32 count; Kai_u32 capacity; Kai_u64* occupied; Kai_u64* hashes; Kai_string* keys; T* values; }"},
+	{"HASH_TABLE", "(K,T)", "struct { Kai_u32 count; Kai_u32 capacity; Kai_u64* occupied; Kai_u64* hashes; K* keys; T* values; }"},
 	{"LINKED_LIST", "(T)", "struct { T *head, *last; }"},
 	{"FILL", "", "0x800"},
 };
@@ -649,7 +649,9 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		if (arr->rows != NULL)
 		{
 			ASSERT(arr->rows->id == KAI_EXPR_IDENTIFIER);
-			generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
+			generate_expression(builder, arr->rows, TOP_PRECEDENCE, NONE);
+			sb_append(builder, "_");
+			generate_expression(builder, arr->expr, TOP_PRECEDENCE, NO_RENAME);
 			sb_append(builder, "_HashTable");
 			return Identifier_Type_Struct;
 		}
@@ -1028,10 +1030,11 @@ void generate_all_data_structure_types(String_Builder* builder, Kai_Stmt* stmt)
 		}
 		else if (arr->rows->id == KAI_EXPR_IDENTIFIER)
 		{
+			ASSERT(kai_string_equals(arr->rows->source_code, KAI_STRING("string")));
 			if (!shget(g_generated_hashtable_types, t)) {
-				sb_append(builder, "typedef KAI_HASH_TABLE(");
+				sb_append(builder, "typedef KAI_HASH_TABLE(Kai_string,");
 				generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
-				sb_appendf(builder, ") Kai_%s_HashTable;\n", t);
+				sb_appendf(builder, ") Kai_%s_%s_HashTable;\n", "string", t);
 				shput(g_identifier_map, t, Identifier_Type_Struct);
 				shput(g_generated_hashtable_types, t, true);
 			}
@@ -1679,6 +1682,7 @@ void compile_playground(void)
 		cmd_append(&cmd, executable("clang"));
 		cmd_append(&cmd, "-Wall", "-Wextra");
 		if (compile_debug) nob_cc_debug(&cmd);
+		else cmd_append(&cmd, "-Os");
 		cmd_append(&cmd, "--target=wasm32", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic");
 		cmd_append(&cmd, "lib.c");
 		cmd_append(&cmd, "-o", "lib.wasm");
@@ -1690,6 +1694,7 @@ void compile_playground(void)
 const char* source_files[] = {
 	"src/core.kai",
 	"src/parser.kai",
+	"src/codegen.kai",
 	"src/compiler.kai",
 };
 
@@ -1908,13 +1913,3 @@ int main(int argc, char** argv)
 	compile_playground();
 	return 0;
 }
-
-/* TODO: When type checking is complete
-	Kai_Import import;
-	import.name = KAI_STRING("_memory_platform_allocate");
-	import.type = KAI_STRING("(*void, *void, u32, Memory_Command)");
-	import.value.ptr = (void*)"memory_platform_allocate.c";
-	import.name = KAI_STRING("_memory_page_size");
-	import.type = KAI_STRING("() -> u32");
-	import.value.ptr = (void*)"memory_page_size.c";
-*/

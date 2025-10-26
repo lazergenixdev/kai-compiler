@@ -1,5 +1,5 @@
 
-Expr_Id :: enum u8 {
+Expr_Id :: enum u32 {
     EXPR_IDENTIFIER     = 0; // no struct
     EXPR_STRING         = 1;
     EXPR_NUMBER         = 2;
@@ -29,11 +29,11 @@ Special_Kind :: enum u8 {
     SPECIAL_TRUE        = 0; // true
     SPECIAL_FALSE       = 1; // false
     SPECIAL_NULL        = 2; // null
-    SPECIAL_EVAL_TYPE   = 3; // #type
-    SPECIAL_EVAL_SIZE   = 4; // #size
-    SPECIAL_TYPE        = 5; // #Type
-    SPECIAL_NUMBER      = 6; // #Number
-    SPECIAL_CODE        = 7; // #Code
+    SPECIAL_TYPE        = 3; // #Type
+    SPECIAL_NUMBER      = 4; // #Number
+    SPECIAL_CODE        = 5; // #Code
+    SPECIAL_EVAL_TYPE   = 6; // #type
+    SPECIAL_EVAL_SIZE   = 7; // #size
 }
 
 Control_Kind :: enum u8 {
@@ -55,6 +55,7 @@ Expr_Flags :: enum u8 {
     FLAG_FOR_LESS_THAN    = 1 << 2;
     FLAG_ARRAY_DYNAMIC    = 1 << 2;
     FLAG_DECL_HOST_IMPORT = 1 << 3;
+    FLAG_EXPR_POLYMORPHIC = 1 << 4;
 }
 
 Tag :: struct {
@@ -246,7 +247,7 @@ _keywords: [18] string = .{
     CONST_STRING("true"),
 };
 
-_keyword_hash :: (kw: string) -> u32 {
+_string_to_keyword_index :: (kw: string) -> u32 {
     hash: u32 = 0;
     if (0 < kw.count) hash |= ((kw.data[0] >> 2) & 1) << 2; // d
     if (1 < kw.count) hash |= ((kw.data[1] >> 3) & 1) << 3; // c
@@ -266,7 +267,7 @@ Token_Id :: enum u32 {
     TOKEN_DIRECTIVE  = 3;
     TOKEN_TAG        = 4;
     TOKEN_STRING     = 5;
-    // ASCII [33, 126] 
+    // ASCII [33, 126]
     TOKEN_if         = 0x80;
     TOKEN_struct     = 0x81;
     TOKEN_using      = 0x82;
@@ -387,6 +388,9 @@ Tokenizer :: struct {
 
 _parse_fractional_part :: (source: string, offset: *u32, start: Number) -> Number
 {
+    // TODO: There is a bug in this code, not sure where
+    // the bug is, but I remember there being a bug.
+
     // Fractional Part
     if ([offset] < source.count && source.data[[offset]] == #char "."
     && !([offset]+1 < source.count && source.data[[offset]+1] == #char "."))
@@ -644,16 +648,11 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
             token.id = KAI_TOKEN_IDENTIFIER;
             start: u32 = context.cursor;
             context.cursor += 1;
-            while (context.cursor < context.source.count) {
-                c: u8 = context.source.data[context.cursor];
-                if c < 128 && (_token_lookup_table[c]&1)
-                    break;
-                context.cursor += 1;
-            }
+            _tokenizer_advance_to_identifier_end(context);
             token.string.count = context.cursor - start;
 
             // Check if the string we just parsed is a keyword
-            index: u32 = _keyword_hash(token.string);
+            index: u32 = _string_to_keyword_index(token.string);
             if string_equals(_keywords[index], token.string) {
                 token.id = 0x80 | index;
                 ret token;

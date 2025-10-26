@@ -12,6 +12,10 @@
 
 #define MAKE_SLICE(L) {.data = L, .count = sizeof(L)/sizeof(L[0])}
 
+#define hash_table_iterate(Table, Iter_Var)                               \
+  for (Kai_u32 Iter_Var = 0; Iter_Var < (Table).capacity; ++Iter_Var)     \
+    if ((Table).occupied[Iter_Var / 64] & ((Kai_u64)1 << (Iter_Var % 64)))
+
 static inline Kai_Allocator default_allocator()
 {
     Kai_Allocator allocator = {0};

@@ -257,7 +257,7 @@ merge_strings :: (a: string, b: string) -> string
         data = left.data,
     };
 }
-string_hash :: (s: string) -> u64
+hash_string :: (s: string) -> u64
 {
     // http://www.cse.yorku.ca/~oz/hash.html (djb2)
     // " this algorithm (k=33) was first reported by dan bernstein many years ago in comp.lang.c.
@@ -361,7 +361,7 @@ raw_hash_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, elem_size
     for i: 0..<table.capacity
     if table.occupied[i / 64] & (1->u64 << (i % 64))
     {
-        hash: u64 = string_hash(table.keys[i]);
+        hash: u64 = table.hashes[i];
         mask: u32 = new_capacity - 1;
         index: u32 = hash->u32 & mask;
     
@@ -406,7 +406,7 @@ raw_hash_table_emplace_key :: (table: *Raw_Hash_Table, key: string, out_index: *
     if 4 * table.count >= 3 * table.capacity
         raw_hash_table_grow(table, allocator, elem_size);
 
-    hash: u64 = string_hash(key);
+    hash: u64 = hash_string(key);
     mask: u32 = table.capacity - 1;
     index: u32 = hash->u32 & mask;
 
@@ -441,7 +441,7 @@ raw_hash_table_emplace_key :: (table: *Raw_Hash_Table, key: string, out_index: *
 
 raw_hash_table_find :: (table: *Raw_Hash_Table, key: string) -> int
 {
-    hash: u64 = string_hash(key);
+    hash: u64 = hash_string(key);
     mask: u32 = table.capacity - 1;
     index: u32 = hash->u32 & mask;
 
@@ -475,21 +475,22 @@ Context :: struct {
 // Type Info Structs
 
 Type_Id :: enum u8 {
-    TYPE      = 0;
-    VOID      = 1;
+    VOID      = 0;
+    TYPE      = 1;
     BOOLEAN   = 2;
     INTEGER   = 3;
     FLOAT     = 4;
     POINTER   = 5;
-    PROCEDURE = 6;
+    ENUM      = 6;
     ARRAY     = 7;
     STRUCT    = 8;
-    ENUM      = 9;
-    STRING    = 10;
-    NUMBER    = 11;
-    TYPELESS_POINTER          = 12;
-    TYPELESS_UNSIGNED_INTEGER = 12;
-    TYPELESS_NUMBER           = 13;
+    PROCEDURE = 9;
+    SLICE     = 10; // struct (count, data)
+    STRING    = 11; // struct (count, data)
+    NUMBER    = 12; // struct (n, d, e, is_neg)
+    TYPELESS_POINTER          = 12; // example: null
+    TYPELESS_UNSIGNED_INTEGER = 12; // example: shift amount
+    TYPELESS_NUMBER           = 13; // example: constant expressions
 }
 
 Type :: *Type_Info;
@@ -551,6 +552,85 @@ Type_Info_Enum :: struct {
     values: [] Enum_Value;
 }
 
+/*
+Export :: struct {
+    name: string;
+    type: Type;
+    value: Value;
+}
+
+Type_Info_Module :: struct {
+    using Type_Info;
+    exports: Export;
+}
+*/
+
+// Hash requires that if the types are equal,
+// then the hashes must always be equal.
+hash_type :: (type: *Type_Info) -> u64
+{
+    if type == null {
+        ret -1;
+    }
+
+    if type.id == {
+    case KAI_TYPE_ID_VOID;    ret 0; // 0000_0000
+    case KAI_TYPE_ID_TYPE;    ret 1; // 0000_0001
+    case KAI_TYPE_ID_BOOLEAN; ret 2; // 0000_0010
+    case KAI_TYPE_ID_NUMBER;  ret 3; // 0000_0011
+    case KAI_TYPE_ID_FLOAT; {        // 0000_01xx
+        info: *Type_Info_Float = cast type; // f8, f16, f32, f64
+        n: u64 = intrinsics_ctz32(info.bits) - 3; // [0, 3] (2 bits)
+        ret (1 << 2) | n;
+    }
+    case KAI_TYPE_ID_INTEGER; {      // 0001_xxxx
+        info: *Type_Info_Integer = cast type; // i8, i16, i32, i64, i128, i256, i512
+        n: u64 = intrinsics_ctz32(info.bits) - 3; // [0, 7] (3 bits)
+        s: u64 = info.is_signed;                  // [0, 1] (1 bit)
+        ret (1 << 4) | (s << 3) | n;
+    }
+    case KAI_TYPE_ID_POINTER; {      // 0010_0000
+        info: *Type_Info_Pointer = cast type;
+        sub: u64 = hash_type(info.sub_type);
+        ret (sub << 4) ^ (sub >> 60) ^ 0b10011010;
+    }
+    case KAI_TYPE_ID_PROCEDURE; {    // 0010_0001
+        info: *Type_Info_Procedure = cast type;
+        hash: u64 = 0b0000_0010;
+        for i: 0..<info.inputs.count {
+            sub: u64 = hash_type(info.inputs.data[i]);
+            hash = (hash << 4) ^ (hash >> 60) ^ sub;
+        }
+        hash = (hash >> 1) ^ (hash << 63);
+        for i: 0..<info.outputs.count {
+            sub: u64 = hash_type(info.outputs.data[i]);
+            hash = (hash << 4) ^ (hash >> 60) ^ sub;
+        }
+        ret hash;
+    }
+    case KAI_TYPE_ID_ARRAY; {        // 0010_0010
+        info: *Type_Info_Array = cast type;
+        //(info.rows);
+        ret hash_type(info.sub_type);
+    }
+    case KAI_TYPE_ID_STRING; ret 35; // 0010_0011
+    case KAI_TYPE_ID_STRUCT; {       // 0010_0100
+        info: *Type_Info_Struct = cast type;
+        //(info.size);
+        hash: u64 = 0b0000_0011;
+        for i: 0..<info.fields.count {
+            field: Struct_Field = info.fields.data[i];
+            sub: u64 = hash_type(field.type);
+            hash = (hash << 4) ^ (hash >> 60) ^ sub;
+        }
+        ret hash;
+    }
+    case KAI_TYPE_ID_ENUM; {
+        ret type -> u64; // ???
+    }
+    }
+    ret ~0;
+}
 
 // Numbers
 
@@ -1260,10 +1340,10 @@ write_error :: (writer: *Writer, error: *Error)
             _write("...");
         _set_color(KAI_WRITE_COLOR_DEFAULT);
     //#if KAI_SHOW_LINE_NUMBER_WITH_FILE {
-    //    _write(":");
-    //    _set_color(KAI_WRITE_COLOR_PRIMARY);
-    //    _write_u32(error.location.line);
-    //    _set_color(KAI_WRITE_COLOR_DEFAULT);
+        _write(":");
+        _set_color(KAI_WRITE_COLOR_PRIMARY);
+        _write_u32(error.location.line);
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
     //}
         _write(" --> ");
         if error.result != KAI_ERROR_INFO { _set_color(KAI_WRITE_COLOR_IMPORTANT); }
@@ -1325,6 +1405,9 @@ write_type :: (writer: *Writer, type: *Type_Info)
         _write("null");
         ret;
     }
+
+    //_write_u32(type->u16);
+    //_write(":");
 
     if type.id ==
     {
@@ -1864,10 +1947,12 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
             _write_expr_id_with_name(writer, name, expr);
             _write("\n");
 
-            context.prefix = STRING("expr");
+            context.prefix = STRING("cond");
             _explore(i.condition, false);
+            context.prefix = STRING("then");
             _explore(i.then_body, i.else_body == null);
             if i.else_body != null {
+                context.prefix = STRING("else");
                 _explore(i.else_body, true);
             }
         }

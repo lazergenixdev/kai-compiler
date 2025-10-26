@@ -18,6 +18,9 @@
 - [ ] fix parser so that `#array` and `#map` can be removed
 - [ ] fix nested constant declarations
 - [ ] fix crash on circular dependencies on types
+- [ ] need a flag to tell `compile_program` to keep the AST around
+- [ ] rename "memory" procedures to "allocator"
+- [ ] need to have hash tables with arbitrary key types (or at least just string + Type)
 
 # Optional / Extra
 - [x] remove unused `loop` keyword
@@ -33,6 +36,7 @@
 - [ ] consider using `KAI_IMP` instead of `KAI_API` for implementation for grep purposes
 - [ ] strings need to be handled better in parser/tokenizer
 - [ ] use web workers for running wasm compiler code, to have proper syncronization
+- [ ] write procedure should return number of characters written
 
 # Version 0.1.1
 - [ ] type-check all of compiler source code

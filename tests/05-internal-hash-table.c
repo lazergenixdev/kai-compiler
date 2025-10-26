@@ -1,6 +1,6 @@
 #include "test.h"
 
-typedef KAI_HASH_TABLE(int) Table;
+typedef KAI_HASH_TABLE(Kai_string,int) Table;
 
 static Kai_u8 scratch[12*4096];
 static Kai_uint scratch_offset = 0;

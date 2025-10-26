@@ -132,9 +132,9 @@ WASM_EXPORT int compile_show_typed_ast(Kai_u8* data, Kai_u32 count)
 
 	if (error.result == KAI_SUCCESS)
     {
-        for (Kai_u32 i = 0; i < program.code.trees.count; ++i)
+        for (Kai_u32 i = 0; i < program.trees.count; ++i)
         {
-            kai_write_expression(writer, (Kai_Expr*)&program.code.trees.data[i].root, 0);
+            kai_write_expression(writer, (Kai_Expr*)&program.trees.data[i].root, 0);
         }
     }
     else {
@@ -165,16 +165,16 @@ WASM_EXPORT int compile_show_exports(Kai_u8* data, Kai_u32 count)
         {
             Kai_string name = program.variable_table.keys[i];
             Kai_Variable var = program.variable_table.values[i];
-            kai__set_color(KAI_WRITE_COLOR_SPECIAL);
-            kai__write_string(name);
             kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+            kai__write_string(name);
+            kai__set_color(KAI_WRITE_COLOR_DEFAULT);
             kai__write(" = ");
             kai_write_value(writer, program.data.data + var.location, var.type);
-            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+            kai__set_color(KAI_WRITE_COLOR_DEFAULT);
             kai__write(" [");
             kai__set_color(KAI_WRITE_COLOR_TYPE);
             kai_write_type(writer, var.type);
-            kai__set_color(KAI_WRITE_COLOR_PRIMARY);
+            kai__set_color(KAI_WRITE_COLOR_DEFAULT);
             kai__write("]\n");
         }
     }
