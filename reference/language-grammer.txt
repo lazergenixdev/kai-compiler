@@ -1,12 +1,29 @@
 # Note: language is NOT context-free, so this grammer is just an approximation
 # Note: also this is incomplete, don't feel like writing this out right now :/
 
-expression_list : expression ',' expression_list
+unary  : '+' | '-' | '!'
+binary : '+' | '-' | '*' | '/' | '&' | '|'
 
-expression : '(' expression ')'
-           | unary_op expression
-           | expression binary_op expression
-           | expression '(' expression_list ')'
-           | '#import' string
+expr : identifier
+     | number
+     | string
+     | unary expr
+     | expr binary expr
+     | expr '(' expr_list ')'
+     | '#import' string
+     | '(' args ')' '->' ('(') args (')') stmt
+     | '(' expr ')'
 
+expr_list : expr ',' expr_list
 
+stmt : expr ';'
+     | expr ['='|'+='|'-='|'*='|'/='] expr ';'
+     | identifier ':' (type) [':'|'='] expr ';'
+     | 'ret' expr ';'
+     | 'if' expr ('then') statement
+     | 'while' expr statement
+     | 'for' identifier ':' expr
+     | '{' stmt_list '}'
+
+stmt_list : empty
+          | stmt stmt_list
