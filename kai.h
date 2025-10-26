@@ -18,11 +18,11 @@ extern "C" {
 #include <stdio.h>
 #include <locale.h>
 #endif
-#ifndef KAI_DONT_USE_MEMORY_API
+#ifndef KAI_DONT_USE_ALLOCATOR_API
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20251026220742 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20251026233557 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -1272,7 +1272,7 @@ KAI_API(Kai_Writer) kai_writer_file_open(Kai_cstring path);
 KAI_API(void) kai_writer_file_close(Kai_Writer* writer);
 #endif
 
-#ifndef KAI_DONT_USE_MEMORY_API
+#ifndef KAI_DONT_USE_ALLOCATOR_API
 typedef Kai_u32 Kai_Memory_Error;
 typedef struct Kai_Memory_Metadata Kai_Memory_Metadata;
 
@@ -1286,9 +1286,9 @@ struct Kai_Memory_Metadata {
     Kai_u64 total_allocated;
 };
 
-KAI_API(Kai_Result) kai_memory_create(Kai_Allocator* out_allocator);
-KAI_API(Kai_Result) kai_memory_destroy(Kai_Allocator* allocator);
-KAI_API(Kai_u64) kai_memory_usage(Kai_Allocator* allocator);
+KAI_API(Kai_Result) kai_allocator_create(Kai_Allocator* out_allocator);
+KAI_API(Kai_Result) kai_allocator_destroy(Kai_Allocator* allocator);
+KAI_API(Kai_u64) kai_allocator_usage(Kai_Allocator* allocator);
 #endif
 
 #ifdef KAI_IMPLEMENTATION
@@ -1545,7 +1545,7 @@ KAI_INTERNAL Kai_bool kai__explore_nodes(Kai_Compiler_Context* context, Kai_Pend
 KAI_INTERNAL Kai_bool kai__compile_all_nodes_in_scope(Kai_Compiler_Context* context);
 KAI_INTERNAL void kai__file_writer_write(void* user, Kai_Write_Command command, Kai_Value value, Kai_Write_Format format);
 KAI_INTERNAL void kai__stdout_writer_write(void* user, Kai_Write_Command command, Kai_Value value, Kai_Write_Format format);
-KAI_INTERNAL void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size);
+KAI_INTERNAL void* kai__allocator_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size);
 
 KAI_API(Kai_string) kai_version_string(void)
 {
@@ -7713,12 +7713,12 @@ KAI_API(void) kai_writer_file_close(Kai_Writer* writer)
 }
 
 #endif
-#ifndef KAI_DONT_USE_MEMORY_API
+#ifndef KAI_DONT_USE_ALLOCATOR_API
 
 #if defined(KAI_PLATFORM_LINUX) || defined(KAI_PLATFORM_APPLE)
 #include <sys/mman.h> // -> mmap
 #include <unistd.h>   // -> getpagesize
-KAI_INTERNAL void* kai__memory_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)
+KAI_INTERNAL void* kai__allocator_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)
 {
 	Kai_Memory_Metadata* metadata = (Kai_Memory_Metadata*)(user);
 	switch (op) {
@@ -7751,7 +7751,7 @@ __declspec(dllimport) void* __stdcall VirtualAlloc(void* lpAddress, SIZE_T dwSiz
 __declspec(dllimport) BOOL __stdcall VirtualProtect(void* lpAddress, SIZE_T dwSize, DWORD flNewProtect, DWORD* lpflOldProtect);
 __declspec(dllimport) BOOL __stdcall VirtualFree(void* lpAddress, SIZE_T dwSize, DWORD dwFreeType);
 __declspec(dllimport) void __stdcall GetSystemInfo(SYSTEM_INFO* lpSystemInfo);
-KAI_INTERNAL void* kai__memory_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)
+KAI_INTERNAL void* kai__allocator_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)
 {
 	Kai_Memory_Metadata* metadata = (Kai_Memory_Metadata*)(user);
 	switch (op) {
@@ -7786,7 +7786,7 @@ KAI_INTERNAL Kai_u32 kai__page_size(void)
 #else
 #	error "[KAI] No memory allocator implemented for the current platform :("
 #endif
-KAI_INTERNAL void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size)
+KAI_INTERNAL void* kai__allocator_heap_allocate(void* user, void* old_ptr, Kai_u32 new_size, Kai_u32 old_size)
 {
     void* ptr = NULL;
     if (new_size==0)
@@ -7807,11 +7807,11 @@ KAI_INTERNAL void* kai__memory_heap_allocate(void* user, void* old_ptr, Kai_u32 
     return ptr;
 }
 
-KAI_API(Kai_Result) kai_memory_create(Kai_Allocator* out_allocator)
+KAI_API(Kai_Result) kai_allocator_create(Kai_Allocator* out_allocator)
 {
     kai_assert(out_allocator!=NULL);
-    out_allocator->platform_allocate = kai__memory_platform_allocate;
-    out_allocator->heap_allocate = kai__memory_heap_allocate;
+    out_allocator->platform_allocate = kai__allocator_platform_allocate;
+    out_allocator->heap_allocate = kai__allocator_heap_allocate;
     out_allocator->page_size = kai__page_size();
     out_allocator->user = realloc(NULL, sizeof(Kai_Memory_Metadata));
     if (!out_allocator->user)
@@ -7823,7 +7823,7 @@ KAI_API(Kai_Result) kai_memory_create(Kai_Allocator* out_allocator)
     return KAI_SUCCESS;
 }
 
-KAI_API(Kai_Result) kai_memory_destroy(Kai_Allocator* allocator)
+KAI_API(Kai_Result) kai_allocator_destroy(Kai_Allocator* allocator)
 {
     kai_assert(allocator!=NULL);
     if (allocator->user==NULL)
@@ -7836,7 +7836,7 @@ KAI_API(Kai_Result) kai_memory_destroy(Kai_Allocator* allocator)
     return KAI_SUCCESS;
 }
 
-KAI_API(Kai_u64) kai_memory_usage(Kai_Allocator* allocator)
+KAI_API(Kai_u64) kai_allocator_usage(Kai_Allocator* allocator)
 {
     Kai_Memory_Metadata* metadata = (Kai_Memory_Metadata*)(allocator->user);
     return metadata->total_allocated;

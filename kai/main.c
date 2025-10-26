@@ -345,7 +345,7 @@ int main(int argc, char** argv)
     argc -= 2;
     argv += 2;
     stdout_writer = kai_writer_stdout();
-    kai_memory_create(&allocator);
+    kai_allocator_create(&allocator);
     if (strcmp(argv[-1], "token"  ) == 0) return token(argc, argv);
     if (strcmp(argv[-1], "parse"  ) == 0) return parse(argc, argv);
     if (strcmp(argv[-1], "compile") == 0) return compile(argc, argv);

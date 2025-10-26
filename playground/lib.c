@@ -24,7 +24,7 @@ const char* join(const char* left, const char* right)
 #define kai_fatal_error(DESC, MESSAGE) __env_panic(DESC, MESSAGE, __FILE__, __LINE__)
 #define kai__todo(...) __env_panic("TODO", join(__FUNCTION__, #__VA_ARGS__), __FILE__, __LINE__)
 #define KAI_DONT_USE_WRITER_API
-#define KAI_DONT_USE_MEMORY_API
+#define KAI_DONT_USE_ALLOCATOR_API
 #define KAI_IMPLEMENTATION
 #include "../kai.h"
 

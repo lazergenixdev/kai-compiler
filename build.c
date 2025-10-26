@@ -1728,11 +1728,11 @@ Module modules[] = {
 	"#    define kai__stdc_file_open fopen\n"
 	"#endif\n\n"
 	},
-	{KAI_CONST_STRING("memory"), NULL, {0},
+	{KAI_CONST_STRING("allocator"), NULL, {0},
 "#if defined(KAI_PLATFORM_LINUX) || defined(KAI_PLATFORM_APPLE)\n"
 "#include <sys/mman.h> // -> mmap\n"
 "#include <unistd.h>   // -> getpagesize\n"
-"KAI_INTERNAL void* kai__memory_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)\n"
+"KAI_INTERNAL void* kai__allocator_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)\n"
 "{\n"
 "	Kai_Memory_Metadata* metadata = (Kai_Memory_Metadata*)(user);\n"
 "	switch (op) {\n"
@@ -1765,7 +1765,7 @@ Module modules[] = {
 "__declspec(dllimport) BOOL __stdcall VirtualProtect(void* lpAddress, SIZE_T dwSize, DWORD flNewProtect, DWORD* lpflOldProtect);\n"
 "__declspec(dllimport) BOOL __stdcall VirtualFree(void* lpAddress, SIZE_T dwSize, DWORD dwFreeType);\n"
 "__declspec(dllimport) void __stdcall GetSystemInfo(SYSTEM_INFO* lpSystemInfo);\n"
-"KAI_INTERNAL void* kai__memory_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)\n"
+"KAI_INTERNAL void* kai__allocator_platform_allocate(void* user, void* ptr, Kai_u32 size, Kai_u32 op)\n"
 "{\n"
 "	Kai_Memory_Metadata* metadata = (Kai_Memory_Metadata*)(user);\n"
 "	switch (op) {\n"
@@ -1829,10 +1829,10 @@ int main(int argc, char** argv)
 	shput(g_identifier_map, "fatal_error", Identifier_Type_Function);
 	shput(g_identifier_map, "u128",        Identifier_Type_Type);
 
-	shput(g_identifier_map, "_setup_utf8_stdout",        Identifier_Type_Function);
-	shput(g_identifier_map, "_stdc_file_open",           Identifier_Type_Function);
-	shput(g_identifier_map, "_memory_platform_allocate", Identifier_Type_Function);
-	shput(g_identifier_map, "_page_size",                Identifier_Type_Function);
+	shput(g_identifier_map, "_setup_utf8_stdout",           Identifier_Type_Function);
+	shput(g_identifier_map, "_stdc_file_open",              Identifier_Type_Function);
+	shput(g_identifier_map, "_allocator_platform_allocate", Identifier_Type_Function);
+	shput(g_identifier_map, "_page_size",                   Identifier_Type_Function);
 
 	String_Builder builder = {0};
 	exit_on_fail(read_entire_file("src/comments/header.h", &builder));

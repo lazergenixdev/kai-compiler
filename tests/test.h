@@ -19,7 +19,7 @@
 static inline Kai_Allocator default_allocator()
 {
     Kai_Allocator allocator = {0};
-    kai_memory_create(&allocator);
+    kai_allocator_create(&allocator);
     return allocator;
 }
 static inline Kai_Error* default_error()

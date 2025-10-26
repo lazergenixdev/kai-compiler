@@ -1,11 +1,5 @@
 # TODO
-- [x] `#char` needs to do a utf8 decode and evaluate to the codepoint value
-- [x] check if node's dependencies are evaluated before we compile this node
-- [x] need some way to only type-check without needing the value in `_value_of_expr`
-- [x] need a writer that writes into a buffer (just a Arena wrapper)
-- [x] change literal type to not use assignment expression
-- [x] compilation unit for compound statements
-- [x] add keywords `then`, (separator) `null`, `true`, `false` (Special)
+- [x] rename "memory" procedures to "allocator"
 - [ ] by default, we need to cache all types, and only create new types for ones we haven't seen (or marked "#distinct")
 - [ ] should print type look for recursive types?
 - [ ] better compilation for recusive types
@@ -19,7 +13,6 @@
 - [ ] fix nested constant declarations
 - [ ] fix crash on circular dependencies on types
 - [ ] need a flag to tell `compile_program` to keep the AST around
-- [ ] rename "memory" procedures to "allocator"
 - [ ] need to have hash tables with arbitrary key types (or at least just string + Type)
 
 # Optional / Extra
