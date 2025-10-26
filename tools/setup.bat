@@ -1,10 +1,12 @@
-
-:: Run script from ../
-
 @ECHO OFF
 
+:: Assume ran from `tools/` if `build.c` is not found 
+IF NOT EXIST "build.c" (
+	cd ..
+)
+
+:: Debug flags: "/Zi /DDEBUG"
 IF NOT EXIST "build.exe" (
-	:: /Zi /DDEBUG
 	cl /nologo /utf-8 build.c
 )
 
