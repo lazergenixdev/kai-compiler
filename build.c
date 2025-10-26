@@ -630,6 +630,17 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		return type;
 	} break;
 
+	case KAI_EXPR_SPECIAL: {
+		Kai_Expr_Special* special = (void*)expr;
+
+		switch (special->kind)
+		{
+		case KAI_SPECIAL_TRUE:  sb_append(builder, "KAI_TRUE" ); break;
+		case KAI_SPECIAL_FALSE: sb_append(builder, "KAI_FALSE"); break;
+		default: sb_append(builder, "SPECIAL"); break;
+		}
+	} break;
+
 	case KAI_EXPR_NUMBER: {
 		Kai_Expr_Number* num = (void*)expr;
 		
@@ -1812,7 +1823,7 @@ int main(int argc, char** argv)
 	NOB_GO_REBUILD_URSELF_PLUS(argc, argv, "3rd-party/kai.h");
 #endif
 #endif
-	kai_memory_create(&g_allocator);
+	kai_allocator_create(&g_allocator);
 	g_writer = kai_writer_stdout();
 
 	shdefault(g_identifier_map, Identifier_Type_Invalid);

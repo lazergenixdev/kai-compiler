@@ -928,7 +928,7 @@ measure_milliseconds("Build Finished    in \x1b[94m%f\x1b[0m ms :/")
     }
 
     Kai_Allocator allocator = {0};
-    kai_memory_create(&allocator);
+    kai_allocator_create(&allocator);
     stdout_writer = kai_writer_stdout();
     Kai_Writer* writer = &stdout_writer;
     current_build_date = build_date();
