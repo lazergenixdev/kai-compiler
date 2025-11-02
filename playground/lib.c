@@ -20,7 +20,6 @@ const char* join(const char* left, const char* right)
 
 #define KAI_API(T) WASM_EXPORT T
 #define printf(...) (void)sizeof(__VA_ARGS__)
-#define putchar(...) (void)sizeof(__VA_ARGS__)
 #define kai_fatal_error(DESC, MESSAGE) __env_panic(DESC, MESSAGE, __FILE__, __LINE__)
 #define kai__todo(...) __env_panic("TODO", join(__FUNCTION__, #__VA_ARGS__), __FILE__, __LINE__)
 #define KAI_DONT_USE_WRITER_API
@@ -67,7 +66,6 @@ void null_write(void* user, Kai_Write_Command command, Kai_Value value, Kai_Writ
 }
 
 static Kai_Writer div_writer = {
-	//.write = &null_write,
 	.write = &__env_write,
 };
 static Kai_Error error;
@@ -84,7 +82,7 @@ WASM_EXPORT void set_file_name(Kai_string name)
 }
 
 // NOTE: No destroy procedures ever need to be called,
-// because after each of these procedures, the WASM
+// because after each of these procedures the WASM
 // memory will be reset and cleared.
 
 WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)

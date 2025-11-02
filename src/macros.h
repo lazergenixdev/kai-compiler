@@ -85,3 +85,20 @@ do { char __message__[1024] = {0};                           \
     kai_fatal_error("TODO", __message__);                    \
 } while (0)
 #endif
+
+// Hash Table API
+
+// K: key type, T: pointer to hash table, KEY: key value
+#define kai_table_set(K,T,KEY,...)                                                                         \
+do {                                                                                                       \
+    kai_raw_table_grow((Kai_Raw_Hash_Table*)(T), allocator, sizeof((T)->keys[0]), sizeof((T)->values[0])); \
+    Kai_u64 __hash__ = kai_hash_ ## K(KEY);                                                                \
+    Kai_u32 __index__ = (Kai_u32)(__hash__);                                                               \
+    while (kai_raw_table_next_match((Kai_Raw_Hash_Table*)(T), __hash__, &__index__))                       \
+        if (kai_ ## K ## _equals(KEY, (T)->keys[__index__]))                                               \
+            break;                                                                                         \
+    (T)->keys[__index__] = KEY;                                                                            \
+    (T)->values[__index__] = __VA_ARGS__;                                                                  \
+} while(0)
+
+#define kai_table_find(K,T,KEY) kai_raw_table_find_ ## K((Kai__ ## K ## _HashTable*)(T), KEY)

@@ -25,6 +25,8 @@ version :: () -> vector3_u32
 
 // Core Structs
 
+Type :: *Type_Info;
+
 Range :: struct {
     start: u32;
     count: u32;
@@ -320,7 +322,7 @@ Raw_Hash_Table :: struct {
     capacity : u32;
     occupied : *u64;
     hashes   : *u64;
-    keys     : *string;
+    keys     : *void;
     values   : *void;
 }
 
@@ -333,28 +335,33 @@ Hash_Table_Size :: struct {
 }
 
 // Calculate size required for hash table
-raw_hash_table_size :: (capacity: u32, elem_size: u32) -> Hash_Table_Size
+raw_table_size :: (capacity: u32, key_size: u32, elem_size: u32) -> Hash_Table_Size
 {
     r: Hash_Table_Size;
     r.occupied = _ceil_div_fast(capacity, 6)->u32 * sizeof(u64);
     r.hashes   = capacity * sizeof(u64);
-    r.keys     = capacity * sizeof(string);
-    r.values   = (capacity + 1) * elem_size;
+    r.keys     = capacity * key_size;
+    r.values   = (capacity + 1) * elem_size; // keep extra element?
     r.total    = r.occupied + r.hashes + r.keys + r.values;
     ret r;
 }
 
-raw_hash_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, elem_size: u32)
+// grow by one element
+raw_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, key_size: u32, elem_size: u32)
 {
+    // Load factor not high enough -> exit early
+    if 4 * table.count < 3 * table.capacity
+        ret;
+
     new_capacity: u32 = _max_u32(8, table.capacity * 2);
-    new_size: Hash_Table_Size = raw_hash_table_size(new_capacity, elem_size);
+    new_size: Hash_Table_Size = raw_table_size(new_capacity, key_size, elem_size);
     new_ptr: *void = _allocate(null, new_size.total, 0);
 
     // Distribute allocated memory
-    occupied: *u64    = new_ptr -> *u64;
-    hashes:   *u64    = (occupied->*u8 + new_size.occupied) -> *u64;
-    keys:     *string = (hashes->*u8 + new_size.hashes) -> *string;
-    values:   *u8     = (keys->*u8 + new_size.keys) -> *u8 + elem_size;
+    occupied: *u64 = new_ptr -> *u64;
+    hashes:   *u64 = (occupied->*u8 + new_size.occupied) -> *u64;
+    keys:     *u8  = (hashes->*u8 + new_size.hashes) -> *u8;
+    values:   *u8  = (keys->*u8 + new_size.keys) -> *u8 + elem_size;
 
     // Rehash all elements
     count: u32 = 0;
@@ -375,9 +382,8 @@ raw_hash_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, elem_size
             {
                 occupied[index / 64] |= bit;
                 hashes[index] = hash;
-                keys[index] = table.keys[i];
-                src: *u8 = table.values->*u8 + i * elem_size;
-                _memory_copy(values + index * elem_size, src, elem_size);
+                _memory_copy(keys + index * key_size, table.keys->*u8 + i * key_size, key_size);
+                _memory_copy(values + index * elem_size, table.values->*u8 + i * elem_size, elem_size);
                 count += 1;
                 break;
             }
@@ -390,7 +396,7 @@ raw_hash_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, elem_size
 
     // Free old memory
     if table.capacity != 0 {
-        _free(table.occupied, raw_hash_table_size(table.capacity, elem_size).total);
+        _free(table.occupied, raw_table_size(table.capacity, key_size, elem_size).total);
     }
 
     table.capacity = new_capacity;
@@ -400,18 +406,15 @@ raw_hash_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, elem_size
     table.values   = values;
 }
 
-raw_hash_table_emplace_key :: (table: *Raw_Hash_Table, key: string, out_index: *u32, allocator: *Allocator, elem_size: u32) -> bool
+// return true if occupied
+raw_table_next_match :: (table: *Raw_Hash_Table, hash: u64, out_index: *u32) -> bool
 {
-    // Check load factor and grow hash table
-    if 4 * table.count >= 3 * table.capacity
-        raw_hash_table_grow(table, allocator, elem_size);
-
-    hash: u64 = hash_string(key);
     mask: u32 = table.capacity - 1;
-    index: u32 = hash->u32 & mask;
+    index: u32 = [out_index];
 
     for i: 0..<table.capacity
     {
+        index &= mask;
         byte : u64 = table.occupied[index / 64];
         bit  : u64 = 1->u64 << (index % 64);
 
@@ -420,26 +423,29 @@ raw_hash_table_emplace_key :: (table: *Raw_Hash_Table, key: string, out_index: *
         {
             table.occupied[index / 64] |= bit;
             table.hashes[index] = hash;
-            table.keys[index] = key;
             table.count += 1;
-            [out_index] = index;
-            ret true;
-        }
-
-        // Emplace an existing item
-        if table.hashes[index] == hash && string_equals(table.keys[index], key)
-        {
             [out_index] = index;
             ret false;
         }
 
-        index = (index + 1) & mask;
+        // Emplace an existing item (potentially)
+        if table.hashes[index] == hash
+        {
+            [out_index] = index;
+            ret true;
+        }
+
+        index += 1;
     }
     [out_index] = 0xFFFFFFFF;
     ret false;
 }
 
-raw_hash_table_find :: (table: *Raw_Hash_Table, key: string) -> int
+// Need generic types 😩
+_string_HashTable :: HASH_TABLE(string, void);
+_Type_HashTable :: HASH_TABLE(Type, void);
+
+raw_table_find_string :: (table: *_string_HashTable, key: string) -> int
 {
     hash: u64 = hash_string(key);
     mask: u32 = table.capacity - 1;
@@ -456,6 +462,32 @@ raw_hash_table_find :: (table: *Raw_Hash_Table, key: string) -> int
         }
         else if table.hashes[index] == hash
              && string_equals(table.keys[index], key)
+        {
+            ret index->int;
+        }
+
+        index = (index + 1) & mask;
+    }
+    ret -1;
+}
+
+raw_table_find_Type :: (table: *_Type_HashTable, key: Type) -> int
+{
+    hash: u64 = hash_type(key);
+    mask: u32 = table.capacity - 1;
+    index: u32 = hash->u32 & mask;
+
+    for i: 0..<table.capacity
+    {
+        block: u64 = table.occupied[index / 64];
+        bit: u64 = 1->u64 << (index % 64);
+
+        if (block & bit) == 0
+        {
+            ret -1; // Slot was empty
+        }
+        else if table.hashes[index] == hash
+             && type_equals(table.keys[index], key)
         {
             ret index->int;
         }
@@ -488,12 +520,12 @@ Type_Id :: enum u8 {
     SLICE     = 10; // struct (count, data)
     STRING    = 11; // struct (count, data)
     NUMBER    = 12; // struct (n, d, e, is_neg)
-    TYPELESS_POINTER          = 12; // example: null
-    TYPELESS_UNSIGNED_INTEGER = 12; // example: shift amount
-    TYPELESS_NUMBER           = 13; // example: constant expressions
-}
 
-Type :: *Type_Info;
+    // id > 127 => Type Checker ONLY
+    TYPELESS_POINTER          = 0x80;
+    TYPELESS_UNSIGNED_INTEGER = 0x81;
+    TYPELESS_NUMBER           = 0x82;
+}
 
 Type_Info :: struct {
     id : Type_Id;
@@ -569,9 +601,7 @@ Type_Info_Module :: struct {
 // then the hashes must always be equal.
 hash_type :: (type: *Type_Info) -> u64
 {
-    if type == null {
-        ret -1;
-    }
+    if type == null ret -1;
 
     if type.id == {
     case KAI_TYPE_ID_VOID;    ret 0; // 0000_0000
@@ -596,12 +626,12 @@ hash_type :: (type: *Type_Info) -> u64
     }
     case KAI_TYPE_ID_PROCEDURE; {    // 0010_0001
         info: *Type_Info_Procedure = cast type;
-        hash: u64 = 0b0000_0010;
+        hash: u64 = 0b10011011;
         for i: 0..<info.inputs.count {
             sub: u64 = hash_type(info.inputs.data[i]);
             hash = (hash << 4) ^ (hash >> 60) ^ sub;
         }
-        hash = (hash >> 1) ^ (hash << 63);
+        // hash = (hash >> 1) ^ (hash << 63);
         for i: 0..<info.outputs.count {
             sub: u64 = hash_type(info.outputs.data[i]);
             hash = (hash << 4) ^ (hash >> 60) ^ sub;
@@ -630,6 +660,67 @@ hash_type :: (type: *Type_Info) -> u64
     }
     }
     ret ~0;
+}
+
+// maybe have flag to control whether structs should be compared?
+type_equals :: (a: *Type_Info, b: *Type_Info) -> bool
+{
+    if a == null || b == null ret a == b;
+    if a.id != b.id ret false;
+
+    if a.id == {
+    case KAI_TYPE_ID_FLOAT; {
+        at: *Type_Info_Float = cast a;
+        bt: *Type_Info_Float = cast b;
+        ret at.bits == bt.bits;
+    }
+    case KAI_TYPE_ID_INTEGER; {
+        at: *Type_Info_Integer = cast a;
+        bt: *Type_Info_Integer = cast b;
+        ret at.is_signed == bt.is_signed && at.bits == bt.bits;
+    }
+    case KAI_TYPE_ID_ENUM; #through; // NOTE: has similar structure to pointers
+    case KAI_TYPE_ID_POINTER; {
+        at: *Type_Info_Pointer = cast a;
+        bt: *Type_Info_Pointer = cast b;
+        ret type_equals(at.sub_type, bt.sub_type);
+    }
+    case KAI_TYPE_ID_PROCEDURE; {
+        at: *Type_Info_Procedure = cast a;
+        bt: *Type_Info_Procedure = cast b;
+        if at.inputs.count != bt.inputs.count
+        || at.outputs.count != bt.outputs.count
+            ret false;
+        for i: 0..<at.inputs.count {
+            if !type_equals(at.inputs.data[i], bt.inputs.data[i])
+                ret false;
+        }
+        for i: 0..<at.outputs.count {
+            if !type_equals(at.outputs.data[i], bt.outputs.data[i])
+                ret false;
+        }
+    }
+    case KAI_TYPE_ID_ARRAY; {
+        at: *Type_Info_Array = cast a;
+        bt: *Type_Info_Array = cast b;
+        if at.rows != bt.rows || at.cols != bt.cols
+            ret false;
+        ret type_equals(at.sub_type, bt.sub_type);
+    }
+    case KAI_TYPE_ID_STRUCT; {
+        at: *Type_Info_Struct = cast a;
+        bt: *Type_Info_Struct = cast b;
+        if at.fields.count != bt.fields.count
+            ret false;
+        for i: 0..<at.fields.count {
+            af: Struct_Field = at.fields.data[i];
+            bf: Struct_Field = bt.fields.data[i];
+            if !type_equals(af.type, bf.type)
+                ret false;
+        }
+    }
+    }
+    ret true;
 }
 
 // Numbers
@@ -999,6 +1090,7 @@ fixed_allocate :: (arena: *Fixed_Allocator, size: u32) -> *void
 
 Arena_Bucket :: struct {
     prev: *Arena_Bucket;
+    next: *Arena_Bucket;
 }
 
 Arena_Allocator :: struct {
@@ -1008,6 +1100,23 @@ Arena_Allocator :: struct {
     base              : Allocator;
 }
 
+Arena_Checkpoint :: struct {
+    bucket    : *Arena_Bucket;
+    allocated : u32;
+}
+
+arena_save :: (arena: *Arena_Allocator) -> Arena_Checkpoint
+{
+    ret Arena_Checkpoint.{bucket = arena.current_bucket, allocated = arena.current_allocated};
+}
+
+arena_restore :: (arena: *Arena_Allocator, checkpoint: Arena_Checkpoint)
+{
+    arena.current_bucket = checkpoint.bucket;
+    arena.current_allocated = checkpoint.allocated;
+}
+
+// TODO: Arenas need to be zero initialized, not this
 arena_create :: (arena: *Arena_Allocator, base: *Allocator)
 {
     assert(arena != null);
@@ -1015,15 +1124,17 @@ arena_create :: (arena: *Arena_Allocator, base: *Allocator)
 
     arena.base = [base];
     arena.bucket_size = _ceil_div(0x10000, base.page_size)->u32 * base.page_size;
-    arena.current_allocated = sizeof(*Arena_Bucket);
+    arena.current_allocated = sizeof(Arena_Bucket);
     arena.current_bucket = base.heap_allocate(base.user, null, arena.bucket_size, 0) -> *Arena_Bucket;
 }
+
 arena_destroy :: (arena: *Arena_Allocator)
 {
     arena_free_all(arena);
     arena.bucket_size = 0;
     arena.base = Allocator.{};
 }
+
 arena_free_all :: (arena: *Arena_Allocator)
 {
     assert(arena != null);
@@ -1037,23 +1148,27 @@ arena_free_all :: (arena: *Arena_Allocator)
     arena.current_bucket = null;
     arena.current_allocated = 0;
 }
+
 arena_allocate :: (arena: *Arena_Allocator, size: u32) -> *void
 {    
     assert(arena != null);
 
-    if (size > arena.bucket_size)
+    if (size > arena.bucket_size - sizeof(Arena_Bucket))
         fatal_error("Arena Allocator", "Object size greater than bucket size (incorrect usage)");
     
     if (arena.current_allocated + size > arena.bucket_size)
     {
-        new_bucket: *Arena_Bucket = cast arena.base.heap_allocate(arena.base.user, null, arena.bucket_size, 0);
-
-        // Bubble failure to caller
-        if new_bucket == null ret null;
-        
-        new_bucket.prev = arena.current_bucket;
-        arena.current_bucket = new_bucket;
-        arena.current_allocated = sizeof(*Arena_Bucket);
+        if arena.current_bucket.next != null {
+            arena.current_bucket = arena.current_bucket.next;
+            arena.current_allocated = sizeof(Arena_Bucket);
+        }
+        else {
+            new_bucket: *Arena_Bucket = cast arena.base.heap_allocate(arena.base.user, null, arena.bucket_size, 0);
+            if new_bucket == null ret null; // Bubble failure to caller
+            new_bucket.prev = arena.current_bucket;
+            arena.current_bucket = new_bucket;
+            arena.current_allocated = sizeof(Arena_Bucket);
+        }
     }
     bytes: *u8 = arena.current_bucket -> *u8;
     ptr: *void = bytes + arena.current_allocated;

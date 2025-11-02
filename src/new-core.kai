@@ -123,6 +123,13 @@ memory_copy :: (dst: *void, src: *void, size: u32)
         (dst->*u8)[i] = (src->*u8)[i];
     }
 }
+memory_copy_reverse :: (dst: *void, src: *void, size: u32)
+{
+    for i: 0..<size {
+        r := size - i - 1;
+        (dst->*u8)[r] = (src->*u8)[r];
+    }
+}
 memory_zero :: (dst: *void, size: u32)
 {
     for i: 0..<size {
@@ -190,17 +197,18 @@ string_hash_next :: (hash: u64, s: string) -> u64
     data     : *void;
 }
 
-#export raw_array_reserve :: (array: *Raw_Dynamic_Array, allocator: *Allocator, new_capacity: u32, elem_size: u32)
+#export raw_array_reserve :: (array: *Raw_Dynamic_Array, new_capacity: u32, allocator: *Allocator, elem_size: u32)
 {    
     if new_capacity <= array.capacity ret;
-    //(array.data, new_capacity * elem_size, array.capacity * elem_size);
-    //array.data = allocator.heap_allocate(allocator.user, 0, 0, 0);
+    array.data = allocator.heap_allocate(allocator.user,
+        array.data, new_capacity * elem_size, array.capacity * elem_size
+    );
     array.capacity = new_capacity;
 }
 
 #export raw_array_resize :: (array: *Raw_Dynamic_Array, new_size: u32, allocator: *Allocator, elem_size: u32)
 {    
-    //raw_array_reserve(array, new_size, allocator, elem_size);
+    raw_array_reserve(array, new_size, allocator, elem_size);
     array.count = new_size;
 }
 
@@ -208,172 +216,21 @@ string_hash_next :: (hash: u64, s: string) -> u64
 {    
     if (array.count + count) <= array.capacity ret;
     n: u32 = array.count + count;
-    new_capacity: u32 = max_u32(n + (n >> 1), 8);
-    //raw_array_reserve(array, new_capacity, allocator, elem_size);
-    new_capacity->void;
+    new_capacity: u32 = max_u32(n + n/2, 8);
+    raw_array_reserve(array, new_capacity, allocator, elem_size);
 }
 
 #export raw_array_remove :: (array: *Raw_Dynamic_Array, index: u32, elem_size: u32)
-{    
-    //for i: index ..< array.count - 1
-    //    memory_copy(array.data->*u8 + i * elem_size, array.data->*u8 + (i+1) * elem_size, elem_size);
+{
+    // Pointer types should add/sub with any integral type (u8, u16, s32, ...)
+    dst := array.data->*u8 + index * elem_size;
+    remaining_count := array.count - index - 1;
+    memory_copy(dst, dst + elem_size, remaining_count * elem_size);
     array.count -= 1;
 }
 
 // Hash Table
 
-Raw_Hash_Table :: struct {
-    count      : u32;
-    capacity   : u32;
-    occupied   : *u64;
-    hashes     : *u64;
-    keys       : *string;
-    values     : *void;
-}
-
-Hash_Table_Size :: struct {
-    occupied : u32;
-    hashes   : u32;
-    keys     : u32;
-    values   : u32;
-    total    : u32;
-}
-/*
-// Calculate size required for hash table
-raw_hash_table_size :: (capacity: u32, elem_size: u32) -> Hash_Table_Size
-{
-    r: Hash_Table_Size;
-    r.occupied = ceil_div_fast(capacity->u64, 6)->u32;// * #size(u64);
-    r.hashes   = capacity;// * #size(u64);
-    r.keys     = capacity;// * #size(string);
-    r.values   = (capacity + 1) * elem_size;
-    r.total    = r.occupied + r.hashes + r.keys + r.values;
-    ret r;
-}
-*/
-
-#export raw_hash_table_grow :: (table: *Raw_Hash_Table, allocator: *Allocator, elem_size: u32)
-{
-    /*
-    new_capacity: u32 = _max_u32(8, table.capacity * 2);
-    new_size: Hash_Table_Size = raw_hash_table_size(new_capacity, elem_size);
-    new_ptr: *void = _allocate(null, new_size.total, 0);
-
-    // Distribute allocated memory
-    occupied: *u64    = new_ptr -> *u64;
-    hashes:   *u64    = (occupied->*u8 + new_size.occupied) -> *u64;
-    keys:     *string = (hashes->*u8 + new_size.hashes) -> *string;
-    values:   *u8     = (keys->*u8 + new_size.keys) -> *u8 + elem_size;
-
-    // Rehash all elements
-    count: u32 = 0;
-    for i: 0..<table.capacity
-    if table.occupied[i / 64] & (1->u64 << (i % 64))
-    {
-        hash: u64 = string_hash(table.keys[i]);
-        mask: u32 = new_capacity - 1;
-        index: u32 = hash->u32 & mask;
-    
-        for j: 0..<new_capacity
-        {
-            block: u64 = occupied[index / 64];
-            bit: u64 = 1->u64 << (index % 64); // are you kidding me!!
-    
-            // Do an insertion
-            if (block & bit) == 0
-            {
-                occupied[index / 64] |= bit;
-                hashes[index] = hash;
-                keys[index] = table.keys[i];
-                src: *u8 = table.values->*u8 + i * elem_size;
-                _memory_copy(values + index * elem_size, src, elem_size);
-                count += 1;
-                break;
-            }
-    
-            index = (index + 1) & mask;
-        }
-    }
-
-    assert(count == table.count);
-
-    // Free old memory
-    if table.capacity != 0 {
-        _free(table.occupied, raw_hash_table_size(table.capacity, elem_size).total);
-    }
-
-    table.capacity = new_capacity;
-    table.occupied = occupied;
-    table.hashes   = hashes;
-    table.keys     = keys;
-    table.values   = values;
-    */
-}
-
-#export raw_hash_table_emplace_key :: (table: *Raw_Hash_Table, key: string, out_index: *u32, allocator: *Allocator, elem_size: u32) -> bool
-{
-    // Check load factor and grow hash table
- //   if 4 * table.count >= 3 * table.capacity
- //       raw_hash_table_grow(table, allocator, elem_size);
-
-    hash := hash_string(key);
-    mask := table.capacity - 1;
-    index := hash->u32 & mask;
-
-    for i: 0..<table.capacity
-    {
-        byte : u64 = table.occupied[index / 64];
-        bit  : u64 = 1 << (index % 64);
-
-        // Do an insertion
-        if (byte & bit) == 0
-        {
-            table.occupied[index / 64] |= bit;
-            table.hashes[index] = hash;
-            table.keys[index] = key;
-            table.count += 1;
-            [out_index] = index;
-            ret true;
-        }
-
-        // Emplace an existing item
-        if table.hashes[index] == hash && string_equals(table.keys[index], key)
-        {
-            [out_index] = index;
-            ret false;
-        }
-
-        index = (index + 1) & mask;
-    }
-    [out_index] = ~0;
-    ret false;
-}
-
-#export raw_hash_table_find :: (table: *Raw_Hash_Table, key: string) -> s64
-{
-    hash := hash_string(key);
-    mask := table.capacity - 1;
-    index := hash->u32 & mask;
-
-    for i: 0..<table.capacity
-    {
-        block : u64 = table.occupied[index / 64];
-        bit   : u64 = 1 << (index % 64);
-
-        if (block & bit) == 0
-        {
-            ret -1; // Slot was empty
-        }
-        else if table.hashes[index] == hash
-             && string_equals(table.keys[index], key)
-        {
-            ret index->s64;
-        }
-
-        index = (index + 1) & mask;
-    }
-    ret -1;
-}
 
 // Errors
 

@@ -13,6 +13,7 @@ _term_debug_colors: [7] cstring = .{
 
 _file_writer_write :: (user: *void, command: Write_Command, value: Value, format: Write_Format)
 {
+    // TODO: need to properly handle min_count and fill_character   
     if user == null ret;
     f: *FILE = cast user;
     if command & 0x80 {
@@ -33,7 +34,10 @@ _file_writer_write :: (user: *void, command: Write_Command, value: Value, format
             value.u64 = value.u32 -> u64;
         } #through;
         case KAI_WRITE_U64; {
-            fprintf(f, "%llu", value.u64);
+            if (format.min_count == 0)
+                fprintf(f, "%llu", value.u64);
+            else
+                fprintf(f, "%016llu", value.u64);
         }
         case KAI_WRITE_S8; {
             value.s64 = value.s8 -> s64;

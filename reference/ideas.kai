@@ -165,6 +165,41 @@ example :: ()
     #import file "../utils.kai";
 }
 
+// Idea: Customizable hash tables
+example :: ()
+{
+    Object :: struct {
+        name: string;
+        id: u32;
+    }
+
+    // How can we change hash function or compare function?
+    table: [Object] f32;
+
+    // Special compiler directives?
+
+    // Functions will shadow what is in the global scope.
+    // Functions must also have predefined signatures:
+    //   - (Key) -> u64
+    //   - (Key, Key) -> bool
+    #hash_function
+    my_hash :: (a: Object) -> u64
+    {
+        ret a.id ^ 0b10110110101011;
+    }
+    #equals_function
+    my_equals :: (a, b: Object) -> bool
+    {
+        ret a.id == b.id;
+    }
+
+    // should effect operators & builtins?
+    obj: Object;
+
+    hash := #hash(obj);
+    same : bool = obj == Object.{id = 3};
+}
+
 // Idea: Procedure for converting value into a byte slice
 example :: ()
 {

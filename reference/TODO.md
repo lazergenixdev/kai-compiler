@@ -1,19 +1,19 @@
 # TODO
 - [x] rename "memory" procedures to "allocator"
-- [ ] by default, we need to cache all types, and only create new types for ones we haven't seen (or marked "#distinct")
+- [x] need to have hash tables with arbitrary key types (or at least just string + Type)
+- [x] by default, we need to cache all types
+- [x] fix crash on circular dependencies on types
 - [ ] should print type look for recursive types?
 - [ ] better compilation for recusive types
 - [ ] cached typed need to be per-scope?
-- [ ] add statement tags {}
+- [ ] add statement tags `{}`
 - [ ] add `#optional_export` and `#require_export` directives
 - [ ] need some kind of import handler from host
 - [ ] remove need for `destroy_syntax_tree` by passing in arena as input to `create_syntax_tree`
 - [ ] rename `EXPR_ARRAY` to `EXPR_ARRAY_TYPE`
 - [ ] fix parser so that `#array` and `#map` can be removed
 - [ ] fix nested constant declarations
-- [ ] fix crash on circular dependencies on types
 - [ ] need a flag to tell `compile_program` to keep the AST around
-- [ ] need to have hash tables with arbitrary key types (or at least just string + Type)
 
 # Optional / Extra
 - [x] remove unused `loop` keyword
@@ -30,6 +30,8 @@
 - [ ] strings need to be handled better in parser/tokenizer
 - [ ] use web workers for running wasm compiler code, to have proper syncronization
 - [ ] write procedure should return number of characters written
+- [ ] use word "free" instead of "destroy"?
+- [ ] create new types for types marked `#distinct`
 
 # Version 0.1.1
 - [ ] type-check all of compiler source code

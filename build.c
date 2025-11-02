@@ -86,8 +86,6 @@ Macro function_macros[] = {
 	{"array_remove", "(ARRAY, INDEX)", "kai_raw_array_remove((Kai_Raw_Dynamic_Array*)(ARRAY), INDEX, sizeof((ARRAY)->data[0]))"},
 	{"array_remove_n", "(ARRAY)", "TODO"},
 	{"array_remove_swap", "(ARRAY)", "TODO"},
-	{"table_set", "(T,KEY,...)", "do{ Kai_u32 _; kai_raw_hash_table_emplace_key((Kai_Raw_Hash_Table*)(T), KEY, &_, allocator, sizeof (T)->values[0]); (T)->values[_] = (__VA_ARGS__); }while(0)"},
-	{"table_find", "(T,KEY)", "kai_raw_hash_table_find((Kai_Raw_Hash_Table*)(T), KEY)"},
 };
 
 Macro internal_macros[] = {
@@ -205,10 +203,21 @@ const char* temp_cstr_upper(Kai_string s)
 	temp_cstr_buffer[s.count] = 0;
 	return (const char*)temp_cstr_buffer;
 }
+const char* temp_cstr_lower(Kai_string s)
+{
+	ASSERT(s.count < sizeof(temp_cstr_buffer));
+	for (Kai_u32 i = 0; i < s.count; ++i)
+	{
+		temp_cstr_buffer[i] = ('A' <= s.data[i] && s.data[i] <= 'Z')
+		                    ? s.data[i] + ('a' - 'A') : s.data[i];
+	}
+	temp_cstr_buffer[s.count] = 0;
+	return (const char*)temp_cstr_buffer;
+}
 
 const char* clone_string(Kai_string s)
 {
-	char* new = malloc(s.count+1);
+	char* new = temp_alloc(s.count+1);
 	memcpy(new, s.data, s.count);
 	new[s.count] = 0;
 	return new;
@@ -330,6 +339,11 @@ Variable_Type type_of_expression(Kai_Expr* expr)
 		const char* name = temp_cstr_from_string(expr->source_code);
 		//printf("name(%s)\n", name);
 		return lookup(name);
+	} break;
+
+	case KAI_EXPR_UNARY: {
+		Kai_Expr_Unary* u = (void*)expr;
+		return type_of_expression(u->expr);
 	} break;
 	
 	case KAI_EXPR_BINARY: {
@@ -542,10 +556,11 @@ int binary_operator_precedence(Kai_u32 op)
 }
 
 enum {
-	NONE      = 0x00,
-	NO_RENAME = 0x01,
-	NOT_TYPE  = 0x02,
-	KEEP_ALL_PARENTHESIS = 0x04,
+	NONE       = 0x00,
+	NO_RENAME  = 0x01,
+	NOT_TYPE   = 0x02,
+	LOWER_CASE = 0x04,
+	KEEP_ALL_PARENTHESIS = 0x08,
 };
 Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int prec, int flags);
 
@@ -597,22 +612,18 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 	switch (expr->id)
 	{
 	case KAI_EXPR_IDENTIFIER: {
-		if (kai_string_equals(expr->source_code, KAI_STRING("true")))
-		{
-			sb_append(builder, "KAI_TRUE");
-			return Identifier_Type_Invalid;
-		}
-		else if (kai_string_equals(expr->source_code, KAI_STRING("false")))
-		{
-			sb_append(builder, "KAI_FALSE");
-			return Identifier_Type_Invalid;
-		}
-		else if (kai_string_equals(expr->source_code, KAI_STRING("null")))
+		if (kai_string_equals(expr->source_code, KAI_STRING("null")))
 		{
 			sb_append(builder, "NULL");
 			return Identifier_Type_Invalid;
 		}
-		const char* name = temp_cstr_from_string(expr->source_code);
+
+		const char* name;
+		if (flags & LOWER_CASE)
+			name = temp_cstr_lower(expr->source_code);
+		else
+			name = temp_cstr_from_string(expr->source_code);
+		
 		Identifier_Type type = Identifier_Type_Invalid;
 		if (!(flags & NO_RENAME))
 		{
@@ -788,17 +799,28 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		Kai_Expr_Procedure_Call* call = (void*)expr;
 
 		bool copy_source = false;
+		bool insert_type = false;
 		int flags = NOT_TYPE;
-		if (call->proc->id == KAI_EXPR_IDENTIFIER
-		&& kai_string_equals(call->proc->source_code, KAI_STRING("C")))
+		if (call->proc->id == KAI_EXPR_IDENTIFIER)
 		{
-			copy_source = true;
-		}
-		if (call->proc->id == KAI_EXPR_IDENTIFIER
-		&& (kai_string_equals(call->proc->source_code, KAI_STRING("sizeof"))
-		||  kai_string_equals(call->proc->source_code, KAI_STRING("LINKED_LIST"))))
-		{
-			flags &= (~NOT_TYPE);
+			if (kai_string_equals(call->proc->source_code, KAI_STRING("C")))
+			{
+				copy_source = true;
+			}
+			else if (kai_string_equals(call->proc->source_code, KAI_STRING("sizeof"))
+			     ||  kai_string_equals(call->proc->source_code, KAI_STRING("LINKED_LIST")))
+			{
+				flags &= (~NOT_TYPE);
+			}
+			else if (kai_string_equals(call->proc->source_code, KAI_STRING("table_set")))
+			{
+				flags |= LOWER_CASE;
+				insert_type = true;
+			}
+			else if (kai_string_equals(call->proc->source_code, KAI_STRING("table_find")))
+			{
+				insert_type = true;
+			}
 		}
 		//if (call->proc->id == KAI_EXPR_IDENTIFIER)
 		//{
@@ -812,6 +834,18 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		}
 		for (Kai_Stmt* arg = call->arg_head; arg != NULL; arg = arg->next)
 		{
+			if (insert_type)
+			{
+				Variable_Type type = type_of_expression(arg);
+				ASSERT(type.expr != NULL);
+				// printf("%u (%u)\n", arg->line_number, type.expr->line_number);
+				// kai_write_expression(&g_writer, type.expr, 1);
+				ASSERT(type.expr->id == KAI_EXPR_ARRAY);
+				Kai_Expr_Array* a = (void*)type.expr;
+				generate_expression(builder, a->rows, TOP_PRECEDENCE, NO_RENAME|flags);
+				sb_append(builder, ", ");
+				insert_type = false;
+			}
 			if (copy_source)
 			{
 				ASSERT(arg->id == KAI_EXPR_STRING);
@@ -1041,11 +1075,15 @@ void generate_all_data_structure_types(String_Builder* builder, Kai_Stmt* stmt)
 		}
 		else if (arr->rows->id == KAI_EXPR_IDENTIFIER)
 		{
-			ASSERT(kai_string_equals(arr->rows->source_code, KAI_STRING("string")));
+			t = clone_string(name);
 			if (!shget(g_generated_hashtable_types, t)) {
-				sb_append(builder, "typedef KAI_HASH_TABLE(Kai_string,");
+				sb_append(builder, "typedef KAI_HASH_TABLE(");
+				generate_expression(builder, arr->rows, TOP_PRECEDENCE, NONE);
+				sb_append(builder, ",");
 				generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
-				sb_appendf(builder, ") Kai_%s_%s_HashTable;\n", "string", t);
+				sb_append(builder, ") Kai_");
+				generate_expression(builder, arr->rows, TOP_PRECEDENCE, NO_RENAME);
+				sb_appendf(builder, "_%s_HashTable;\n", t);
 				shput(g_identifier_map, t, Identifier_Type_Struct);
 				shput(g_generated_hashtable_types, t, true);
 			}
@@ -1839,6 +1877,8 @@ int main(int argc, char** argv)
 	shput(g_identifier_map, "assert",      Identifier_Type_Function);
 	shput(g_identifier_map, "fatal_error", Identifier_Type_Function);
 	shput(g_identifier_map, "u128",        Identifier_Type_Type);
+	shput(g_identifier_map, "table_set",   Identifier_Type_Function);
+	shput(g_identifier_map, "table_find",  Identifier_Type_Function);
 
 	shput(g_identifier_map, "_setup_utf8_stdout",           Identifier_Type_Function);
 	shput(g_identifier_map, "_stdc_file_open",              Identifier_Type_Function);

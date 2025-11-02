@@ -76,13 +76,13 @@ int main()
 
     for (int i = 0; i < 1024; test_string = next(test_string), ++i)
     {
-        kai_table_set(&table, test_string, i);
+        kai_table_set(string, &table, test_string, i);
         //write_table(writer, &table);
 
         for (int j = 0; j < i+1; ++j)
         {
             Kai_string key = {.count = seed.count, .data = scratch + seed.count * j};
-            Kai_int k = kai_table_find(&table, key);
+            Kai_int k = kai_table_find(string, &table, key);
             if (k == -1) FAIL("on %i\n", i);
         }
     }

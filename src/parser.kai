@@ -994,8 +994,11 @@ _parser_create_procedure_type :: (parser: *Parser, in_out: *Expr, in_count: u8, 
 {
     node: *Expr_Procedure_Type = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure_Type));
     node.id = KAI_EXPR_PROCEDURE_TYPE;
-    node.source_code = in_out.source_code;
-    node.line_number = in_out.line_number;
+    // TODO: need source code and line number here
+    if in_out != null {
+        node.source_code = in_out.source_code;
+        node.line_number = in_out.line_number;
+    }
     node.in_out_expr = in_out;
     node.in_count = in_count;
     node.out_count = out_count;
