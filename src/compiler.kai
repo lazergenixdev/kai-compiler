@@ -1491,6 +1491,10 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             // Compile procedure body as compilation unit
             if _create_nodes(context, p.body)
                 ret true;
+
+			if prev_node_count != context.nodes.count then
+				ret _error_fatal(context, STRING("nested const is not yet ready, please make non-const, sorry :("));
+
             if _compile_all_nodes_in_scope(context)
                 ret true;
 

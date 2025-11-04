@@ -1731,8 +1731,9 @@ void compile_playground(void)
 		cmd_append(&cmd, executable("clang"));
 		cmd_append(&cmd, "-Wall", "-Wextra");
 		if (compile_debug) nob_cc_debug(&cmd);
-		else cmd_append(&cmd, "-Os");
+		//else cmd_append(&cmd, "-Os");
 		cmd_append(&cmd, "--target=wasm32", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic");
+		cmd_append(&cmd, "-z", "stack-size=2097152"); // this is probably too much stack space  o.o
 		cmd_append(&cmd, "lib.c");
 		cmd_append(&cmd, "-o", "lib.wasm");
 		exit_on_fail(cmd_run_sync_and_reset(&cmd));

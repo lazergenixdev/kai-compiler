@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20251102173435 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20251104055711 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -6757,6 +6757,8 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
             Kai_u32 local_node_count = (context->local_nodes).count;
             if (kai__create_nodes(context, p->body))
                 return KAI_TRUE;
+            if (prev_node_count!=(context->nodes).count)
+                return kai__error_fatal(context, KAI_STRING("nested const is not yet ready, please make non-const, sorry :("));
             if (kai__compile_all_nodes_in_scope(context))
                 return KAI_TRUE;
             Kai_Expr* current = p->in_out_expr;

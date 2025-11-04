@@ -218,6 +218,11 @@
 			};
 			this.colorActive = false;
 			this.bytes = [];
+			this.total_length = 0;
+		}
+
+		is_full() {
+			return this.total_length > 4096;
 		}
 
 		append(string) {
@@ -233,6 +238,7 @@
 		set_color(index) {
 			if (this.bytes.length !== 0) {
 				this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+				this.total_length += this.bytes.length;
 				this.bytes.length = 0;
 			}
 
@@ -259,13 +265,23 @@
 		finalize() {
 			if (this.bytes.length !== 0) {
 				this.parts.push(new TextDecoder().decode(new Uint8Array(this.bytes)));
+				this.total_length += this.bytes.length;
 				this.bytes.length = 0;
 			}
 			if (this.colorActive) {
 				this.parts.push("</span>");
 				this.colorActive = false;
 			}
-			return this.parts.join("");
+			let HTML = this.parts.join("");
+			if (this.is_full()) {
+				HTML += "<span style=\"color:white\">\n"
+				HTML += "... Truncated to improve compile times :(\n"
+				HTML += "... sorry, this type of HTML rendering is VERY SLOW\n"
+				HTML += "... (yes, I know I can just separate compiling and HTML rendering)\n"
+				HTML += "... (but I do NOT want to write any more JS)\n"
+				HTML += "</span>"
+			}
+			return HTML;
 		}
 	}
 	class ArenaAllocator {
@@ -343,6 +359,7 @@
 	let builder = null;
 
 	function write(user, type, value, format) {
+		if (builder.is_full()) return;
 		const view = new DataView(c_memory.buffer);
 		if (type & 0x80) {
 			builder.set_color(type & 0x7F);
@@ -356,7 +373,9 @@
 				/*STRING */ case 0: {
 				let count = view.getUint32(value, true);
 				let data = view.getUint32(value + 4, true);
-				builder.append(new Uint8Array(c_memory.buffer).slice(data, data + count));
+				let bytes = new Uint8Array(c_memory.buffer).slice(data, data + count);
+				//console.log("Got string:", data.toString(16), Array.from(bytes), `"${new TextDecoder().decode(bytes)}"`);
+				builder.append(bytes);
 				break;
 			}
 				///*U8  */ 1: {},
@@ -428,7 +447,7 @@
 	CodeMirror.defineSimpleMode("mylang", {
 		start: [
 			{ regex: /"(?:[^\\]|\\.)*?"/, token: "string" },
-			{ regex: /(?:break|case|cast|continue|defer|enum|if|else|for|while|ret|struct|union|using)\b/, token: "keyword" },
+			{ regex: /(?:break|case|cast|continue|defer|enum|if|then|else|for|while|ret|struct|union|using)\b/, token: "keyword" },
 			{ regex: /u(?:8|16|32|64)|s(?:8|16|32|64)|f(?:32|64)|string/, token: "type" },
 			{ regex: /true|false|null/, token: "atom" },
 			{ regex: /\/\/.*/, token: "comment" },
@@ -519,7 +538,8 @@
 		}
 	}
 
-	WebAssembly.instantiateStreaming(fetch('lib.wasm'), {
+	// TODO: build optimized WASM in build.c (new build command + assume have wasm-opt)
+	WebAssembly.instantiateStreaming(fetch('lib.opt.wasm'), {
 		env: {
 			console_log,
 			write,
