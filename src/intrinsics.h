@@ -55,41 +55,41 @@ static inline Kai_u32 kai_intrinsics_ctz64(Kai_u64 value)
 
 #if !defined(KAI_NO_INTRINSIC_128) && (defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU))
     typedef unsigned __int128 Kai_u128;
-#   define kai_intrinsics_u128_low(Value) (Kai_u64)(Value)
-#   define kai_intrinsics_u128_high(Value) (Kai_u64)(Value >> 64)
-#   define kai_intrinsics_u128_multiply(A,B) ((Kai_u128)(A) * (Kai_u128)(B))
+#   define kai_intrinsics_u128_low(x) (Kai_u64)(x)
+#   define kai_intrinsics_u128_high(x) (Kai_u64)(x >> 64)
+#   define kai_intrinsics_u128_multiply(a,b) ((Kai_u128)(a) * (Kai_u128)(b))
 #elif !defined(KAI_NO_INTRINSIC_128) && defined(KAI_COMPILER_MSVC)
     typedef struct { unsigned __int64 low, high; } Kai_u128;
-#   define kai_intrinsics_u128_low(Value) (Value).low
-#   define kai_intrinsics_u128_high(Value) (Value).high
-    static inline Kai_u128 kai_intrinsics_u128_multiply(Kai_u64 A, Kai_u64 B) {
+#   define kai_intrinsics_u128_low(x) (x).low
+#   define kai_intrinsics_u128_high(x) (x).high
+    static inline Kai_u128 kai_intrinsics_u128_multiply(Kai_u64 a, Kai_u64 b) {
         Kai_u128 r;
-        r.low = _umul128(A, B, &r.high);
+        r.low = _umul128(a, b, &r.high);
         return r;
     }
 #else // fallback
     typedef struct { Kai_u64 low, high; } Kai_u128;
-#   define kai_intrinsics_u128_low(Value) (Value).low
-#   define kai_intrinsics_u128_high(Value) (Value).high
-    static inline Kai_u128 kai_intrinsics_u128_multiply(Kai_u64 A, Kai_u64 B) {
+#   define kai_intrinsics_u128_low(x) (x).low
+#   define kai_intrinsics_u128_high(x) (x).high
     // https://www.codeproject.com/Tips/618570/UInt-Multiplication-Squaring
-        Kai_u64 a1 = (A & 0xffffffff);
-        Kai_u64 b1 = (B & 0xffffffff);
+    static inline Kai_u128 kai_intrinsics_u128_multiply(Kai_u64 a, Kai_u64 b) {
+        Kai_u64 a1 = (a & 0xffffffff);
+        Kai_u64 b1 = (b & 0xffffffff);
         Kai_u64 t = (a1 * b1);
         Kai_u64 w3 = (t & 0xffffffff);
         Kai_u64 k = (t >> 32);
 
-        A >>= 32;
-        t = (A * b1) + k;
+        a >>= 32;
+        t = (a * b1) + k;
         k = (t & 0xffffffff);
         Kai_u64 w1 = (t >> 32);
 
-        B >>= 32;
-        t = (a1 * B) + k;
+        b >>= 32;
+        t = (a1 * b) + k;
         k = (t >> 32);
 
         return (Kai_u128) {
-            .high = (A * B) + w1 + k,
+            .high = (a * b) + w1 + k,
             .low = (t << 32) + w3,
         };
     }

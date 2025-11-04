@@ -804,25 +804,22 @@ void generate_enum(String_Builder* builder, Kai_Expr* expr)
     Kai_uint max_width = 0;
     for (Kai_Stmt* current = e->head; current != NULL; current = current->next)
     {
-        ASSERT(current->id == KAI_STMT_DECLARATION);
-        Kai_Stmt_Declaration* d = (Kai_Stmt_Declaration*)current;
-        if (d->name.count > max_width)
-            max_width = d->name.count;
+        if (current->name.count > max_width)
+            max_width = current->name.count;
     }
 
     sb_appendf(builder, "enum /* Kai_%.*s */ {\n", (int)d->name.count, d->name.data);
     for (Kai_Stmt* current = e->head; current != NULL; current = current->next)
     {
-        Kai_Stmt_Declaration* ed = (Kai_Stmt_Declaration*)current;
         tab(1);
         sb_append(builder, "KAI_");
         if (long_names)
             sb_appendf(builder, "%s_", cstr_upper(d->name));
-        sb_append_string(builder, ed->name);
-        for (Kai_uint i = ed->name.count; i < max_width; ++i)
+        sb_append_string(builder, current->name);
+        for (Kai_uint i = current->name.count; i < max_width; ++i)
             da_append(builder, ' ');
         sb_append(builder, " = ");
-        generate_expression(builder, ed->value, TOP_PRECEDENCE, 0);
+        generate_expression(builder, current, TOP_PRECEDENCE, 0);
         sb_append(builder, ",");
         write_inline_comment(builder, current);
         sb_append(builder, "\n");

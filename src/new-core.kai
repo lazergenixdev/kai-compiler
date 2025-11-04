@@ -2,6 +2,11 @@
 // lang :: #import "common_language_semantics"
 //#import "new-allocator.kai";
 
+//#import "builtin";
+
+//#import "module:writer";
+//#import "module:allocator";
+
 VERSION_STRING :: #host_import;
 VERSION_MAJOR  :: #host_import;
 VERSION_MINOR  :: #host_import;
@@ -57,9 +62,9 @@ gcd :: (a: u64, b: u64) -> u64
 }
 
 Module_Mask :: enum u32 {
-    BUILTIN :: 1 << 0; // clz, ctz, popcount
-    DEBUG   :: 1 << 1; // print(...), breakpoint();
-    STRINGS :: 1 << 2; // concat, join, trim
+    BUILTIN = 1 << 0, // clz, ctz, popcount
+    DEBUG   = 1 << 1, // print(...), breakpoint();
+    STRINGS = 1 << 2, // concat, join, trim
 }
 
 //u128 :: struct { low: u64; high: u64; };
@@ -100,9 +105,9 @@ add_with_precision_loss :: (a: u64, b: u64, exp: *s32, sub: bool) -> u64
 // Memory Allocator
 
 #export Memory_Command :: enum u32 {
-    ALLOCATE_WRITE_ONLY :: 0;
-    SET_EXECUTABLE      :: 1;
-    FREE                :: 2;
+    ALLOCATE_WRITE_ONLY = 0,
+    SET_EXECUTABLE      = 1,
+    FREE                = 2,
 };
 
 #export Memory_Heap_Allocate     :: #proc (user: *void, ptr: *void, new_size: u32, old_size: u32) -> *void;
@@ -224,26 +229,36 @@ string_hash_next :: (hash: u64, s: string) -> u64
 {
     // Pointer types should add/sub with any integral type (u8, u16, s32, ...)
     dst := array.data->*u8 + index * elem_size;
-    remaining_count := array.count - index - 1;
-    memory_copy(dst, dst + elem_size, remaining_count * elem_size);
+    //remaining_count := array.count - index - 1;
+    //memory_copy(dst, dst + elem_size, remaining_count * elem_size);
     array.count -= 1;
 }
 
 // Hash Table
 
+Raw_Table_With_Key :: struct {
+    count  : u32;
+    keys   : *string;
+    values : *void;
+}
+
+raw_table_find_string :: (table: *Raw_Table_With_Key, key: string, out_index: *u32) -> bool
+{
+    ret false;
+}
 
 // Errors
 
 #export Result :: enum u32 {
-    SUCCESS        :: 0;
-    ERROR_MEMORY   :: 1;
-    ERROR_SYNTAX   :: 2; @comment ("error from parsing")
-    ERROR_TYPE     :: 3; @comment ("error from type checking")
-    ERROR_SEMANTIC :: 3;
-    ERROR_INFO     :: 4;
-    ERROR_FATAL    :: 5; @comment ("means compiler bug probably")
-    ERROR_INTERNAL :: 6; @comment ("means compiler error unrelated to the source code")
-    RESULT_COUNT   :: 7;
+    SUCCESS        = 0,
+    ERROR_MEMORY   = 1,
+    ERROR_SYNTAX   = 2, @comment ("error from parsing")
+    ERROR_TYPE     = 3, @comment ("error from type checking")
+    ERROR_SEMANTIC = 3,
+    ERROR_INFO     = 4,
+    ERROR_FATAL    = 5, @comment ("means compiler bug probably")
+    ERROR_INTERNAL = 6, @comment ("means compiler error unrelated to the source code")
+    RESULT_COUNT   = 7,
 }
 
 #export Source :: struct {
@@ -268,18 +283,18 @@ string_hash_next :: (hash: u64, s: string) -> u64
 // Type Info
 
 #export Type_Id :: enum u8 {
-    TYPE      :: 0; @comment ("no type info struct")
-    VOID      :: 1; @comment ("no type info struct")
-    BOOLEAN   :: 2; @comment ("no type info struct")
-    INTEGER   :: 3;
-    FLOAT     :: 4;
-    POINTER   :: 5;
-    PROCEDURE :: 6;
-    ARRAY     :: 7;
-    STRUCT    :: 8;
-    ENUM      :: 9;
-    STRING    :: 10; @comment ("same as STRUCT")
-    NUMBER    :: 11; @comment ("compiler internal only")
+    TYPE      = 0, @comment ("no type info struct")
+    VOID      = 1, @comment ("no type info struct")
+    BOOLEAN   = 2, @comment ("no type info struct")
+    INTEGER   = 3,
+    FLOAT     = 4,
+    POINTER   = 5,
+    PROCEDURE = 6,
+    ARRAY     = 7,
+    STRUCT    = 8,
+    ENUM      = 9,
+    STRING    = 10, @comment ("same as STRUCT")
+    NUMBER    = 11, @comment ("compiler internal only")
 } @long_names
 
 #export Type :: *Type_Info;

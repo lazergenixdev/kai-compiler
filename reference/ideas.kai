@@ -406,6 +406,56 @@ example :: ()
     }
 }
 
+// Idea: struct unpacking?
+example :: ()
+{
+    Vector2 :: struct { x, y: f32; };
+    Vector4 :: struct { x, y, z, w: f32; };
+
+    v2: Vector2 = {1, 2};
+    v4  :: Vector4.{..v2, 0, 1}; // doesn't make sense here
+    v4_ :: Vector4.{1, 0, ..v2}; // and this is weird
+
+    // This is better example?
+    hex: struct { flags: Enum; } : {.BASE_16};
+    my_format :: Format.{..hex, min_count = 16}; // flags will equal flags in hex struct
+}
+ 
+// Idea: Formatted string as a type (just a struct)
+example :: ()
+{
+    //my_format :: #bake format(min_count = 16, fill = #char "0", flags = .BASE_16);
+    my_format :: Format.{min_count = 16, fill = #char "0", flags = .BASE_16};
+
+    a := 0x45;
+    pointer := *a;
+
+    print($"formated string! {a} @ {pointer:my_format}");
+
+    Format_Fragment :: struct {
+        value: #Any;
+        offset: u32;
+        min_count: u8;
+        fill: u8;
+        flags: u8;
+    };
+
+    Formatted_String :: struct {
+        format: string;
+        fragments: [] Format_Fragment;
+    };
+
+    i := 0;
+    s := 0;
+    while i < fragments.count {
+        offset := fragments[i].offset;
+        print_string(format[s..<offset]);
+        print_fragment(fragments[i]);
+        i += 1;
+    }
+    print_string(format[s..]);
+}
+
 
 // NOTES SECTION
 
@@ -447,3 +497,11 @@ s32
 s64
 // if the value has a fractional part, then it will be
 f32
+
+#import "assembly:x86"
+#import "assembly:avx2"
+x86.int3();
+avx2.blend_ps(a, b, c);
+
+#import "debugger"
+debugger.breakpoint();

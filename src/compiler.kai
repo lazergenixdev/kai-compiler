@@ -5,8 +5,8 @@ Compile_Flags :: enum u32 {
 }
 
 Compile_Options :: struct {
-    interpreter_max_step_count : u32; // default(0) => 1000000
-    interpreter_max_call_depth : u32; // default(0) => 1024
+    interpreter_max_step_count : u32; @comment ("default (0) => 1000000")
+    interpreter_max_call_depth : u32; @comment ("default (0) => 1024")
     flags                      : Compile_Flags;
 }
 
@@ -16,19 +16,30 @@ Import :: struct {
     value: Value;
 }
 
+Export :: struct {
+    name: string;
+    type: Type;
+    value: Value;
+}
+
+Module :: struct {
+    exports: [] Export;
+}
+
 /*
 Resolve_Result :: enum u32 {
     FOUND_SOURCE :: 0;
-    MISSING      :: 1;
+    FOUND_MODULE :: 1;
+    MISSING      :: 2;
 }
 P_Resolve_Import :: #proc (user: *void, name: string, out_source: *Source) -> Resolve_Result;
 */
 
 Program_Create_Info :: struct {
+    allocator         : Allocator; @comment ("!! required")
+    error             : *Error;    @comment ("recommended")
     sources           : [] Source;
     imports           : [] Import;
-    allocator         : Allocator;
-    error             : *Error;
     options           : Compile_Options;
     debug_writer      : *Writer;
 }
@@ -135,7 +146,7 @@ Compiler_Context :: struct {
     nodes:                  [..] Node;
     local_nodes:            [..] Local_Node;
     trees:                  [] Syntax_Tree;
-    type_cache:             [Type] u8;
+    type_cache:             [Type] u32;
     scopes:                 [..] Scope;
 
     // Info about what is currently being compiled
@@ -761,6 +772,12 @@ _evaluate_binary_operation :: (op: u32, type: *Type_Info, a: Value, b: Value) ->
                         if op == {
                             case #char "+"; ret Value.{u64 = a.u64 + b.u64};
                             case #char "-"; ret Value.{u64 = a.u64 - b.u64};
+                        }
+                    }
+                    case 32; {
+                        if op == {
+                            case #char "+"; ret Value.{u32 = a.u32 + b.u32};
+                            case #char "-"; ret Value.{u32 = a.u32 - b.u32};
                         }
                     }
                 }
@@ -1617,13 +1634,13 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
 
             current: *Expr = e.head;
             for i: 0..<e.field_count {
-                assert(current.id == KAI_STMT_DECLARATION);
-                d: *Stmt_Declaration = cast current;
-
-                type: *Type_Info = sv.type;
-                value: Value;
-                if _value_of_expr(context, d.value, *value, *type)
-                    ret true;
+                if !(current.flags & KAI_FLAG_ENUM_NO_VALUE)
+                {
+                    type: *Type_Info = sv.type;
+                    value: Value;
+                    if _value_of_expr(context, current, *value, *type)
+                        ret true;
+                }
                 
                 // TODO: need to save all values
                 //ASSERT(type.id == KAI_TYPE_ID_NUMBER);
@@ -2227,6 +2244,11 @@ _copy_value :: (out: *u8, type: *Type_Info, value: Value)
                 case 32; [out -> *f32] = value.f32;
                 case 64; [out -> *f64] = value.f64;
             }
+        }
+        case KAI_TYPE_ID_ARRAY; {
+            info: *Type_Info_Array = cast type;
+            // TODO: copy array here
+            info->void;
         }
         case KAI_TYPE_ID_POINTER; #through;
         case KAI_TYPE_ID_PROCEDURE; {

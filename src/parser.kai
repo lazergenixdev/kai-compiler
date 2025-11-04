@@ -46,6 +46,7 @@ Control_Kind :: enum u8 {
 
 Expr_Flags :: enum u8 {
     FLAG_DECL_CONST       = 1 << 0;
+    FLAG_ENUM_NO_VALUE    = 1 << 0;
     FLAG_DECL_USING       = 1 << 1;
     FLAG_EXPR_USING       = 1 << 1;
     FLAG_PROC_USING       = 1 << 1;
@@ -865,7 +866,6 @@ _error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: str
         context = wanted,
         memory = memory,
     };
-
     ret null;
 }
 
@@ -936,7 +936,7 @@ _parser_create_number :: (parser: *Parser, token: Token) -> *Expr
     node.source_code = token.string;
     node.line_number = token.line_number;
     node.value = token.value.number;
-    ret node -> *Expr;
+    ret parse_tag_to_expr(parser, node -> *Expr);
 }
 _parser_create_literal :: (parser: *Parser, token: Token, head: *Expr, count: u32) -> *Expr
 {
@@ -1176,7 +1176,8 @@ parse_procedure_call_arguments :: (parser: *Parser, arg_count: *u32) -> *Expr
 parse_tag_to_expr :: (parser: *Parser, expr: *Expr) -> *Expr
 {
     peeked: *Token = _peek_token();
-    if peeked.id == KAI_TOKEN_TAG {
+    tag: *Tag;
+    while peeked.id == KAI_TOKEN_TAG {
         token: Token = [peeked];
         _next_token(); // advance to tag
 
@@ -1187,9 +1188,17 @@ parse_tag_to_expr :: (parser: *Parser, expr: *Expr) -> *Expr
             _next_token(); // skip '('
             arg_count: u32;
             tag_expr = parse_procedure_call_arguments(parser, *arg_count);
+            _peek_token();
         }
 
-        expr.tag = _parser_create_tag(parser, token, tag_expr);
+        if tag == null {
+            expr.tag = _parser_create_tag(parser, token, tag_expr);
+            tag = expr.tag;
+        }
+        else {
+            tag.next = _parser_create_tag(parser, token, tag_expr);
+            tag = tag.next;
+        }
     }
     ret expr;
 }
@@ -1229,21 +1238,12 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
     case KAI_TOKEN_STRING;     left = _parser_create_string(parser, [current]);
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Special
-    case KAI_TOKEN_true; #through;
-    case KAI_TOKEN_false; #through;
-    case KAI_TOKEN_null; #through; {
-        if current.id == {
-            case KAI_TOKEN_true; {
-                left = _parser_create_special(parser, [current], KAI_SPECIAL_TRUE);
-            }
-            case KAI_TOKEN_false; {
-                left = _parser_create_special(parser, [current], KAI_SPECIAL_FALSE);
-            }
-            case KAI_TOKEN_null; {
-                left = _parser_create_special(parser, [current], KAI_SPECIAL_NULL);
-            }
-        }
-    }
+    case KAI_TOKEN_true;
+        left = _parser_create_special(parser, [current], KAI_SPECIAL_TRUE);
+    case KAI_TOKEN_false;
+        left = _parser_create_special(parser, [current], KAI_SPECIAL_FALSE);
+    case KAI_TOKEN_null;
+        left = _parser_create_special(parser, [current], KAI_SPECIAL_NULL);
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Parenthesis
     case #char "("; {
@@ -1446,29 +1446,58 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // Handle Enum
     case KAI_TOKEN_enum; {
-        struct_token: Token = [current];
-        body: Stmt_List;
-        count: u32;
+        enum_token: Token = [current];
 
         _next_token(); // skip enum
 
+        _expect(current.id != #char "{", "in enum", "All enums must be given a sized integer type");
         type: *Expr = parse_type_expression(parser);
-        // TODO: need some way to replace error message here,
-        // otherwise this error message will be terrible
-        _expect(type, "[todo]", "[todo]");
-        _next_token();
 
+        _expect(type, "in enum type", "expected a type expression here");
+        _next_token(); // skip type
+
+        body: Expr_List;
+        count: u32;
+        _expect(type, "in enum expression", "should be '{' here");
         _next_token(); // skip '{'
         while current.id != #char "}"
         {
-            stmt: *Stmt = parse_statement(parser);
-            _expect(stmt, "in struct definition", "expected a statement here");
-            _linked_list_append(body, stmt);
+            token: Token = [current];
+            _expect(token.id == KAI_TOKEN_IDENTIFIER, "in enum expression", "should be an identifier here");
+
+            flags: Expr_Flags;
+            name: string = token.string;
+            peeked: *Token = _peek_token();
+            if peeked.id == #char "=" {
+                _next_token(); // skip IDENTIFIER
+                _next_token(); // skip '='
+            }
+            else if peeked.id == #char "," || peeked.id == #char ";" {
+                flags |= KAI_FLAG_ENUM_NO_VALUE;
+            }
+            else {
+                ret _error_unexpected(parser, peeked, STRING("in enum expression"), STRING("should be a ',' or ';' here"));
+            }
+
+            expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
+            _expect(expr != null, "in enum expression", "should be an expression here");
+            expr.flags = flags;
+            expr.name = name;
+
             _next_token();
+
+            if current.id == #char "," || peeked.id == #char ";" {
+                parse_tag_to_expr(parser, expr); // add tag if one exists
+                _next_token();
+            }
+            else _expect(current.id == #char "}", "in enum expression", "should be '}' ',' or ';' here");
+
+            _linked_list_append(body, expr);
             count += 1;
         }
+        _expect(current.id == #char "}", "in enum expression", "should be a '}' here");
 
-        left = _parser_create_enum(parser, struct_token, type, count, body.head);
+        left = _parser_create_enum(parser, enum_token, type, count, body.head);
     }
     case; ret null;
     }
@@ -1985,6 +2014,8 @@ parse_statement :: (parser: *Parser) -> *Stmt
                 _next_token(); // skip expr
                 _expect(current.id == #char ";", "in expression statement", "should be ';' before this");
             }
+
+            parse_tag_to_expr(parser, expr);
         }
         }
         ret expr;

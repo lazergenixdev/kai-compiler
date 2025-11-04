@@ -32,6 +32,7 @@
 - [ ] write procedure should return number of characters written
 - [ ] use word "free" instead of "destroy"?
 - [ ] create new types for types marked `#distinct`
+- [ ] need function `is_valid_identifier(string) -> bool`
 
 # Version 0.1.1
 - [ ] type-check all of compiler source code

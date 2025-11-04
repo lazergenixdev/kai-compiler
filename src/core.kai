@@ -520,6 +520,7 @@ Type_Id :: enum u8 {
     SLICE     = 10; // struct (count, data)
     STRING    = 11; // struct (count, data)
     NUMBER    = 12; // struct (n, d, e, is_neg)
+    MODULE    = 13;
 
     // id > 127 => Type Checker ONLY
     TYPELESS_POINTER          = 0x80;
@@ -584,18 +585,10 @@ Type_Info_Enum :: struct {
     values: [] Enum_Value;
 }
 
-/*
-Export :: struct {
-    name: string;
-    type: Type;
-    value: Value;
-}
-
 Type_Info_Module :: struct {
     using Type_Info;
-    exports: Export;
+    module_index: u32;
 }
-*/
 
 // Hash requires that if the types are equal,
 // then the hashes must always be equal.
@@ -1943,7 +1936,7 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
 
             current: *Expr = p.arg_head;
             while current != null {
-                _explore(current, current.next == null);
+                _explore(current, !has_tag && current.next == null);
                 current = current.next;
             }
         }
@@ -1990,6 +1983,8 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
 
             current: *Stmt = e.head;
             while current {
+                if current.flags & KAI_FLAG_ENUM_NO_VALUE
+                    context.prefix = STRING("*");
                 _explore(current, current.next == null);
                 current = current.next;
             }
@@ -2106,22 +2101,26 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
         }
     }
     if has_tag {
-        _tree_traversal_push(context, true);
-        context.prefix = STRING("tag");
-        _write_tree_branches(context);
-        _set_color(KAI_WRITE_COLOR_DEFAULT);
-        _write("(name = \"");
-        _set_color(KAI_WRITE_COLOR_IMPORTANT);
-        _write_string(expr.tag.name);
-        _set_color(KAI_WRITE_COLOR_DEFAULT);
-        _write("\")\n");
+        tag: *Tag = expr.tag;
+        while tag != null {
+            _tree_traversal_push(context, tag.next == null);
+            context.prefix = STRING("tag");
+            _write_tree_branches(context);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
+            _write("(name = \"");
+            _set_color(KAI_WRITE_COLOR_IMPORTANT);
+            _write_string(tag.name);
+            _set_color(KAI_WRITE_COLOR_DEFAULT);
+            _write("\")\n");
 
-        current: *Expr = expr.tag.expr;
-        while current {
-            _explore(current, current.next == null);
-            current = current.next;
+            current: *Expr = tag.expr;
+            while current {
+                _explore(current, current.next == null);
+                current = current.next;
+            }
+            _tree_traversal_pop(context);
+            tag = tag.next;
         }
-        _tree_traversal_pop(context);
     }
 }
 

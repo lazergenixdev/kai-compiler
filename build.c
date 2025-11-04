@@ -700,6 +700,7 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
 		int new_prec = binary_operator_precedence(una->op);
 		bool parenthesis = flags & KEEP_ALL_PARENTHESIS || una->op == '~' || una->op == KAI_MULTI('-','>',,);
 
+		if (parenthesis) da_append(builder, '(');
 		if (una->op == KAI_MULTI('-','>',,)) {
 			da_append(builder, '(');
 			generate_expression(builder, g_current_decl_type, TOP_PRECEDENCE, NONE);
@@ -709,10 +710,11 @@ Identifier_Type generate_expression(String_Builder* builder, Kai_Expr* expr, int
             if (una->op == '[') {
                 da_append(builder, '*'); // dereference
             }
-			else
+			else {
 				da_append(builder, una->op == '*'? '&' : una->op);
+				flags |= KEEP_ALL_PARENTHESIS;
+			}
 		}
-		if (parenthesis) da_append(builder, '(');
 		generate_expression(builder, una->expr, new_prec, flags);
 		if (parenthesis) da_append(builder, ')');
 		if (una->op == '*' && !(flags & NOT_TYPE)) da_append(builder, una->op);
@@ -1075,15 +1077,18 @@ void generate_all_data_structure_types(String_Builder* builder, Kai_Stmt* stmt)
 		}
 		else if (arr->rows->id == KAI_EXPR_IDENTIFIER)
 		{
-			t = clone_string(name);
+			String_Builder temp = {0};
+			generate_expression(&temp, arr->rows, TOP_PRECEDENCE, NO_RENAME);
+			sb_append(&temp, "_");
+			generate_expression(&temp, arr->expr, TOP_PRECEDENCE, NO_RENAME);
+			sb_append_null(&temp);
+			t = temp.items;
 			if (!shget(g_generated_hashtable_types, t)) {
 				sb_append(builder, "typedef KAI_HASH_TABLE(");
 				generate_expression(builder, arr->rows, TOP_PRECEDENCE, NONE);
 				sb_append(builder, ",");
 				generate_expression(builder, arr->expr, TOP_PRECEDENCE, NONE);
-				sb_append(builder, ") Kai_");
-				generate_expression(builder, arr->rows, TOP_PRECEDENCE, NO_RENAME);
-				sb_appendf(builder, "_%s_HashTable;\n", t);
+				sb_appendf(builder, ") Kai_%s_HashTable;\n", t);
 				shput(g_identifier_map, t, Identifier_Type_Struct);
 				shput(g_generated_hashtable_types, t, true);
 			}
@@ -1246,19 +1251,15 @@ void generate_all_struct_definitions(String_Builder* builder, Kai_Stmt_Compound*
 			sb_appendf(builder, "// Type: Kai_%s\n", name);
 			sb_append(builder, "enum {\n");
 			for (Kai_Stmt* field = _enum->head; field != NULL; field = field->next)
-			{
-				ASSERT(field->id == KAI_STMT_ASSIGNMENT);
-				Kai_Stmt_Assignment* ass = (void*)field;
-				
+			{	
 				tab(1);
 				if (enum_excludes_name(decl->name))
 					sb_append(builder, "KAI_");
 				else
 					sb_appendf(builder, "KAI_%s_", temp_cstr_upper(decl->name));
-				generate_expression(builder, ass->dest, TOP_PRECEDENCE, NO_RENAME);
-				ASSERT(ass->op == '=');
+				sb_appendf(builder, "%.*s", (int)(field->name.count), field->name.data);
 				sb_append(builder, " = ");
-				generate_expression(builder, ass->value, TOP_PRECEDENCE, NONE);
+				generate_expression(builder, field, TOP_PRECEDENCE, NONE);
 				sb_append(builder, ",\n");
 			}
 			sb_append(builder, "};\n\n");
@@ -1334,6 +1335,7 @@ bool g_go_through_case = false;
 
 void generate_statement(String_Builder* builder, Kai_Stmt* stmt, int depth, int increase_depth_on_non_compound)
 {
+	ASSERT(stmt != NULL);
 	if (increase_depth_on_non_compound && stmt->id != KAI_STMT_COMPOUND)
 		depth += 1;
 	switch (stmt->id)
@@ -1949,18 +1951,18 @@ int main(int argc, char** argv)
 	exit_on_fail(read_entire_file("src/comments/footer.h", &builder));
 	write_entire_file("kai.h", builder.items, builder.count);
 	nob_log(INFO, "Generated \"kai.h\"");
-
+	
 	exit_on_fail(mkdir_if_not_exists("bin"));
 
     bool want_test = false;
-
     for (int i = 0; i < argc; ++i)
     {
-             if (strcmp(argv[i], "test") == 0) want_test = true;
-        else if (strcmp(argv[i], "debug") == 0) compile_debug = true;
+		if (0);
+        else if (strcmp(argv[i], "test" ) == 0) want_test = true;
+    	else if (strcmp(argv[i], "debug") == 0) compile_debug = true;
     }
     if (want_test) run_tests();
 	compile_command_line_tool();
-	compile_playground();
+	//compile_playground();
 	return 0;
 }
