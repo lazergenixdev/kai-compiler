@@ -1733,10 +1733,17 @@ void compile_playground(void)
 		cmd_append(&cmd, executable("clang"));
 		cmd_append(&cmd, "-Wall", "-Wextra");
 		if (compile_debug) nob_cc_debug(&cmd);
-		else cmd_append(&cmd, "-Os");
+		//else cmd_append(&cmd, "-Os");
 		cmd_append(&cmd, "--target=wasm32", "-nostdlib", "-Wl,--no-entry", "-Wl,--export-dynamic");
+		cmd_append(&cmd, "-z", "stack-size=2097152"); // this is probably too much stack space  o.o
 		cmd_append(&cmd, "lib.c");
 		cmd_append(&cmd, "-o", "lib.wasm");
+		exit_on_fail(cmd_run_sync_and_reset(&cmd));
+
+		cmd_append(&cmd, "wasm-opt");
+		cmd_append(&cmd, "-Os");
+		cmd_append(&cmd, "lib.wasm");
+		cmd_append(&cmd, "-o", "lib.opt.wasm");
 		exit_on_fail(cmd_run_sync_and_reset(&cmd));
 	}
 	set_current_dir("..");
@@ -1955,14 +1962,19 @@ int main(int argc, char** argv)
 	exit_on_fail(mkdir_if_not_exists("bin"));
 
     bool want_test = false;
+    bool want_compile_playground = false;
     for (int i = 0; i < argc; ++i)
     {
 		if (0);
         else if (strcmp(argv[i], "test" ) == 0) want_test = true;
     	else if (strcmp(argv[i], "debug") == 0) compile_debug = true;
+    	else if (strcmp(argv[i], "wasm" ) == 0) want_compile_playground = true;
     }
+	if (want_compile_playground) {
+		compile_playground();
+		return 0;
+	}
     if (want_test) run_tests();
 	compile_command_line_tool();
-	//compile_playground();
 	return 0;
 }

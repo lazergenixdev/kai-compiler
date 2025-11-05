@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20251104185841 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20251105011948 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -6824,6 +6824,8 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
             Kai_u32 local_node_count = (context->local_nodes).count;
             if (kai__create_nodes(context, p->body))
                 return KAI_TRUE;
+            if (prev_node_count!=(context->nodes).count)
+                return kai__error_fatal(context, KAI_STRING("nested const is not yet ready, please make non-const, sorry :("));
             if (kai__compile_all_nodes_in_scope(context))
                 return KAI_TRUE;
             Kai_Expr* current = p->in_out_expr;
@@ -7766,10 +7768,6 @@ KAI_INTERNAL Kai_bool kai__compile_all_nodes_in_scope(Kai_Compiler_Context* cont
 
 KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Program* out_program)
 {
-    Kai_Value _v = {0};
-    _v.u8 = 1;
-    kai_assert(_v.u64==1);
-    kai_assert(_v.u64==0);
     Kai_Compiler_Context context = ((Kai_Compiler_Context){.error = info->error, .allocator = info->allocator, .program = out_program, .options = info->options, .imports = info->imports, .debug_writer = info->debug_writer});
     kai_arena_create(&(context.type_allocator), &(info->allocator));
     kai_arena_create(&(context.temp_allocator), &(info->allocator));
