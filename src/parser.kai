@@ -78,6 +78,18 @@ Expr :: struct {
 
 Stmt :: Expr;
 
+/*
+Format_Arg :: struct {
+    arg: *Expr; // next will point to next *Format_Arg
+    format: *Expr;
+}
+Expr_Format_String :: struct {
+    using Expr;
+    format: string;
+    head: *Format_Arg;
+}
+*/
+
 Expr_String :: struct {
     using Expr;
     value : string;
@@ -161,7 +173,6 @@ Stmt_Return :: struct {
 
 Stmt_Declaration :: struct {
     using Expr;
-//  more_names : [] string;
     value : *Expr;
     type  : *Expr; // optional
 }
@@ -259,7 +270,9 @@ _string_to_keyword_index :: (kw: string) -> u32 {
     ret hash % 18;
 }
 
-// Tokenizer
+//
+// ---- Tokenizer --------------------------------------------------------------
+//
 
 Token_Id :: enum u32 {
     TOKEN_END        = 0;
@@ -831,13 +844,20 @@ tokenizer_peek :: (context: *Tokenizer) -> *Token
     ret *context.peeked_token;
 }
 
-// Parser
+//
+// ---- Parser -----------------------------------------------------------------
+//
 
 Parser :: struct {
     tokenizer : Tokenizer;
     arena     : Arena_Allocator;
     error     : *Error;
 }
+
+// TODO: When typechecking is done (for compiler source code),
+//       we need to have eat_token(T) that will assert that the current
+//       token is equal to T. (probably need levels of asserts, all, debug,
+//       and necessary; so that overhead is managable)
 
 _error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: string) -> *Expr
 {
@@ -1159,7 +1179,7 @@ parse_procedure_call_arguments :: (parser: *Parser, arg_count: *u32) -> *Expr
     while current.id != #char ")"
     {
         expr: *Expr = parse_expression(parser, TOP_PRECEDENCE);
-        _expect(expr, "in argument list", "an expression");
+        _expect(expr, "in argument list", "expected an expression here");
         _linked_list_append(args, expr);
         _expect([arg_count] < 255, "in argument list", "too many arguments");
         [arg_count] += 1;
@@ -1326,16 +1346,15 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         _next_token();
         type: *Expr;
         if current.id == #char "(" {
-            _expect(current.id == #char "(", "in expression", "'(' after cast keyword");
-            _next_token();
+            _next_token(); // eat '('
             type = parse_type_expression(parser);
-            _expect(type, "in expression", "type");
+            _expect(type, "in cast expression", "should be a type expression here");
             _next_token();
-            _expect(current.id == #char ")", "in expression", "')' after Type in cast expression");
+            _expect(current.id == #char ")", "in cast expression", "expected ')' here");
             _next_token();
         }
         expr: *Expr = parse_expression(parser, KAI__PREC_CAST);
-        _expect(expr, "in expression", "should be expression or '(' here");
+        _expect(expr, "in expression", "should be expression here");
         if type == null
             left = _parser_create_unary(parser, token, expr);
         else 
@@ -1379,9 +1398,10 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         else if (string_equals(current.value.string, STRING("char")))
         {
             _next_token();
-            _expect(current.id == KAI_TOKEN_STRING, "char", "must be string");
+            _expect(current.id == KAI_TOKEN_STRING, "in character literal", "expected a string here");
             cp: u32;
             if current.value.string.count > _utf8_decode(current.value.string, *cp) {
+                // TODO: need custom error message here
                 ret _error_unexpected(parser, current, STRING("in character literal"), STRING("string must be a single codepoint"));
             }
             current.value.number = number_normalize(Number.{n = cp->u64, d = 1});
@@ -1389,11 +1409,12 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         }
         else if (string_equals(current.value.string, STRING("multi")))
         {
+            // TODO: better error checking/handling here
             _next_token();
             _expect(current.id == KAI_TOKEN_STRING, "multi", "must be string");
             _expect(current.value.string.count > 0, "multi", "string cannot be empty");
             value: Number = Number.{0};
-            base: Number = Number.{n = 1, d = 1, e = 8}; 
+            base: Number = Number.{n = 1, d = 1, e = 8};
             for i: 0..<current.value.string.count {
                 idx: u32 = current.value.string.count - 1 - i;
                 dg: Number = number_normalize(Number.{n = current.value.string.data[idx], d = 1});
@@ -1833,17 +1854,11 @@ parse_statement :: (parser: *Parser) -> *Stmt
             statement: *Stmt = parse_statement(parser);
             if !statement ret null;
             _linked_list_append(body, statement);
-            _next_token();  // eat ';' (get token after)
+            _next_token(); // eat ';' (get token after)
         }
 
-        // TODO: is this OK?
-        // No need for compound if there is only one statement
-        // if (statement_array.count == 1) {
-        //    p_tarray_destroy(statement_array);
-        //    return *(Kai_Stmt*)((Kai_u8*)parser->memory.temperary +
-        //    statement_array.offset);
-        //}
-
+        // NOTE: Need to always create compound statement,
+        //       because scope could have semantic meaning
         ret _parser_create_compound(parser, token, body.head);
     }
     ///////////////////////////////////////////////////////////////////////////////////////////////

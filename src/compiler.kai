@@ -207,9 +207,7 @@ _write_expression_name :: (writer: *Writer, expr: *Expr)
         case KAI_EXPR_STRUCT;         _write("struct");
         case KAI_EXPR_ENUM;           _write("enum");
         case KAI_EXPR_ARRAY;          _write("array");
-        case KAI_EXPR_SPECIAL; {
-            _write_string(expr.source_code);
-        }
+        case KAI_EXPR_SPECIAL;        _write_string(expr.source_code);
         case;                         _write("UNKNOWN");
     }
 }
@@ -301,7 +299,7 @@ _error_not_declared :: (context: *Compiler_Context, location: Location) -> bool
 _error_circular_dependency :: (context: *Compiler_Context) -> bool
 {
     // NOTE: `current_node` is expected to be the root,
-    // and `current_dependencies` is the dependency chain that fails.
+    //       and `current_dependencies` is the dependency chain that fails.
 
     node: *Node = *context.nodes.data[context.current_node.index];
 
@@ -1160,9 +1158,6 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                         type: Type = pt->Type;
 
                         index: int = table_find(*context.type_cache, type);
-                        if writer != null {
-                            printf("index: %li ???\n", index);
-                        }
                         if index != -1 {
                             type = context.type_cache.keys[index];
                             arena_restore(*context.type_allocator, checkpoint);
@@ -1180,14 +1175,29 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     }
                     // Pointer to value
                     else {
+                        checkpoint: Arena_Checkpoint = arena_save(*context.type_allocator);
                         pt: *Type_Info_Pointer = cast arena_allocate(*context.type_allocator, sizeof(Type_Info_Pointer));
                         pt.id = KAI_TYPE_ID_POINTER;
                         pt.sub_type = expr_type;
                         if out_value != null
                             kai__todo("evaluate pointer to value");
-                        _debug_show_type(context, pt->Type);
-                        [expected_type] = pt -> Type;
-                        u.this_type = pt -> Type;
+
+                        type: Type = pt->Type;
+                        index: int = table_find(*context.type_cache, type);
+                        if writer != null {
+                            printf("index: %li ???\n", index);
+                        }
+                        if index != -1 {
+                            type = context.type_cache.keys[index];
+                            arena_restore(*context.type_allocator, checkpoint);
+                        }
+                        else {
+                            table_set(*context.type_cache, type, 0);
+                        }
+
+                        _debug_show_type(context, type);
+                        [expected_type] = type;
+                        u.this_type = type;
                         ret false;
                     }
                 }
@@ -1229,6 +1239,15 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 out_lv = *lv;
                 out_rv = *rv;
             }
+
+            // get type of left and right
+            // lookup what we should do based on a table,
+            //   indexed by the operator
+            // "==", SAME, SAME
+            // ">=", SAME, SAME
+            // "+",  SAME, SAME (POINTER, INTEGER) (INTEGER, POINTER)
+
+            // expr + (1 + 2)
 
             if b.op == {
             case #multi "<<"; #through;
@@ -1713,9 +1732,9 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             if _value_of_expr(context, c.proc, null, *t)
                 ret true;
 
+            // TODO: better error messages here
             assert(t.id == KAI_TYPE_ID_PROCEDURE);
             pt: *Type_Info_Procedure = cast t;
-
             assert(c.arg_count == pt.inputs.count);
 
             current: *Expr = c.arg_head;
@@ -1913,7 +1932,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
         }
 
         case; {
-            kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
+            kai__todo("expr.id = %i", expr.id);
         }
     }
 
@@ -2131,7 +2150,7 @@ _type_of_expression :: (context: *Compiler_Context, expr: *Expr, out_type: *Type
         }
 
         case; {
-            kai__todo("%s (expr.id = %i)", __FUNCTION__, expr.id);
+            kai__todo("expr.id = %i", expr.id);
         }
     }
 

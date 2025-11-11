@@ -228,7 +228,7 @@ string_hash_next :: (hash: u64, s: string) -> u64
 #export raw_array_remove :: (array: *Raw_Dynamic_Array, index: u32, elem_size: u32)
 {
     // Pointer types should add/sub with any integral type (u8, u16, s32, ...)
-    dst := array.data->*u8 + index * elem_size;
+    //dst := array.data->*u8 + index * elem_size;
     //remaining_count := array.count - index - 1;
     //memory_copy(dst, dst + elem_size, remaining_count * elem_size);
     array.count -= 1;

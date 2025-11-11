@@ -21,7 +21,7 @@ const char* join(const char* left, const char* right)
 #define KAI_API(T) WASM_EXPORT T
 #define printf(...) (void)sizeof(__VA_ARGS__)
 #define kai_fatal_error(DESC, MESSAGE) __env_panic(DESC, MESSAGE, __FILE__, __LINE__)
-#define kai__todo(...) __env_panic("TODO", join(__FUNCTION__, #__VA_ARGS__), __FILE__, __LINE__)
+#define kai__todo(...) __env_panic("TODO", join(__func__, #__VA_ARGS__), __FILE__, __LINE__)
 #define KAI_DONT_USE_WRITER_API
 #define KAI_DONT_USE_ALLOCATOR_API
 #define KAI_IMPLEMENTATION

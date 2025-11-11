@@ -1,0 +1,7 @@
+#import "include:stdio.h";
+#import "include:locale.h";
+#import "implementation:writer.c";
+
+#export writer_stdout     :: () -> Writer #host_import;
+#export writer_file_open  :: (path: string) -> Writer #host_import;
+#export writer_file_close :: (writer: *Writer) #host_import;

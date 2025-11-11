@@ -6,7 +6,6 @@
 - [ ] should print type look for recursive types?
 - [ ] better compilation for recusive types
 - [ ] cached typed need to be per-scope?
-- [ ] add statement tags `{}`
 - [ ] add `#optional_export` and `#require_export` directives
 - [ ] need some kind of import handler from host
 - [ ] remove need for `destroy_syntax_tree` by passing in arena as input to `create_syntax_tree`
@@ -17,6 +16,7 @@
 
 # Optional / Extra
 - [x] remove unused `loop` keyword
+- [ ] add statement tags `{}`
 - [ ] utility (function + commandline) to generate C/C++ bindings from script
 - [ ] add flag `KAI_FLAG_CODEPOINT` to number expressions that came from `#char`
 - [ ] procedure arguments can have no type, then the type used will be the type of the next argument
@@ -33,6 +33,7 @@
 - [ ] use word "free" instead of "destroy"?
 - [ ] create new types for types marked `#distinct`
 - [ ] need function `is_valid_identifier(string) -> bool`
+- [ ] use `next` field in expressions to store multiple declarations (Ex: `a, b: int;` -> Stmt_Decl)
 
 # Version 0.1.1
 - [ ] type-check all of compiler source code

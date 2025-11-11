@@ -69,6 +69,20 @@ This language is written in itself, and the target for the build is a C header f
 
 Once the build program is built, there is no need to recompile it, as it uses Go Rebuild Urself™ Technology to automatically recompile itself if needed.
 
+## Build Program Usage
+> See end of [build.c](https://github.com/lazergenixdev/kai-compiler/blob/main/build.c) for more details
+
+| Argument | Meaning                    |
+| -------- | -------------------------- |
+| `all`    | Build CLI and Playground   |
+| `kai`    | Build CLI                  |
+| `wasm`   | Build Playground           |
+| `test`   | Run tests                  |
+| `debug`  | Compile with debug symbols |
+
+> [!NOTE]
+> Building the Playground requires `wasm-opt`
+
 # Credits
 Special thanks to Tsoding for making `nob.h` ([github.com/tsoding/nob.h](https://github.com/tsoding/nob.h))
-and Sean Barrett for making the stb libraries, which was a big inspiration for the API design.
+and Sean Barrett for making the stb libraries, which was a big inspiration for this library.

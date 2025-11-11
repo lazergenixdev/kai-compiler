@@ -1,10 +1,13 @@
 // Command line utility
 
 #define NOB_IMPLEMENTATION
-#define NOB_STRIP_PREFIX
-#include "../3rd-party/nob.h"
 #define KAI_IMPLEMENTATION
+#define NOB_STRIP_PREFIX
+
+#include "../3rd-party/nob.h"
 #include "../kai.h"
+#include "inttypes.h"
+
 #define S1(x) #x
 #define S2(x) S1(x)
 
@@ -40,7 +43,7 @@ static inline Kai_Source load_source_file(const char* path)
 }
 
 #define TOKEN_COUNT (1<<0)
-void help_token()
+void help_token(void)
 {
     printf(
         "Usage: kai token [FLAGS] <files...>\n"
@@ -52,7 +55,7 @@ void help_token()
 }
 
 #define PARSE_NO_PRINT (1<<0)
-void help_parse()
+void help_parse(void)
 {
     printf(
         "Usage: kai parse [FLAGS] <files...>\n"
@@ -66,7 +69,7 @@ void help_parse()
 #define COMPILE_NO_PRINT     (1<<0)
 #define COMPILE_OUTPUT_TREE  (1<<1)
 #define COMPILE_DEBUG        (1<<2)
-void help_compile()
+void help_compile(void)
 {
     printf(
         "Usage: kai compile [FLAGS] [OPTIONS] <files...>\n"
@@ -84,7 +87,7 @@ void help_compile()
 }
 
 #define RUN_DEBUG (1<<0)
-void help_run()
+void help_run(void)
 {
     printf(
         "Usage: kai run [FLAGS] [OPTIONS] <files...>\n"
@@ -133,7 +136,7 @@ int help(int argc, char** argv)
     return 1;
 }
 
-int error_no_source_provided()
+int error_no_source_provided(void)
 {
     nob_log(ERROR, "No input files provided");
     return 1;
@@ -176,7 +179,7 @@ int token(int argc, char** argv)
         kai_tokenizer_next(&tokenizer);
     }
     if (parse_options & TOKEN_COUNT)
-        printf("%llu\n", count);
+        printf("%"PRIu64"\n", count);
     return 0;
 }
 
@@ -300,14 +303,14 @@ int run(int argc, char** argv)
 		kai_write_error(writer, &error);
 	}
     else {
-        typedef Kai_s64 (*Main)();
-        Main main_proc = (Main)kai_find_procedure(&program, KAI_STRING("main"), KAI_STRING("()"));
+        typedef Kai_s64 (*Main)(void);
+        Main main_proc = (Main)kai_find_procedure(&program, KAI_STRING("main"), KAI_STRING("()->s64"));
         if (main_proc == NULL) {
             nob_log(ERROR, "Could not find main procedure");
             return 1;
         }
         Kai_s64 return_value = main_proc();
-        printf("main exited with code %lli\n", return_value);
+        printf("main exited with code %"PRIi64"\n", return_value);
     }
 	return error.result != KAI_SUCCESS;
 }

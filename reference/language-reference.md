@@ -1,31 +1,53 @@
+# Hello world
+```odin
+#import "debug";
+
+main :: () {
+	debug.println("hello world");
+}
+```
+
 # Types
 
 ## Primitive Types
-| Name    | Meaning                    |
-|---------| -------------------------- |
-| `void`  |  `void` type (same as C)   |
-| `u8`    |  8-bit unsigned integer    |
-| `u16`   | 16-bit unsigned integer    |
-| `u32`   | 32-bit unsigned integer    |
-| `u64`   | 64-bit unsigned integer    |
-| `s8`    |  8-bit signed integer      |
-| `s16`   | 16-bit signed integer      |
-| `s32`   | 32-bit signed integer      |
-| `s64`   | 64-bit signed integer      |
-| `s32`   | 32-bit floating point      |
-| `s64`   | 64-bit floating point      |
-| `#Type` | Type of types              |
+| Name                   | Meaning                            |
+|------------------------| ---------------------------------- |
+| `void`                 |  `void` type (same as C)           |
+| `u8` `u16` `u32` `u64` | (8,16,32,64)-bit unsigned integer  |
+| `s8` `s16` `s32` `s64` | (8,16,32,64)-bit signed integer    |
+| `f32` `f64`            | (32,64)-bit floating point         |
+| `#Type`                | Type of types                      |
 
 ## Non-Primitive Types
 | Syntax      | Meaning                                         |
 | ----------- | ----------------------------------------------- |
 | `* T`       | Pointer to `T`                                  |
-| `string`    | String (alias for `[] u8`)                      |
 | `[N,M] T`   | `N` x `M` Matrix of `T`                         |
 | `[N] T`     | Fixed Array of `T` of size `N` (or Vector)      |
 | `[] T`      | Array Slice of `T`                              |
 | `[..] T`    | Dynamic Array of `T`                            |
 | `[K] T`     | Hash Table with key type `K` and value type `T` |
+| `string`    | String (builtin alias for `[] u8`)              |
+
+# Directives
+| Name               | Meaning                                                              |
+| ------------------ | -------------------------------------------------------------------- |
+| `#import`          | import a module                                                      |
+| `#export`          | expose variable/procedure to host environment                        |
+| `#host_import`     | value imported from host environment                                 |
+| `#require_export`  | ...                                                                  |
+| `#optional_export` | ...                                                                  |
+| `#size(T)`         | get size of type `T` (in bytes)                                      |
+| `#type(E)`         | get type of expression `E`                                           |
+| `#Type`            | the type of all types                                                |
+| `#Number`          | special number type only available at compile-time (remove?)         |
+| `#Code`            | the type of AST nodes, used for meta-programming                     |
+| `#through`         | flow into next case statement                                        |
+| `#char`            | get unicode codepoint from next string token                         |
+| `#multi`           | create u32 number from up to 4 characters (u8) in next string token  |
+| `#array`           | parse next expression as an array type                               |
+| `#map`             | parse next expression as a hash table type                           |
+| `#proc`            | parse next expression as a procedure type                            |
 
 ## Value Literals
 ```Javascript
@@ -66,45 +88,6 @@ a :: b => f32; // now the bytes of b are seen as a floating point
 ```
 **Note**: *With type punning, the size of the result type
 <b>must</b> be less than or equal to the size of source type*
-
-# Math Types
-NOT IMPLEMENTED YET
-```C++
-// Scalar values are casted to vectors by
-// copying it's value to each vector component
-vecA : [4] f32 = 4;
-
-// Same applies to when using vectors and
-// scalars for arithmetic 
-vecB := vecA * 2 - 1;
-
-// Matrix utilities are builtin to the language
-matA : [4,4] f32 = math.translation({1, 2, 3});
-
-// Matrix multiplication and vector math
-// are also builtin to the language
-vecC := matA * math.cross(vecA, vecB);
-```
-
-# Directives
-| Name               | Meaning                                                              |
-| ------------------ | -------------------------------------------------------------------- |
-| `#import`          | import a module                                                      |
-| `#export`          | expose variable/procedure to host environment                        |
-| `#host_import`     | value imported from host environment                                 |
-| `#require_export`  | ...                                                                  |
-| `#optional_export` | ...                                                                  |
-| `#size(T)`         | get size of type `T` (in bytes)                                      |
-| `#type(E)`         | get type of expression `E`                                           |
-| `#Type`            | the type of all types                                                |
-| `#Number`          | special number type only available at compile-time                   |
-| `#Code`            | the type of AST nodes, used for meta-programming                     |
-| `#through`         | flow into next case statement                                        |
-| `#char`            | get unicode codepoint from next string token                         |
-| `#multi`           | create u32 number from up to 4 characters (u8) in next string token  |
-| `#array`           | parse next expression as an array type                               |
-| `#map`             | parse next expression as a hash table type                           |
-| `#proc`            | parse next expression as a procedure type                            |
 
 # Polymorphic Procedures
 ```odin

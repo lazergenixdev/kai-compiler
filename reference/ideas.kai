@@ -430,14 +430,14 @@ example :: ()
     a := 0x45;
     pointer := *a;
 
-    print($"formated string! {a} @ {pointer:my_format}");
+    print($"formatted string! {a} @ {pointer:my_format}");
 
     Format_Fragment :: struct {
         value: #Any;
         offset: u32;
         min_count: u8;
         fill: u8;
-        flags: u8;
+        flags: u8; // BASE_16, BASE_2, USE_DEFAULT = 1
     };
 
     Formatted_String :: struct {
@@ -456,6 +456,15 @@ example :: ()
     print_string(format[s..]);
 }
 
+
+// Operator overloading
+Node :: struct { left, right: *Node; value: u32; }
+add :: (a: u32, b: u32) -> u32 { ret a + b; }
+add :: (a: f32, b: f32) -> f32 { ret a + b; }
+add :: (a: $T, b: T) -> T where T == Node { ret a.value + b.value; }
+add :: (a: List($T,$H), b: List(T,H)) { for i: a.count a[i] += b[i]; }
+
+add(1, 2);
 
 // NOTES SECTION
 
@@ -476,8 +485,14 @@ array :: [] int;   // `[]` is not a valid expression
 array :: [..] int; // `[..]` is also not a valid expression
 
 // Too soon to think about macros
-macro :: #macro (code: #Code, expr: #Code) {
+macro :: #expand (code: #Code, expr: #Code) {
     #insert expr = #insert code;
+}
+m_write_string :: #expand (s: string) {
+    writer.write(writer.user, .STRING, {string = s}, {});
+}
+m_write_u32 :: #expand (x: u32) {
+    writer.write(writer.user, .U32, {u32 = x}, {});
 }
 
 generics :: (map: [K] $T, key: $K) ->  {
