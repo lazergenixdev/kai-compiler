@@ -1,47 +1,41 @@
 #define NOB_IMPLEMENTATION
-#define NOB_STRIP_PREFIX
-#include "3rd-party/nob.h"
-#define sb_append nob_sb_append_cstr
-#define nob_cc_debug(cmd) cmd_append(cmd, "-g")
-#define ASSERT NOB_ASSERT
-
 #define STB_DS_IMPLEMENTATION
-#include "3rd-party/stb_ds.h"
-
-#define tab(N) for (int i = 0; i < N; ++i) sb_append(builder, "    ")
-
 #define KAI_IMPLEMENTATION
-#ifdef USE_GENERATED
-#include "kai.h"
-#else
+#define NOB_STRIP_PREFIX
+
+#include "3rd-party/nob.h"
+#include "3rd-party/stb_ds.h"
 #include "3rd-party/kai.h"
-#endif
+#include "inttypes.h"
 
 #if defined(KAI_COMPILER_CLANG) || defined(KAI_COMPILER_GNU)
 #pragma GCC diagnostic ignored "-Wmultichar" // ? this is a feature, why warning??
 #endif
-
-#define exit_on_fail(E) if (!(E)) exit(1)
-#define len(ARRAY) (int)(sizeof(ARRAY)/sizeof(ARRAY[0]))
-#define forn(LEN) for (Kai_u32 i = 0; i < (LEN); ++i)
-#define MACRO_STRING(S) #S
-#define MACRO_EXPSTR(S) MACRO_STRING(S)
-#define UNIQUE2(N,L) N ## L
-#define UNIQUE(N,L) UNIQUE2(N,L)
-#define SCOPED_TEMP() for (size_t UNIQUE(__i,__LINE__) = 0, mark = nob_temp_save(); UNIQUE(__i,__LINE__) < 1; ++UNIQUE(__i,__LINE__), nob_temp_rewind(mark))
 
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_PATCH 0
 #define VERSION_EXTRA "alpha"
 
+#define sb_append nob_sb_append_cstr
+#define nob_cc_debug(cmd) cmd_append(cmd, "-g")
+#define tab(N) for (int i = 0; i < N; ++i) sb_append(builder, "    ")
+#define exit_on_fail(E) if (!(E)) exit(1)
+#define len(ARRAY) (int)(sizeof(ARRAY)/sizeof(ARRAY[0]))
+#define forn(LEN) for (Kai_u32 i = 0; i < (LEN); ++i)
+#define ASSERT NOB_ASSERT
+#define MACRO_STRING(S) #S
+#define MACRO_EXPSTR(S) MACRO_STRING(S)
+#define UNIQUE2(N,L) N ## L
+#define UNIQUE(N,L) UNIQUE2(N,L)
+#define SCOPED_TEMP() for (size_t UNIQUE(__i,__LINE__) = 0, mark = nob_temp_save(); UNIQUE(__i,__LINE__) < 1; ++UNIQUE(__i,__LINE__), nob_temp_rewind(mark))
+#define KAI_MULTI(A,B,C,D) ((Kai_u32)(A) | (Kai_u32)(B << 8) | (Kai_u32)((C+0) << 16) | (Kai_u32)((D+0) << 24))
+
 typedef struct {
     const char* name;
     const char* args;
     const char* value;
 } Macro;
-
-#define KAI_MULTI(A,B,C,D) ((Kai_u32)(A) | (Kai_u32)(B << 8) | (Kai_u32)((C+0) << 16) | (Kai_u32)((D+0) << 24))
 
 Macro macros[] = {
     {"VERSION_MAJOR", "", MACRO_EXPSTR(VERSION_MAJOR)},
@@ -498,14 +492,14 @@ const char* map_binary_operator(Kai_u32 op)
 {
     switch (op)
     {
-    case '<':  return "<";
-    case '>':  return ">";
-    case '+':  return "+";
-    case '-':  return "-";
-    case '*':  return "*";
-    case '/':  return "/";
-    case '%':  return "%";
-    case '.':  return ".";
+    case '<': return "<";
+    case '>': return ">";
+    case '+': return "+";
+    case '-': return "-";
+    case '*': return "*";
+    case '/': return "/";
+    case '%': return "%";
+    case '.': return ".";
     case '&': return "&";
     case '^': return "^";
     case '|': return "|";
@@ -519,7 +513,7 @@ const char* map_binary_operator(Kai_u32 op)
     case KAI_MULTI('>', '>',,): return ">>";
     case KAI_MULTI('-', '>',,): return NULL; // special case
     case '[': return NULL; // special case
-    default:   return "BINOP";
+    default:  return "BINOP";
     }
 }
 
@@ -1962,6 +1956,8 @@ int main(int argc, char** argv)
     exit_on_fail(read_entire_file("src/comments/footer.h", &builder));
     write_entire_file("kai.h", builder.items, builder.count);
     nob_log(INFO, "Generated \"kai.h\"");
+
+    nob_log(INFO, "Memory Usage: \x1b[94m%.3f\x1b[0m MB", (double)(kai_allocator_usage(&g_allocator))/(1024*1024));
 
     bool want_test = false;
     enum {
