@@ -196,7 +196,7 @@ example :: ()
     // should effect operators & builtins?
     obj: Object;
 
-    hash := #hash(obj);
+    hash := #hash(obj, "hashname");
     same : bool = obj == Object.{id = 3};
 }
 
@@ -456,6 +456,30 @@ example :: ()
     print_string(format[s..]);
 }
 
+{
+    // Impl
+    Unit_Postfix :: struct(T) {
+        name : string;
+        scaling_factor: Value;
+    }
+    Unit :: struct {
+        base_type: u32;
+        postfixes: [] Unit_Postfix;
+    }
+
+    // User
+    Milliseconds :: #unit u32 {
+        m  = 60 * 1000.0;
+        s  = 1000.0;
+        ms = 1.0;
+        us = 0.001;
+    }
+
+    using Milliseconds;
+
+    wait(100ms);
+}
+
 
 // Operator overloading
 Node :: struct { left, right: *Node; value: u32; }
@@ -483,6 +507,14 @@ proc       :: #proc () -> int;
 // These expressions will work as expected because
 array :: [] int;   // `[]` is not a valid expression
 array :: [..] int; // `[..]` is also not a valid expression
+
+// Procedure syntax:
+// () in a procedure return is optional
+// names are optional in procedure return
+minimal :: (a: u32, b: u32) -> (a: u32; b: f32)
+{
+    ret a = 12, b = 3;
+}
 
 // Too soon to think about macros
 macro :: #expand (code: #Code, expr: #Code) {

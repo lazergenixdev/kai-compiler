@@ -306,8 +306,8 @@ Token_Id :: enum u32 {
 Token :: struct {
     id : Token_Id;
     line_number : u32;
-    string : string; // TODO: rename to `source_code`
-    value : struct { // TODO: why struct and not union?
+    source : string;
+    value : union {
         string : string;
         number : Number;
     };
@@ -317,18 +317,12 @@ write_token :: (writer: *Writer, token: Token)
 {
     symbol: bool = false;
     if token.id == {
-        case KAI_TOKEN_IDENTIFIER;
-            _write("Ident");
-        case KAI_TOKEN_STRING;
-            _write("String");
-        case KAI_TOKEN_NUMBER;
-            _write("Number");
-        case KAI_TOKEN_DIRECTIVE;
-            _write("Dir");
-        case KAI_TOKEN_TAG;
-            _write("Tag");
-        case;
-        symbol = true;
+        case KAI_TOKEN_IDENTIFIER; _write("Ident");
+        case KAI_TOKEN_STRING;     _write("String");
+        case KAI_TOKEN_NUMBER;     _write("Number");
+        case KAI_TOKEN_DIRECTIVE;  _write("Dir");
+        case KAI_TOKEN_TAG;        _write("Tag");
+        case;                      symbol = true;
     }
     if !symbol _write("(");
     if token.id > 256 {
@@ -343,7 +337,7 @@ write_token :: (writer: *Writer, token: Token)
         }
     }
     else
-        _write_string(token.string);
+        _write_string(token.source);
     if !symbol _write(")");
 }
 
@@ -397,7 +391,6 @@ Tokenizer :: struct {
     cursor        : u32;
     line_number   : u32;
     peeking       : bool;
-    string_arena  : Fixed_Allocator;
 }
 
 _parse_fractional_part :: (source: string, offset: *u32, start: Number) -> Number
@@ -504,7 +497,7 @@ _make_multi_token :: (context: *Tokenizer, t: *Token, current: u8) -> bool
         ) {
             t.id = #multi "---";
             context.cursor += 1;
-            t.string.count += 1;
+            t.source.count += 1;
             ret true;
         }
     }
@@ -564,15 +557,16 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
 
     while context.cursor < context.source.count
     {
-        token.string.data = context.source.data + context.cursor;
-        ch: u8 = token.string.data[0];
-        where: u32;
+        token.source.data = context.source.data + context.cursor;
+        ch: u8 = context.source.data[context.cursor];
+        
+        match: u32 = 0; // Default, treat as Identifier
 
-        // treat every multi-byte unicode symbol as just an identifier
-        if !(ch & 0x80)
-            where = _token_lookup_table[ch];
+        if ch <= 127 {
+            match = _token_lookup_table[ch];
+        }
 
-        if where == {
+        if match == {
         /////////////////////////////////////////////////////////////////////////////////
         // Whitespace
         case _W; {
@@ -603,21 +597,21 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
                     {
                         context.cursor += 1;
                         token.value.number = number_parse_whole(context.source, *context.cursor, 2);
-                        token.string.count = context.cursor - start;
+                        token.source.count = context.cursor - start;
                         ret token;
                     }
                     if (context.source.data[context.cursor] == #char "x")
                     {
                         context.cursor += 1;
                         token.value.number = number_parse_whole(context.source, *context.cursor, 16);
-                        token.string.count = context.cursor - start;
+                        token.source.count = context.cursor - start;
                         ret token;
                     }
                 }
             }
             token.value.number = number_parse_whole(context.source, *context.cursor, 10);
             token.value.number = _parse_fractional_part(context.source, *context.cursor, token.value.number);
-            token.string.count = context.cursor - start;
+            token.source.count = context.cursor - start;
             ret token;
         }
         /////////////////////////////////////////////////////////////////////////////////
@@ -627,7 +621,7 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
             start: u32 = context.cursor;
             context.cursor += 1;
             _tokenizer_advance_to_identifier_end(context);
-            token.string.count = context.cursor - start;
+            token.source.count = context.cursor - start;
             ret token;
         }
         /////////////////////////////////////////////////////////////////////////////////
@@ -637,10 +631,8 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
             start: u32 = context.cursor;
             context.cursor += 1;
             _tokenizer_advance_to_identifier_end(context);
-            token.string.count = context.cursor - start;
-            token.value.string = token.string;
-            token.value.string.count -= 1;
-            token.value.string.data += 1;
+            token.source.count = context.cursor - start;
+            token.value.string = string_from_data(token.source.data + 1, token.source.count - 1);
             ret token;
         }
         /////////////////////////////////////////////////////////////////////////////////
@@ -650,10 +642,8 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
             start: u32 = context.cursor;
             context.cursor += 1;
             _tokenizer_advance_to_identifier_end(context);
-            token.string.count = context.cursor - start;
-            token.value.string = token.string;
-            token.value.string.count -= 1;
-            token.value.string.data += 1;
+            token.source.count = context.cursor - start;
+            token.value.string = string_from_data(token.source.data + 1, token.source.count - 1);
             ret token;
         }
         /////////////////////////////////////////////////////////////////////////////////
@@ -663,13 +653,12 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
             start: u32 = context.cursor;
             context.cursor += 1;
             _tokenizer_advance_to_identifier_end(context);
-            token.string.count = context.cursor - start;
+            token.source.count = context.cursor - start;
 
             // Check if the string we just parsed is a keyword
-            index: u32 = _string_to_keyword_index(token.string);
-            if string_equals(_keywords[index], token.string) {
+            index: u32 = _string_to_keyword_index(token.source);
+            if string_equals(_keywords[index], token.source) {
                 token.id = 0x80 | index;
-                ret token;
             }
             ret token;
         }
@@ -677,51 +666,27 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
         // Strings
         case _S; {
             token.id = KAI_TOKEN_STRING;
-            token.string.count = 1;
+            start: u32 = context.cursor;
             context.cursor += 1;
-            count: u32 = 0;
-            token.value.string = string.{0};
             while (context.cursor < context.source.count) {
                 if context.source.data[context.cursor] == #char "\"" {
+                    context.cursor += 1;
                     break;
                 }
-                m: u8 = context.source.data[context.cursor];
-                if m == #char "\\" {
+                if context.source.data[context.cursor] == #char "\\" {
                     context.cursor += 1;
-                    token.string.count += 1;
-                    if context.cursor >= context.source.count
-                        break;
-                    
-                    m = context.source.data[context.cursor];
-                    if m == {
-                    case #char "\\"; m = #char "\\";
-                    case #char "\""; m = #char "\"";
-                    case #char "t"; m = #char "\t";
-                    case #char "r"; m = #char "\r";
-                    case #char "n"; m = #char "\n";
-                    case #char "e"; m = #char "\e";
-                    // TODO: output warning here somehow
-                    //case;
-                        //printf("!!! warning: could not escape '%c'\n", ch);
-                    }
+                    if context.cursor >= context.source.count break;
                 }
-                data: *u8 = cast fixed_allocate(*context.string_arena, 1);
-                assert(data != null);
-                [data] = m;
-                if (token.value.string.data == null)
-                    token.value.string.data = data;
-                count += 1;
                 context.cursor += 1;
             }
-            context.cursor += 1;
-            token.string.count += count + 1;
-            token.value.string.count = count;
+            token.source.count = context.cursor - start;
+            // TODO: problem here if no closing quote
+            token.value.string = string_from_data(token.source.data + 1, token.source.count - 2);
             ret token;
         }
         /////////////////////////////////////////////////////////////////////////////////
         // Comment
         case _C; {
-            token.string.data = context.source.data + context.cursor;
             context.cursor += 1;
 
             if context.cursor < context.source.count && context.source.data[context.cursor] == #char "/" {
@@ -732,7 +697,7 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
                         break;
                     context.cursor += 1;
                 }
-                break;
+                continue;
             }
 
             // multi-line comment
@@ -770,15 +735,15 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
 
                     context.cursor += 1;
                 }
-                break;
+                continue;
             }
 
             // otherwise a character token
             token.id = ch->u32;
-            token.string.count = 1;
+            token.source.count = 1;
             if _make_multi_token(context, *token, ch) {
                 context.cursor += 1;
-                token.string.count += 1;
+                token.source.count += 1;
             }
             ret token;
         }
@@ -786,11 +751,11 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
         // Single/Multi Character Tokens
         case _T; {
             token.id = ch->u32;
-            token.string.count = 1;
+            token.source.count = 1;
             context.cursor += 1;
             if _make_multi_token(context, *token, ch) {
                 context.cursor += 1;
-                token.string.count += 1;
+                token.source.count += 1;
             }
             ret token;
         }
@@ -799,7 +764,7 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
         case _Z; {
             if _next_character_equals(#char ".") {
                 context.cursor += 2;
-                token.string.count = 2;
+                token.source.count = 2;
                 token.id = #multi "..";
                 ret token;
             }
@@ -810,12 +775,12 @@ tokenizer_generate :: (context: *Tokenizer) -> Token
                 token.id = KAI_TOKEN_NUMBER;
                 start: u32 = context.cursor;
                 token.value.number = _parse_fractional_part(context.source, *context.cursor, token.value.number);
-                token.string.count = context.cursor - start;
+                token.source.count = context.cursor - start;
                 ret token;
             }
             // Not ".." or Number? then single character token
             context.cursor += 1;
-            token.string.count = 1;
+            token.source.count = 1;
             token.id = ch->u32;
             ret token;
         }
@@ -879,7 +844,7 @@ _error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: str
     [parser.error] = Error.{
         result = KAI_ERROR_SYNTAX,
         location = Location.{
-            string = token.string,
+            string = token.source,
             line = token.line_number,
         },
         message = _range_to_string(message, memory),
@@ -936,7 +901,7 @@ _parser_create_identifier :: (parser: *Parser, token: Token) -> *Expr
 {
     node: *Expr = cast arena_allocate(*parser.arena, sizeof(Expr));
     node.id = KAI_EXPR_IDENTIFIER;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     ret parse_tag_to_expr(parser, node -> *Expr);
 }
@@ -944,7 +909,7 @@ _parser_create_string :: (parser: *Parser, token: Token) -> *Expr
 {
     node: *Expr_String = cast arena_allocate(*parser.arena, sizeof(Expr_String));
     node.id = KAI_EXPR_STRING;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.value = token.value.string;
     ret node -> *Expr;
@@ -953,7 +918,7 @@ _parser_create_number :: (parser: *Parser, token: Token) -> *Expr
 {
     node: *Expr_Number = cast arena_allocate(*parser.arena, sizeof(Expr_Number));
     node.id = KAI_EXPR_NUMBER;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.value = token.value.number;
     ret parse_tag_to_expr(parser, node -> *Expr);
@@ -962,7 +927,7 @@ _parser_create_literal :: (parser: *Parser, token: Token, head: *Expr, count: u3
 {
     node: *Expr_Literal = cast arena_allocate(*parser.arena, sizeof(Expr_Literal));
     node.id = KAI_EXPR_LITERAL;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.head = head;
     node.count = count;
@@ -972,7 +937,7 @@ _parser_create_unary :: (parser: *Parser, op_token: Token, expr: *Expr) -> *Expr
 {
     node: *Expr_Unary = cast arena_allocate(*parser.arena, sizeof(Expr_Unary));
     node.id = KAI_EXPR_UNARY;
-    node.source_code = merge_strings(op_token.string, expr.source_code);
+    node.source_code = merge_strings(op_token.source, expr.source_code);
     node.line_number = _min_u32(op_token.line_number, expr.line_number);
     node.op = op_token.id;
     node.expr = expr;
@@ -993,7 +958,7 @@ _parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: *E
 {
     node: *Expr_Array = cast arena_allocate(*parser.arena, sizeof(Expr_Array));
     node.id = KAI_EXPR_ARRAY;
-    node.source_code = merge_strings(op_token.string, expr.source_code);
+    node.source_code = merge_strings(op_token.source, expr.source_code);
     node.line_number = _min_u32(op_token.line_number, expr.line_number);
     node.flags = flags;
     node.rows = rows;
@@ -1005,7 +970,7 @@ _parser_create_special :: (parser: *Parser, token: Token, kind: u8) -> *Expr
 {
     node: *Expr_Special = cast arena_allocate(*parser.arena, sizeof(Expr_Special));
     node.id = KAI_EXPR_SPECIAL;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.kind = kind;
     ret node -> *Expr;
@@ -1039,7 +1004,7 @@ _parser_create_procedure :: (parser: *Parser, token: Token, in_out: *Expr, body:
 {
     node: *Expr_Procedure = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure));
     node.id = KAI_EXPR_PROCEDURE;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.in_out_expr = in_out;
     node.in_count = in_count;
@@ -1051,7 +1016,7 @@ _parser_create_import :: (parser: *Parser, token: Token, import: Token) -> *Expr
 {
     node: *Expr = cast arena_allocate(*parser.arena, sizeof(Expr));
     node.id = KAI_EXPR_IMPORT;
-    node.source_code = merge_strings(token.string, import.string);
+    node.source_code = merge_strings(token.source, import.source);
     node.line_number = token.line_number;
     node.name = import.value.string;
     ret node -> *Expr;
@@ -1060,7 +1025,7 @@ _parser_create_struct :: (parser: *Parser, token: Token, field_count: u32, body:
 {
     node: *Expr_Struct = cast arena_allocate(*parser.arena, sizeof(Expr_Struct));
     node.id = KAI_EXPR_STRUCT;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.field_count = field_count;
     node.head = body;
@@ -1070,7 +1035,7 @@ _parser_create_enum :: (parser: *Parser, token: Token, type: *Expr, field_count:
 {
     node: *Expr_Enum = cast arena_allocate(*parser.arena, sizeof(Expr_Enum));
     node.id = KAI_EXPR_ENUM;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.type = type;
     node.field_count = field_count;
@@ -1081,7 +1046,7 @@ _parser_create_return :: (parser: *Parser, ret_token: Token, expr: *Expr) -> *Ex
 {
     node: *Stmt_Return = cast arena_allocate(*parser.arena, sizeof(Stmt_Return));
     node.id = KAI_STMT_RETURN;
-    node.source_code = ret_token.string;
+    node.source_code = ret_token.source;
     node.line_number = ret_token.line_number;
     node.expr = expr;
     ret node -> *Expr;
@@ -1113,7 +1078,7 @@ _parser_create_if :: (parser: *Parser, if_token: Token, flags: u8, expr: *Expr, 
 {
     node: *Stmt_If = cast arena_allocate(*parser.arena, sizeof(Stmt_If));
     node.id = KAI_STMT_IF;
-    node.source_code = if_token.string;
+    node.source_code = if_token.source;
     node.line_number = if_token.line_number;
     node.flags = flags;
     node.condition = expr;
@@ -1125,7 +1090,7 @@ _parser_create_while :: (parser: *Parser, while_token: Token, expr: *Expr, body:
 {
     node: *Stmt_While = cast arena_allocate(*parser.arena, sizeof(Stmt_While));
     node.id = KAI_STMT_WHILE;
-    node.source_code = while_token.string;
+    node.source_code = while_token.source;
     node.line_number = while_token.line_number;
     node.body = body;
     node.condition = expr;
@@ -1135,7 +1100,7 @@ _parser_create_for :: (parser: *Parser, for_token: Token, name: string, from: *E
 {
     node: *Stmt_For = cast arena_allocate(*parser.arena, sizeof(Stmt_For));
     node.id = KAI_STMT_FOR;
-    node.source_code = for_token.string;
+    node.source_code = for_token.source;
     node.line_number = for_token.line_number;
     node.body = body;
     node.from = from;
@@ -1148,7 +1113,7 @@ _parser_create_control :: (parser: *Parser, token: Token, kind: u8, expr: *Expr)
 {
     node: *Stmt_Control = cast arena_allocate(*parser.arena, sizeof(Stmt_Control));
     node.id = KAI_STMT_CONTROL;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.kind = kind;
     node.expr = expr;
@@ -1158,7 +1123,7 @@ _parser_create_compound :: (parser: *Parser, token: Token, body: *Stmt) -> *Expr
 {
     node: *Stmt_Compound = cast arena_allocate(*parser.arena, sizeof(Stmt_Compound));
     node.id = KAI_STMT_COMPOUND;
-    node.source_code = token.string;
+    node.source_code = token.source;
     node.line_number = token.line_number;
     node.head = body;
     ret node -> *Expr;
@@ -1305,7 +1270,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             name: string;
             peeked: *Token = _peek_token();
             if token.id == KAI_TOKEN_IDENTIFIER && peeked.id == #char "=" {
-                name = token.string;
+                name = token.source;
                 _next_token(); // skip IDENTIFIER
                 _next_token(); // skip '='
             }
@@ -1391,7 +1356,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             _expect(current.id == KAI_TOKEN_STRING, "in import", "string");
             left = _parser_create_import(parser, token, [current]);
         }
-        else if (kai_string_equals(current.value.string, KAI_STRING("through")))
+        else if (string_equals(current.value.string, KAI_STRING("through")))
         {
             left = _parser_create_control(parser, [current], KAI_CONTROL_THROUGH, null);
         }
@@ -1400,7 +1365,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             _next_token();
             _expect(current.id == KAI_TOKEN_STRING, "in character literal", "expected a string here");
             cp: u32;
-            if current.value.string.count > _utf8_decode(current.value.string, *cp) {
+            if current.value.string.count > _utf8_decode_and_escape(current.value.string, *cp) {
                 // TODO: need custom error message here
                 ret _error_unexpected(parser, current, STRING("in character literal"), STRING("string must be a single codepoint"));
             }
@@ -1409,17 +1374,27 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
         }
         else if (string_equals(current.value.string, STRING("multi")))
         {
-            // TODO: better error checking/handling here
             _next_token();
             _expect(current.id == KAI_TOKEN_STRING, "multi", "must be string");
-            _expect(current.value.string.count > 0, "multi", "string cannot be empty");
+
             value: Number = Number.{0};
-            base: Number = Number.{n = 1, d = 1, e = 8};
-            for i: 0..<current.value.string.count {
-                idx: u32 = current.value.string.count - 1 - i;
-                dg: Number = number_normalize(Number.{n = current.value.string.data[idx], d = 1});
-                value = number_add(number_mul(value, base), dg);
+            base: Number = Number.{n = 1, d = 1};
+
+            str: string = current.value.string;
+            while str.count != 0 {
+                codepoint: u32;
+                advance: u32 = _utf8_decode(str, *codepoint);
+                // TODO: add warning/error here for codepoints > 255
+                if advance == 0 then break;
+
+                digit: Number = number_normalize(Number.{n = codepoint & 0xFF, d = 1});
+                value = number_add(number_mul(digit, base), value);
+                base.e += 8;
+                
+                str.data += advance;
+                str.count -= advance;
             }
+
             current.value.number = value;
             left = _parser_create_number(parser, [current]);
         }
@@ -1487,7 +1462,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
             _expect(token.id == KAI_TOKEN_IDENTIFIER, "in enum expression", "should be an identifier here");
 
             flags: Expr_Flags;
-            name: string = token.string;
+            name: string = token.source;
             peeked: *Token = _peek_token();
             if peeked.id == #char "=" {
                 _next_token(); // skip IDENTIFIER
@@ -1637,7 +1612,7 @@ parse_type_expression :: (parser: *Parser) -> *Expr
         if current.id == KAI_TOKEN_IDENTIFIER {
             peeked: *Token = _peek_token();			
             if peeked.id == #char ":" {
-                name = current.string;
+                name = current.source;
                 _next_token(); // get ':'
                 _next_token(); // get what is after
             }
@@ -1721,7 +1696,7 @@ parse_procedure :: (parser: *Parser) -> *Expr
             _next_token();
         }
         _expect(current.id == KAI_TOKEN_IDENTIFIER, "in procedure input", "should be an identifier");
-        name: string = current.string;
+        name: string = current.source;
         _next_token();
         _expect(current.id == #char ":", "in procedure input", "wanted a ':' here");
         _next_token();
@@ -1758,7 +1733,7 @@ parse_procedure :: (parser: *Parser) -> *Expr
     }
 
     body: *Stmt;
-    if current.id == KAI_TOKEN_DIRECTIVE && string_equals(STRING("host"), current.string) {
+    if current.id == KAI_TOKEN_DIRECTIVE && string_equals(STRING("host"), current.source) {
         _next_token();
         _expect(current.id == #char ";", "???", "???");
     }
@@ -1780,7 +1755,7 @@ parse_declaration :: (parser: *Parser) -> *Stmt
     if current.id != KAI_TOKEN_IDENTIFIER
         ret _unexpected("in declaration", "expected an identifier");
 
-    name: string = current.string;
+    name: string = current.source;
     line_number: u32 = current.line_number;
 
     _next_token(); // skip identifier
@@ -1950,7 +1925,7 @@ parse_statement :: (parser: *Parser) -> *Stmt
         for_token: Token = [current];
         _next_token(); // skip 'for'
         _expect(current.id == KAI_TOKEN_IDENTIFIER, "in for statement", "should be the name of the iterator");
-        iterator_name: string = current.string;
+        iterator_name: string = current.source;
         _next_token();
         _expect(current.id == #char ":", "in for statement", "should be ':' here");
         _next_token();
@@ -2040,15 +2015,12 @@ parse_statement :: (parser: *Parser) -> *Stmt
 
 create_syntax_tree :: (info: *Syntax_Tree_Create_Info, out_tree: *Syntax_Tree) -> Result
 {
-    parser: Parser;
+    parser: Parser = Parser.{
+        arena = Arena_Allocator.{base = info.allocator}
+    };
     parser.tokenizer.source = info.source.contents;
     parser.tokenizer.line_number = 1;
     parser.error = info.error;
-    parser.tokenizer.string_arena = Fixed_Allocator.{
-        data = info.allocator.heap_allocate(info.allocator.user, null, info.source.contents.count, 0),
-        size = info.source.contents.count,
-    };
-    arena_create(*parser.arena, *info.allocator);
 
     statements: Stmt_List;
     token: *Token = tokenizer_next(*parser.tokenizer);

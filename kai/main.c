@@ -145,7 +145,7 @@ int error_no_source_provided(void)
 int token(int argc, char** argv)
 {
     Kai_u32 parse_options = 0;
-    Kai_u32 source_start = -1;
+    int source_start = -1;
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
@@ -162,10 +162,6 @@ int token(int argc, char** argv)
     Kai_Tokenizer tokenizer = {
         .source = source.contents,
         .line_number = 1,
-        .string_arena = {
-            .data = allocator.heap_allocate(allocator.user, NULL, source.contents.count, 0),
-            .size = source.contents.count,
-        },
     };
     Kai_u64 count = 0;
     Kai_Token* token = kai_tokenizer_next(&tokenizer);
@@ -174,6 +170,11 @@ int token(int argc, char** argv)
         count += 1;
         if (!(parse_options & TOKEN_COUNT)) {
             kai_write_token(writer, *token);
+            if (token->id == KAI_TOKEN_STRING || token->id == KAI_TOKEN_DIRECTIVE) {
+                kai__write("[");
+                kai__write_string(token->value.string);
+                kai__write("]");
+            }
             kai__write(" ");
         }
         kai_tokenizer_next(&tokenizer);
@@ -186,7 +187,7 @@ int token(int argc, char** argv)
 int parse(int argc, char** argv)
 {
     Kai_u32 parse_options = 0;
-    Kai_s32 source_start = -1;
+    int source_start = -1;
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
@@ -217,7 +218,7 @@ int parse(int argc, char** argv)
 int compile(int argc, char** argv)
 {
     Kai_u32 parse_options = 0;
-    Kai_s32 source_start = -1;
+    int source_start = -1;
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
@@ -276,7 +277,7 @@ int compile(int argc, char** argv)
 int run(int argc, char** argv)
 {
     Kai_u32 parse_options = 0;
-    Kai_s32 source_start = -1;
+    int source_start = -1;
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag

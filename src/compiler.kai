@@ -375,7 +375,34 @@ _error_type_check :: (context: *Compiler_Context, expr: *Expr, expected: Type, g
     message_count: u32 = context.error_arena.buffer.count - message_offset;
 
     context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
-    //kai__debug_print_stacktrace();
+    ret true;
+}
+
+_error_type_check_string :: (context: *Compiler_Context, expr: *Expr, expected: string, got: Type) -> bool
+{
+    location: Location = Location.{
+        source = context.current_source,
+        string = expr.source_code,
+        line = expr.line_number,
+    };
+
+    [context.error] = Error.{
+        result = KAI_ERROR_TYPE,
+        location = location,
+    };
+    error_writer: Writer = writer_from_arena(*context.error_arena);
+    writer: *Writer = *error_writer;
+
+    message_offset: u32 = context.error_arena.buffer.count;
+    _write("expected ");
+    _write_expression_name(writer, expr);
+    _write(" of type ");
+    write_type(writer, got);
+    _write(" to be ");
+    _write_string(expected);
+    message_count: u32 = context.error_arena.buffer.count - message_offset;
+
+    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
     ret true;
 }
 
@@ -831,6 +858,39 @@ _add_dependency :: (context: *Compiler_Context, ref: Node_Reference)
     array_push(*context.current_dependencies, ref);
 }
 
+_trim_expr :: (context: *Compiler_Context, expr: *Expr, type: *Type_Info) -> bool
+{
+    if type.id == {
+        case KAI_TYPE_ID_TYPELESS_INTEGER; {
+            if expr.this_type.id == {
+                case KAI_TYPE_ID_NUMBER; {
+                    
+                }
+            }
+            ret _error_type_check(context, expr, type, expr.this_type);
+        }
+        case; {
+            if expr.this_type != type {
+                ret _error_type_check(context, expr, type, expr.this_type);
+            }
+        }
+    }
+    ret false;
+}
+
+_is_integer :: (type: *Type_Info) -> bool
+{
+    ret type != null && type.id == KAI_TYPE_ID_INTEGER;
+}
+_is_float :: (type: *Type_Info) -> bool
+{
+    ret type != null && type.id == KAI_TYPE_ID_FLOAT;
+}
+_is_pointer :: (type: *Type_Info) -> bool
+{
+    ret type != null && type.id == KAI_TYPE_ID_POINTER;
+}
+
 // NOTE: should this function always do type-checking?
 // NOTE: expected_type WILL NOT be overwritten if [expected_type] != null
 // NOTE: if out_value == null then only type-checking will occur
@@ -1240,240 +1300,79 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 out_rv = *rv;
             }
 
-            // get type of left and right
-            // lookup what we should do based on a table,
-            //   indexed by the operator
-            // "==", SAME, SAME
-            // ">=", SAME, SAME
-            // "+",  SAME, SAME (POINTER, INTEGER) (INTEGER, POINTER)
+            lt: *Type_Info;
+            rt: *Type_Info;
+            if _value_of_expr(context, b.left, out_lv, *lt) ret true;
+            if _value_of_expr(context, b.right, out_rv, *rt) ret true;
 
-            // expr + (1 + 2)
+            type: *Type_Info; //< this type
 
             if b.op == {
-            case #multi "<<"; #through;
-            case #multi ">>"; {
-                lt: *Type_Info = [expected_type];
-                if _value_of_expr(context, b.left, out_lv, *lt)
-                    ret true;
-
-                rt: *Type_Info;
-                if _value_of_expr(context, b.right, out_rv, *rt)
-                    ret true;
-
-                if [expected_type] != null {
-                    [expected_type] = lt;
-                }
-                b.this_type = lt;
-                ret false;
-            }
-            case #multi "=="; #through;
-            case #multi "!="; #through;
-            case #multi "<"; #through;
-            case #multi ">"; #through;
-            case #multi "<="; #through;
-            case #multi ">="; {
-                expected: *Type_Info = [expected_type];
-                if expected != null && expected.id != KAI_TYPE_ID_BOOLEAN
-                    ret _error_type_check(context, expr, expected, context.bool_type);
-
-                lt: *Type_Info;
-                rt: *Type_Info;
-
-                start: u32 = context.assembler.code.count;
-                left_first: bool = true;
-
-                if _value_of_expr(context, b.left, out_lv, *lt)
-                    ret true;
-
-                if lt.id == KAI_TYPE_ID_NUMBER {
-                    left_first = false;
-                    context.assembler.code.count = start;
-                    if _value_of_expr(context, b.right, out_rv, *rt)
-                        ret true;
-                    context.stack_index += 1;
-                    asm_insert_stack_store(*context.assembler, context.stack_index, 0);
-                    lt = rt;
-                    if _value_of_expr(context, b.left, out_lv, *lt)
-                        ret true;
-                    asm_insert_stack_load(*context.assembler, context.stack_index, 1);
-                    context.stack_index -= 1;
-                }
-                else {
-                    context.stack_index += 1;
-                    asm_insert_stack_store(*context.assembler, context.stack_index, 0);
-                    rt = lt;
-                    if _value_of_expr(context, b.right, out_rv, *rt)
-                        ret true;
-                    asm_insert_stack_load(*context.assembler, context.stack_index, 1);
-                    context.stack_index -= 1;
-                }
-
-                if lt != rt
-                    ret _error_fatal(context, STRING("types no match, boolean comparison"));
-
-                if left_first
-                    asm_insert_cmp(*context.assembler, 1, 0);
-                else
-                    asm_insert_cmp(*context.assembler, 0, 1);
-                
-                // eor x0, x0, x0
-                // cinc x0, x0, <cond>
-                //asm_insert_bool_from_condition(*context.assembler, KAI_CONDITION_EQ);
-
-                [expected_type] = context.bool_type;
-                b.this_type = context.bool_type;
-                ret false;
-            }
-            case #multi "->"; {
-                lt: *Type_Info = null;
-                if _value_of_expr(context, b.left, out_lv, *lt)
-                    ret true;
-
-                rt: *Type_Info = context.type_type;
-                out_rv = *rv; // need value of right to output a type
-                if _value_of_expr(context, b.right, out_rv, *rt)
-                    ret true;
-
-                if [expected_type] == null {
-                    [expected_type] = rv.type;
-                    b.this_type = rv.type;
-                    ret false;
-                }
-
-                if [expected_type] != rv.type
-                    ret _error_type_check(context, expr, [expected_type], rv.type);
-
-                b.this_type = rv.type;
-                ret false;
-            }
-            case #multi "."; {
-                lt: *Type_Info;
-                if _value_of_expr(context, b.left, out_lv, *lt)
-                    ret true;
-
-                if lt.id == {
-                case KAI_TYPE_ID_TYPE; {
-                    rt: *Type_Info;
-                    if _value_of_expr(context, b.right, out_rv, *rt)
-                        ret true;
-                }
-                case KAI_TYPE_ID_POINTER; {
-                    pt: *Type_Info_Pointer = cast lt;
-                    type: *Type_Info = cast pt.sub_type;
-                    if type.id != KAI_TYPE_ID_STRUCT
-                        ret _error_fatal(context, STRING("must be pointer to struct in member access"));
-                    lt = type;
-                } #through;
-                case KAI_TYPE_ID_STRING; #through;
-                case KAI_TYPE_ID_STRUCT; {
-                    if b.right.id != KAI_EXPR_IDENTIFIER
-                        ret _error_fatal(context, STRING("must be identifer in struct access"));
-
-                    name: string = b.right.source_code;
-                    st: *Type_Info_Struct = cast lt;
-                    for i: 0..<st.fields.count {
-                        field: Struct_Field = st.fields.data[i];
-                        if string_equals(name, field.name) {
-                            if [expected_type] != null && [expected_type] != field.type
-                                ret _error_type_check(context, expr, [expected_type], field.type);
-                            [expected_type] = field.type;
-                            b.this_type = field.type;
-                            ret false;
-                        }
-                    }
-
-                    ret _error_no_member(context, lt, b.right);
-                }
-                case; {
-                    kai__todo("need to implement (left type id: %i)", lt.id);
-                }
-                }
-            }
-            case #multi "["; {
-                if out_value != null
-                    ret _error_fatal(context, STRING("value not implemented for index operation"));
-
-                lt: *Type_Info = null;
-                if _value_of_expr(context, b.left, null, *lt)
-                    ret true;
-
-                if lt.id != KAI_TYPE_ID_POINTER
-                    ret _error_fatal(context, STRING("left side of index is not a pointer"));
-
-                pt: *Type_Info_Pointer = cast lt;
-
-                rt: *Type_Info;
-                if _value_of_expr(context, b.right, null, *rt)
-                    ret true;
-
-                if rt.id == {
-                    case KAI_TYPE_ID_INTEGER; #through;
-                    case KAI_TYPE_ID_NUMBER; {
-                        // good
-                    }
-                    case; {
-                        ret _error_fatal(context, STRING("must index by a integer value"));
-                    }
-                }
-
-                if [expected_type] == null {
-                    [expected_type] = pt.sub_type;
-                }
-                else if [expected_type] != pt.sub_type
-                    ret _error_type_check(context, expr, [expected_type], pt.sub_type);
-
-                b.this_type = pt.sub_type;
-                ret false;
-            }
-            }
-
-            lt: *Type_Info = [expected_type];
-            rt: *Type_Info = [expected_type];
-
-            start: u32 = context.assembler.code.count;
-            left_first: bool = true;
-
-            if _value_of_expr(context, b.left, out_lv, *lt)
-                ret true;
-
-            if lt.id == KAI_TYPE_ID_NUMBER {
-                left_first = false;
-                context.assembler.code.count = start;
-                if _value_of_expr(context, b.right, out_rv, *rt)
-                    ret true;
-                context.stack_index += 1;
-                asm_insert_stack_store(*context.assembler, context.stack_index, 0);
-                lt = rt;
-                if _value_of_expr(context, b.left, out_lv, *lt)
-                    ret true;
-                asm_insert_stack_load(*context.assembler, context.stack_index, 1);
-                context.stack_index -= 1;
-            }
-            else {
-                context.stack_index += 1;
-                asm_insert_stack_store(*context.assembler, context.stack_index, 0);
-                rt = lt;
-                if _value_of_expr(context, b.right, out_rv, *rt)
-                    ret true;
-                asm_insert_stack_load(*context.assembler, context.stack_index, 1);
-                context.stack_index -= 1;
-            }
-
-            if b.op == {
-                case #char "+"; {
-                    asm_insert_add(*context.assembler, 0, 0, 1);
-                }
+                case #char "+"; #through;
                 case #char "-"; {
-                    if left_first
-                        asm_insert_sub(*context.assembler, 0, 1, 0);
-                    else
-                        asm_insert_sub(*context.assembler, 0, 0, 1);
+
+                } #through;
+                case #char "*"; #through;
+                case #char "/"; {
+                    // TYPE RULE #1: Integers must be the same bit width
+                    if lt.id == KAI_TYPE_ID_INTEGER && rt.id == KAI_TYPE_ID_INTEGER {
+                        if lt != rt
+                            //ret _error_type_rule(context, expr, "integers must be the same bit width for ", b.op);
+                            ret true;
+                        type = lt;
+                    }
+                    else if lt.id == KAI_TYPE_ID_NUMBER {
+                        assert(rt.id == KAI_TYPE_ID_NUMBER || rt.id == KAI_TYPE_ID_INTEGER  || rt.id == KAI_TYPE_ID_FLOAT);
+                        type = rt;
+                    }
+                    else if rt.id == KAI_TYPE_ID_NUMBER {
+                        assert(lt.id == KAI_TYPE_ID_NUMBER || lt.id == KAI_TYPE_ID_INTEGER  || lt.id == KAI_TYPE_ID_FLOAT);
+                        type = lt;
+                    }
+                    else if _is_float(lt) {
+                        if rt != lt
+                            ret _error_fatal(context, STRING("float types must be the same"));
+                        type = lt;
+                    }
+                    else if _is_pointer(lt) {
+                        printf("POINTER !!!");
+                    }
+                    else {
+                        ret _error_type_check(context, expr, context.type_type, context.type_type);
+                    }
+                }
+                case #multi "<<"; #through;
+                case #multi ">>"; {
+                    // Left type must be an integer
+                    if [expected_type] != null {
+                        printf("*** Got type: ");
+                        write_type(writer, [expected_type]);
+                        printf("\n");
+                    }
+                    integer_type: Type_Info = Type_Info.{id = KAI_TYPE_ID_TYPELESS_INTEGER};
+                    if _trim_expr(context, b.left, *integer_type)
+                        ret true;
+                    //if lt.id != KAI_TYPE_ID_INTEGER && lt.id != KAI_TYPE_ID_NUMBER
+                    //    ret _error_type_check_string(context, b.left, STRING("an integer"), lt); // TODO: need custom error message
+
+                    // Right type must be an unsigned integer
+                    if rt.id != KAI_TYPE_ID_INTEGER && rt.id != KAI_TYPE_ID_NUMBER
+                        ret _error_type_check_string(context, b.right, STRING("an unsigned integer"), rt); // TODO: need custom error message
+
+                    // type comes from left side
+                    type = lt;
                 }
             }
 
-            if lt != rt
-                ret _error_fatal(context, STRING("types no match, comparison"));
-                
+            assert(type != null);
+
+            if [expected_type] == null {
+                [expected_type] = type;
+            }
+            else if [expected_type] != type {
+                ret _error_type_check(context, expr, [expected_type], type);
+            }
+
             if out_value != null {
                 value: Value = _evaluate_binary_operation(b.op, lt, lv, rv);
                 type: *Type_Info = context.number_type;
@@ -1505,8 +1404,8 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     }
                 }
             }
-            [expected_type] = lt;
-            b.this_type = lt;
+            [expected_type] = type;
+            b.this_type = type;
             ret false;
         }
 
@@ -1549,6 +1448,9 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                         line = current.line_number
                     },
                 });
+                index: int = table_find(*scope.identifiers, current.name);
+                if index != -1
+                    ret _error_fatal(context, STRING("duplicate procedure argument name"));
                 table_set(*scope.identifiers, current.name, ref);
                 current = current.next;
             }
@@ -1611,7 +1513,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 assert(current.id == KAI_STMT_DECLARATION);
                 d: *Stmt_Declaration = cast current;
 
-                type: *Type_Info;
+                type: *Type_Info = context.type_type;
                 value: Value;
                 if _value_of_expr(context, d.type, *value, *type) {
                     node.flags &=~ KAI_NODE_VALUE_EVALUATED;
@@ -1780,14 +1682,27 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
         }
 
         case KAI_STMT_RETURN; {
+            r: *Stmt_Return = cast expr;
+            expected: *Type_Info = [expected_type];
+
             assert(out_value == null); // return does not have a value
 
-            r: *Stmt_Return = cast expr;
-            if r.expr != null {
+            if writer != null {
+                printf("RETURN: ");
+                write_type(writer, expected);
+                printf("\n");
+            }
+
+            if expected == null || expected.id == KAI_TYPE_ID_VOID {
+                if r.expr != null
+                    ret _error_fatal(context, STRING("procedure does not expect a return value, but one was provided"));
+            }
+            else {
+                if r.expr == null
+                    ret _error_fatal(context, STRING("procedure expected a return value, but none was provided"));
+
                 if _value_of_expr(context, r.expr, null, expected_type)
                     ret true;
-            } else {
-                // TODO: need to make sure that function does not have a return
             }
             asm_insert_ret(*context.assembler);
             ret false;
@@ -2510,8 +2425,8 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         imports = info.imports,
         debug_writer = info.debug_writer,
     };
-    arena_create(*context.type_allocator, *info.allocator);
-    arena_create(*context.temp_allocator, *info.allocator);
+    context.type_allocator.base = info.allocator;
+    context.temp_allocator.base = info.allocator;
     context.error_arena.allocator = info.allocator;
     context.assembler.allocator = *info.allocator;
 

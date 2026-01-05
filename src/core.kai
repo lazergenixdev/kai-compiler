@@ -60,6 +60,11 @@ Location :: struct {
     line   : u32;
 }
 
+//
+// filename:line --> Error: [message]
+//      [location]
+//       ^~~~~~~~ [context]
+
 Error :: struct {
     result    : Result;
     location  : Location;
@@ -67,7 +72,6 @@ Error :: struct {
     context   : string;
     memory    : Memory;
     next      : *Error;
-    //count     : u32;
 }
 
 _range_to_string :: (range: Range, memory: Memory) -> string
@@ -193,6 +197,7 @@ Allocator :: struct {
     page_size          : u32;
 }
 
+// TODO: Vectorize these on the platform word size (uint)
 _memory_copy :: (dst: *void, src: *void, size: u32)
 {
     for i: 0..<size {
@@ -523,9 +528,9 @@ Type_Id :: enum u8 {
     MODULE    = 13;
 
     // id > 127 => Type Checker ONLY
+    TYPELESS_INTEGER          = 0x81;
+    TYPELESS_UNSIGNED_INTEGER = 0x82;
     TYPELESS_POINTER          = 0x80;
-    TYPELESS_UNSIGNED_INTEGER = 0x81;
-    TYPELESS_NUMBER           = 0x82;
 }
 
 Type_Info :: struct {
@@ -1055,6 +1060,21 @@ Writer :: struct {
     write : *P_Write_Callback;
     user  : *void;
 }
+/*
+Format_Fragment :: struct {
+    type: Type;
+    value: Value;
+    offset: u32;
+    min_count: u8; // 1 == full width
+    fill: u8;
+    flags: u8; // BASE_16, BASE_2, USE_DEFAULT = 1
+}
+
+write_format_fragment :: (writer: *Writer, fragment: Format_Fragment)
+{
+    
+}
+*/
 
 
 // Fixed Arena Allocator
@@ -1077,20 +1097,18 @@ fixed_allocate :: (arena: *Fixed_Allocator, size: u32) -> *void
 
 
 // Arena Allocator
-// TODO: LArena -- list arena     // linked list implementation
-//       GArena -- growing arena  // dynamic array implementation
-//       FArena -- fixed arena    // no resize, fixed size
 
 Arena_Bucket :: struct {
     prev: *Arena_Bucket;
-    next: *Arena_Bucket;
+    next: *Arena_Bucket; // TODO: remove
 }
 
 Arena_Allocator :: struct {
+    base              : Allocator; // NOTE: Set this value on initialization
     current_bucket    : *Arena_Bucket;
     current_allocated : u32;
     bucket_size       : u32;
-    base              : Allocator;
+    contiguous_start  : u32; // NOTE: high bit set if used
 }
 
 Arena_Checkpoint :: struct {
@@ -1109,23 +1127,22 @@ arena_restore :: (arena: *Arena_Allocator, checkpoint: Arena_Checkpoint)
     arena.current_allocated = checkpoint.allocated;
 }
 
-// TODO: Arenas need to be zero initialized, not this
-arena_create :: (arena: *Arena_Allocator, base: *Allocator)
-{
-    assert(arena != null);
-    assert(base != null);
-
-    arena.base = [base];
-    arena.bucket_size = _ceil_div(0x10000, base.page_size)->u32 * base.page_size;
-    arena.current_allocated = sizeof(Arena_Bucket);
-    arena.current_bucket = base.heap_allocate(base.user, null, arena.bucket_size, 0) -> *Arena_Bucket;
-}
-
 arena_destroy :: (arena: *Arena_Allocator)
 {
     arena_free_all(arena);
     arena.bucket_size = 0;
     arena.base = Allocator.{};
+}
+
+arena_start_contiguous :: (arena: *Arena_Allocator)
+{
+    arena.contiguous_start = 0x8000_0000 & arena.current_allocated;
+}
+
+arena_end_contiguous :: (arena: *Arena_Allocator)
+{
+    assert(arena.contiguous_start & 0x8000_0000);
+    arena.contiguous_start = 0;
 }
 
 arena_free_all :: (arena: *Arena_Allocator)
@@ -1146,11 +1163,25 @@ arena_allocate :: (arena: *Arena_Allocator, size: u32) -> *void
 {    
     assert(arena != null);
 
-    if (size > arena.bucket_size - sizeof(Arena_Bucket))
+    // Uninitialized, attempt to initialize
+    if arena.current_bucket == null {
+        base : *Allocator = *arena.base;
+        arena.bucket_size = _ceil_div(0x10000, base.page_size)->u32 * base.page_size;
+        arena.current_allocated = sizeof(Arena_Bucket);
+        arena.current_bucket = base.heap_allocate(base.user, null, arena.bucket_size, 0) -> *Arena_Bucket;
+        if arena.current_bucket == null ret null;
+    }
+
+    if size > arena.bucket_size - sizeof(Arena_Bucket) {
         fatal_error("Arena Allocator", "Object size greater than bucket size (incorrect usage)");
+    }
     
-    if (arena.current_allocated + size > arena.bucket_size)
+    if arena.current_allocated + size > arena.bucket_size
     {
+        old_bucket: *Arena_Bucket = arena.current_bucket;
+        old_allocated: u32 = arena.current_allocated;
+
+        // Allocate a new bucket
         if arena.current_bucket.next != null {
             arena.current_bucket = arena.current_bucket.next;
             arena.current_allocated = sizeof(Arena_Bucket);
@@ -1161,6 +1192,20 @@ arena_allocate :: (arena: *Arena_Allocator, size: u32) -> *void
             new_bucket.prev = arena.current_bucket;
             arena.current_bucket = new_bucket;
             arena.current_allocated = sizeof(Arena_Bucket);
+        }
+
+        // Handle contiguous sections
+        if arena.contiguous_start & 0x8000_0000 {
+            start: u32 = arena.contiguous_start & 0x7FFF_FFFF;
+            // NOTE: if start is zero, then we are asking for a
+            //       contiguous region that is larger than the bucket size.
+            assert(start != 0);
+
+            dst: *u8 = arena.current_bucket->*u8 + arena.current_allocated;
+            src: *u8 = old_bucket->*u8 + start;
+            contiguous_size: u32 = old_allocated - start;
+            _memory_copy(dst, src, contiguous_size);
+            arena.current_allocated += contiguous_size;
         }
     }
     bytes: *u8 = arena.current_bucket -> *u8;
@@ -1337,7 +1382,7 @@ _write_source_code :: (writer: *Writer, src: *u8)
 _utf8_decode :: (s: string, out: *u32) -> u32
 {
     [out] = 0xFFFD; // Invalid byte
-    if s.count < 1 ret 1; // skip
+    if s.count < 1 ret 0; // skip
     p: *u8 = s.data;
 
     if (p[0] < 0x80)
@@ -1368,6 +1413,64 @@ _utf8_decode :: (s: string, out: *u32) -> u32
         ret 4;
     }
     ret 1;
+}
+
+_utf8_decode_and_escape :: (s: string, out: *u32) -> u32
+{
+    if s.count < 1 ret 0; // skip
+    p: *u8 = s.data;
+
+    if p[0] != #char "\\" then
+        ret _utf8_decode(s, out);
+
+    next: u8 = 0;
+    if s.count >= 2 then
+        next = s.data[1];
+    count: u32 = 2;
+    if next == {
+        case;
+            [out] = #char "\\";
+            count = 1;
+        case #char "\\"; [out] = #char "\\";
+        case #char "\""; [out] = #char "\"";
+        case #char "b"; [out] = #char "\b";
+        case #char "e"; [out] = #char "\e";
+        case #char "n"; [out] = #char "\n";
+        case #char "r"; [out] = #char "\r";
+        case #char "t"; [out] = #char "\t";
+        case #char "x"; {
+            // TODO: Should we handle the case where
+            //       multiple \x00 form a single codepoint?
+            d: u32 = 0;
+            n: u32 = 0;
+
+            for i: 2..3 {
+                if i < s.count then
+                    next = s.data[i];
+                else break;
+
+                if (next >= #char "0" && next <= #char "9") then
+                    d = d * 16 + (next - #char "0");
+                else if (next >= #char "a" && next <= #char "f") then
+                    d = d * 16 + (next - #char "a" + 10);
+                else if (next >= #char "A" && next <= #char "F") then
+                    d = d * 16 + (next - #char "A" + 10);
+                else break;
+
+                n += 1;
+            }
+
+            if n == 0 {
+                [out] = #char "\\";
+                count = 1;
+            }
+            else {
+                [out] = d;
+                count += n;
+            }
+        }
+    }
+    ret count;
 }
 
 _unicode_char_width :: (writer: *Writer, cp: u32, first: u8, ch: u8) -> u32
@@ -1589,6 +1692,7 @@ write_type :: (writer: *Writer, type: *Type_Info)
         kai__write("enum ");
         kai_write_type(writer, info.sub_type);
     }
+    case KAI_TYPE_ID_TYPELESS_INTEGER; _write("typeless integer");
     }
 }
 

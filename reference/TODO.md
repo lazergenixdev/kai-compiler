@@ -1,8 +1,12 @@
 # TODO
-- [x] rename "memory" procedures to "allocator"
-- [x] need to have hash tables with arbitrary key types (or at least just string + Type)
-- [x] by default, we need to cache all types
 - [x] fix crash on circular dependencies on types
+- [ ] Arenas are zero-initialized by default
+- [ ] Combine syntax tree arena and string arena into one
+- [ ] Finalize arena for error messages (how to handle linked error message linked list?)
+- [ ] Error message for very long strings
+- [ ] need `_value_of_expr` to always return the value of constant expressions (i.e. Numbers)
+- [ ] need constant folding in `_value_of_expr`
+- [ ] only use `u64` and `s64` for integer values
 - [ ] should print type look for recursive types?
 - [ ] better compilation for recusive types
 - [ ] cached typed need to be per-scope?
@@ -13,26 +17,24 @@
 - [ ] fix parser so that `#array` and `#map` can be removed
 - [ ] fix nested constant declarations
 - [ ] need a flag to tell `compile_program` to keep the AST around
+- [ ] all control paths must return a value
 
 # Optional / Extra
-- [x] remove unused `loop` keyword
 - [ ] add statement tags `{}`
 - [ ] utility (function + commandline) to generate C/C++ bindings from script
-- [ ] add flag `KAI_FLAG_CODEPOINT` to number expressions that came from `#char`
-- [ ] procedure arguments can have no type, then the type used will be the type of the next argument
-- [ ] declarations should be able to declare multiple names
+- [ ] add flag `KAI_FLAG_CODEPOINT` to number expressions that came from `#char` (`KAI_FLAG_MULTI`)
+- [ ] procedure arguments can have no type, then the type used will be the type of the next argument (Ex: `a, b: int`)
+- [ ] declarations should be able to declare multiple names also
 - [ ] errors should use an arena so that `destroy_error` can be removed
 - [ ] remove `;` from case statements?
-- [ ] measure performance impact of `occupied` in hash table
 - [ ] add multi-line string literals
 - [ ] parser needs a recovery mode for syntax highlighting only??
 - [ ] consider using `KAI_IMP` instead of `KAI_API` for implementation for grep purposes
 - [ ] strings need to be handled better in parser/tokenizer
-- [ ] use web workers for running wasm compiler code, to have proper syncronization
+- [ ] use web workers for running wasm compiler code, to have proper syncronization?
 - [ ] write procedure should return number of characters written
 - [ ] use word "free" instead of "destroy"?
 - [ ] create new types for types marked `#distinct`
-- [ ] need function `is_valid_identifier(string) -> bool`
 - [ ] use `next` field in expressions to store multiple declarations (Ex: `a, b: int;` -> Stmt_Decl)
 
 # Version 0.1.1
