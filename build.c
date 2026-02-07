@@ -100,6 +100,7 @@ const char* intrinsics[] = {
 };
 
 Kai_Allocator g_allocator = {0};
+Kai_Arena_Allocator g_arena = {0};
 Kai_Writer g_writer = {0};
 bool compile_debug = false;
 
@@ -1621,8 +1622,6 @@ Kai_Syntax_Tree create_tree_from_file(const char* path)
 
     Kai_Error error = {0};
     Kai_Syntax_Tree_Create_Info info = {
-        .allocator = g_allocator,
-        .error = &error,
         .source = {
             .name = kai_string_from_c(path),
             .contents = {
@@ -1630,6 +1629,8 @@ Kai_Syntax_Tree create_tree_from_file(const char* path)
                 .count = builder.count,
             },
         },
+        .arena = &g_arena,
+        .error = &error,
     };
 
     uint64_t start = nanos_since_unspecified_epoch();
@@ -1869,6 +1870,7 @@ int main(int argc, char** argv)
 #endif
 #endif
     kai_allocator_create(&g_allocator);
+    g_arena.base = g_allocator;
     g_writer = kai_writer_stdout();
 
     shdefault(g_identifier_map, Identifier_Type_Invalid);

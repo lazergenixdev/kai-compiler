@@ -134,6 +134,7 @@ Compiler_Context :: struct {
     // Memory management
     allocator:              Allocator;
     error_arena:            Growing_Arena;
+    arena:                  Arena_Allocator; // general purpose arena
     type_allocator:         Arena_Allocator;
     temp_allocator:         Arena_Allocator;
 
@@ -176,7 +177,7 @@ _create_syntax_trees :: (context: *Compiler_Context, sources: [] Source) -> bool
     for i: 0..<sources.count {
         info: Syntax_Tree_Create_Info = Syntax_Tree_Create_Info.{
             source = sources[i],
-            allocator = context.allocator,
+            arena = *context.arena,
             error = context.error,
         };
         if create_syntax_tree(*info, *array_last(*context.trees)) != KAI_SUCCESS
@@ -1317,8 +1318,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                     // TYPE RULE #1: Integers must be the same bit width
                     if lt.id == KAI_TYPE_ID_INTEGER && rt.id == KAI_TYPE_ID_INTEGER {
                         if lt != rt
-                            //ret _error_type_rule(context, expr, "integers must be the same bit width for ", b.op);
-                            ret true;
+                            ret _error_fatal(context, STRING("integers must be the same bit width for % and %"));
                         type = lt;
                     }
                     else if lt.id == KAI_TYPE_ID_NUMBER {
@@ -2088,7 +2088,7 @@ _type_expression_from_string :: (context: *Compiler_Context, s: string) -> *Expr
     parser.tokenizer.source = s;
     parser.tokenizer.line_number = 1;
     parser.error = context.error;
-    parser.arena = context.temp_allocator;
+    parser.arena = *context.temp_allocator;
 
     tokenizer_next(*parser.tokenizer);
     type: *Expr = parse_type_expression(*parser);
@@ -2097,8 +2097,6 @@ _type_expression_from_string :: (context: *Compiler_Context, s: string) -> *Expr
         _error_fatal(context, STRING("could not parse string"));
         ret null;
     }
-
-    context.temp_allocator = parser.arena;
     ret type;
 }
 
@@ -2425,6 +2423,7 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         imports = info.imports,
         debug_writer = info.debug_writer,
     };
+    context.arena.base = info.allocator;
     context.type_allocator.base = info.allocator;
     context.temp_allocator.base = info.allocator;
     context.error_arena.allocator = info.allocator;

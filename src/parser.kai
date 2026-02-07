@@ -204,9 +204,9 @@ Stmt_While :: struct {
 
 Stmt_For :: struct {
     using Expr;
-    body : *Stmt;
-    from : *Expr;
-    to   : *Expr; // optional (interates through `from` if this is null)
+    body          : *Stmt;
+    from          : *Expr;
+    to            : *Expr; // optional (interates through `from` if this is null)
     iterator_name : string;
 }
 
@@ -217,15 +217,14 @@ Stmt_Control :: struct {
 }
 
 Syntax_Tree :: struct {
-    root            : Stmt_Compound;
-    source          : Source;
-    allocator       : Arena_Allocator; // TODO: arena for each syntax tree? or each group of syntax trees?
+    root   : Stmt_Compound;
+    source : Source;
 }
 
 Syntax_Tree_Create_Info :: struct {
-    source     : Source;    // input
-    allocator  : Allocator; // input
-    error      : *Error;    // [output]
+    source : Source;           // input
+    arena  : *Arena_Allocator; // input
+    error  : *Error;           // [output]
 }
 
 //Linked_List :: struct (T: #Type) {
@@ -815,7 +814,7 @@ tokenizer_peek :: (context: *Tokenizer) -> *Token
 
 Parser :: struct {
     tokenizer : Tokenizer;
-    arena     : Arena_Allocator;
+    arena     : *Arena_Allocator;
     error     : *Error;
 }
 
@@ -899,7 +898,7 @@ _operator_info :: (op: u32) -> _Operator
 
 _parser_create_identifier :: (parser: *Parser, token: Token) -> *Expr
 {
-    node: *Expr = cast arena_allocate(*parser.arena, sizeof(Expr));
+    node: *Expr = cast arena_allocate(parser.arena, sizeof(Expr));
     node.id = KAI_EXPR_IDENTIFIER;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -907,7 +906,7 @@ _parser_create_identifier :: (parser: *Parser, token: Token) -> *Expr
 }
 _parser_create_string :: (parser: *Parser, token: Token) -> *Expr
 {
-    node: *Expr_String = cast arena_allocate(*parser.arena, sizeof(Expr_String));
+    node: *Expr_String = cast arena_allocate(parser.arena, sizeof(Expr_String));
     node.id = KAI_EXPR_STRING;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -916,7 +915,7 @@ _parser_create_string :: (parser: *Parser, token: Token) -> *Expr
 }
 _parser_create_number :: (parser: *Parser, token: Token) -> *Expr
 {
-    node: *Expr_Number = cast arena_allocate(*parser.arena, sizeof(Expr_Number));
+    node: *Expr_Number = cast arena_allocate(parser.arena, sizeof(Expr_Number));
     node.id = KAI_EXPR_NUMBER;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -925,7 +924,7 @@ _parser_create_number :: (parser: *Parser, token: Token) -> *Expr
 }
 _parser_create_literal :: (parser: *Parser, token: Token, head: *Expr, count: u32) -> *Expr
 {
-    node: *Expr_Literal = cast arena_allocate(*parser.arena, sizeof(Expr_Literal));
+    node: *Expr_Literal = cast arena_allocate(parser.arena, sizeof(Expr_Literal));
     node.id = KAI_EXPR_LITERAL;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -935,7 +934,7 @@ _parser_create_literal :: (parser: *Parser, token: Token, head: *Expr, count: u3
 }
 _parser_create_unary :: (parser: *Parser, op_token: Token, expr: *Expr) -> *Expr
 {
-    node: *Expr_Unary = cast arena_allocate(*parser.arena, sizeof(Expr_Unary));
+    node: *Expr_Unary = cast arena_allocate(parser.arena, sizeof(Expr_Unary));
     node.id = KAI_EXPR_UNARY;
     node.source_code = merge_strings(op_token.source, expr.source_code);
     node.line_number = _min_u32(op_token.line_number, expr.line_number);
@@ -945,7 +944,7 @@ _parser_create_unary :: (parser: *Parser, op_token: Token, expr: *Expr) -> *Expr
 }
 _parser_create_binary :: (parser: *Parser, left: *Expr, right: *Expr, op: u32) -> *Expr
 {
-    node: *Expr_Binary = cast arena_allocate(*parser.arena, sizeof(Expr_Binary));
+    node: *Expr_Binary = cast arena_allocate(parser.arena, sizeof(Expr_Binary));
     node.id = KAI_EXPR_BINARY;
     node.source_code = merge_strings(left.source_code, right.source_code);
     node.line_number = _min_u32(left.line_number, right.line_number);
@@ -956,7 +955,7 @@ _parser_create_binary :: (parser: *Parser, left: *Expr, right: *Expr, op: u32) -
 }
 _parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: *Expr, cols: *Expr, flags: u8) -> *Expr
 {
-    node: *Expr_Array = cast arena_allocate(*parser.arena, sizeof(Expr_Array));
+    node: *Expr_Array = cast arena_allocate(parser.arena, sizeof(Expr_Array));
     node.id = KAI_EXPR_ARRAY;
     node.source_code = merge_strings(op_token.source, expr.source_code);
     node.line_number = _min_u32(op_token.line_number, expr.line_number);
@@ -968,7 +967,7 @@ _parser_create_array :: (parser: *Parser, op_token: Token, expr: *Expr, rows: *E
 }
 _parser_create_special :: (parser: *Parser, token: Token, kind: u8) -> *Expr
 {
-    node: *Expr_Special = cast arena_allocate(*parser.arena, sizeof(Expr_Special));
+    node: *Expr_Special = cast arena_allocate(parser.arena, sizeof(Expr_Special));
     node.id = KAI_EXPR_SPECIAL;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -977,7 +976,7 @@ _parser_create_special :: (parser: *Parser, token: Token, kind: u8) -> *Expr
 }
 _parser_create_procedure_type :: (parser: *Parser, in_out: *Expr, in_count: u8, out_count: u8) -> *Expr
 {
-    node: *Expr_Procedure_Type = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure_Type));
+    node: *Expr_Procedure_Type = cast arena_allocate(parser.arena, sizeof(Expr_Procedure_Type));
     node.id = KAI_EXPR_PROCEDURE_TYPE;
     // TODO: need source code and line number here
     if in_out != null {
@@ -991,7 +990,7 @@ _parser_create_procedure_type :: (parser: *Parser, in_out: *Expr, in_count: u8, 
 }
 _parser_create_procedure_call :: (parser: *Parser, proc: *Expr, args: *Expr, arg_count: u8) -> *Expr
 {
-    node: *Expr_Procedure_Call = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure_Call));
+    node: *Expr_Procedure_Call = cast arena_allocate(parser.arena, sizeof(Expr_Procedure_Call));
     node.id = KAI_EXPR_PROCEDURE_CALL;
     node.source_code = proc.source_code;
     node.line_number = proc.line_number;
@@ -1002,7 +1001,7 @@ _parser_create_procedure_call :: (parser: *Parser, proc: *Expr, args: *Expr, arg
 }
 _parser_create_procedure :: (parser: *Parser, token: Token, in_out: *Expr, body: *Stmt, in_count: u8, out_count: u8) -> *Expr
 {
-    node: *Expr_Procedure = cast arena_allocate(*parser.arena, sizeof(Expr_Procedure));
+    node: *Expr_Procedure = cast arena_allocate(parser.arena, sizeof(Expr_Procedure));
     node.id = KAI_EXPR_PROCEDURE;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -1014,7 +1013,7 @@ _parser_create_procedure :: (parser: *Parser, token: Token, in_out: *Expr, body:
 }
 _parser_create_import :: (parser: *Parser, token: Token, import: Token) -> *Expr
 {
-    node: *Expr = cast arena_allocate(*parser.arena, sizeof(Expr));
+    node: *Expr = cast arena_allocate(parser.arena, sizeof(Expr));
     node.id = KAI_EXPR_IMPORT;
     node.source_code = merge_strings(token.source, import.source);
     node.line_number = token.line_number;
@@ -1023,7 +1022,7 @@ _parser_create_import :: (parser: *Parser, token: Token, import: Token) -> *Expr
 }
 _parser_create_struct :: (parser: *Parser, token: Token, field_count: u32, body: *Stmt) -> *Expr
 {
-    node: *Expr_Struct = cast arena_allocate(*parser.arena, sizeof(Expr_Struct));
+    node: *Expr_Struct = cast arena_allocate(parser.arena, sizeof(Expr_Struct));
     node.id = KAI_EXPR_STRUCT;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -1033,7 +1032,7 @@ _parser_create_struct :: (parser: *Parser, token: Token, field_count: u32, body:
 }
 _parser_create_enum :: (parser: *Parser, token: Token, type: *Expr, field_count: u32, body: *Stmt) -> *Expr
 {
-    node: *Expr_Enum = cast arena_allocate(*parser.arena, sizeof(Expr_Enum));
+    node: *Expr_Enum = cast arena_allocate(parser.arena, sizeof(Expr_Enum));
     node.id = KAI_EXPR_ENUM;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -1044,7 +1043,7 @@ _parser_create_enum :: (parser: *Parser, token: Token, type: *Expr, field_count:
 }
 _parser_create_return :: (parser: *Parser, ret_token: Token, expr: *Expr) -> *Expr
 {
-    node: *Stmt_Return = cast arena_allocate(*parser.arena, sizeof(Stmt_Return));
+    node: *Stmt_Return = cast arena_allocate(parser.arena, sizeof(Stmt_Return));
     node.id = KAI_STMT_RETURN;
     node.source_code = ret_token.source;
     node.line_number = ret_token.line_number;
@@ -1053,7 +1052,7 @@ _parser_create_return :: (parser: *Parser, ret_token: Token, expr: *Expr) -> *Ex
 }
 _parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, value: *Expr, flags: u8, line_number: u32) -> *Expr
 {
-    node: *Stmt_Declaration = cast arena_allocate(*parser.arena, sizeof(Stmt_Declaration));
+    node: *Stmt_Declaration = cast arena_allocate(parser.arena, sizeof(Stmt_Declaration));
     node.id = KAI_STMT_DECLARATION;
     node.source_code = name;
     node.line_number = line_number;
@@ -1065,7 +1064,7 @@ _parser_create_declaration :: (parser: *Parser, name: string, type: *Expr, value
 }
 _parser_create_assignment :: (parser: *Parser, op: u32, dest: *Expr, value: *Expr) -> *Expr
 {
-    node: *Stmt_Assignment = cast arena_allocate(*parser.arena, sizeof(Stmt_Assignment));
+    node: *Stmt_Assignment = cast arena_allocate(parser.arena, sizeof(Stmt_Assignment));
     node.id = KAI_STMT_ASSIGNMENT;
     node.source_code = dest.source_code;
     node.line_number = dest.line_number;
@@ -1076,7 +1075,7 @@ _parser_create_assignment :: (parser: *Parser, op: u32, dest: *Expr, value: *Exp
 }
 _parser_create_if :: (parser: *Parser, if_token: Token, flags: u8, expr: *Expr, then_body: *Stmt, else_body: *Stmt) -> *Expr
 {
-    node: *Stmt_If = cast arena_allocate(*parser.arena, sizeof(Stmt_If));
+    node: *Stmt_If = cast arena_allocate(parser.arena, sizeof(Stmt_If));
     node.id = KAI_STMT_IF;
     node.source_code = if_token.source;
     node.line_number = if_token.line_number;
@@ -1088,7 +1087,7 @@ _parser_create_if :: (parser: *Parser, if_token: Token, flags: u8, expr: *Expr, 
 }
 _parser_create_while :: (parser: *Parser, while_token: Token, expr: *Expr, body: *Stmt) -> *Expr
 {
-    node: *Stmt_While = cast arena_allocate(*parser.arena, sizeof(Stmt_While));
+    node: *Stmt_While = cast arena_allocate(parser.arena, sizeof(Stmt_While));
     node.id = KAI_STMT_WHILE;
     node.source_code = while_token.source;
     node.line_number = while_token.line_number;
@@ -1098,7 +1097,7 @@ _parser_create_while :: (parser: *Parser, while_token: Token, expr: *Expr, body:
 }
 _parser_create_for :: (parser: *Parser, for_token: Token, name: string, from: *Expr, to: *Expr, body: *Stmt, flags: u8) -> *Expr
 {
-    node: *Stmt_For = cast arena_allocate(*parser.arena, sizeof(Stmt_For));
+    node: *Stmt_For = cast arena_allocate(parser.arena, sizeof(Stmt_For));
     node.id = KAI_STMT_FOR;
     node.source_code = for_token.source;
     node.line_number = for_token.line_number;
@@ -1111,7 +1110,7 @@ _parser_create_for :: (parser: *Parser, for_token: Token, name: string, from: *E
 }
 _parser_create_control :: (parser: *Parser, token: Token, kind: u8, expr: *Expr) -> *Expr
 {
-    node: *Stmt_Control = cast arena_allocate(*parser.arena, sizeof(Stmt_Control));
+    node: *Stmt_Control = cast arena_allocate(parser.arena, sizeof(Stmt_Control));
     node.id = KAI_STMT_CONTROL;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -1121,7 +1120,7 @@ _parser_create_control :: (parser: *Parser, token: Token, kind: u8, expr: *Expr)
 }
 _parser_create_compound :: (parser: *Parser, token: Token, body: *Stmt) -> *Expr
 {
-    node: *Stmt_Compound = cast arena_allocate(*parser.arena, sizeof(Stmt_Compound));
+    node: *Stmt_Compound = cast arena_allocate(parser.arena, sizeof(Stmt_Compound));
     node.id = KAI_STMT_COMPOUND;
     node.source_code = token.source;
     node.line_number = token.line_number;
@@ -1130,7 +1129,7 @@ _parser_create_compound :: (parser: *Parser, token: Token, body: *Stmt) -> *Expr
 }
 _parser_create_tag :: (parser: *Parser, token: Token, expr: *Expr) -> *Tag
 {
-    tag: *Tag = cast arena_allocate(*parser.arena, sizeof(Tag));
+    tag: *Tag = cast arena_allocate(parser.arena, sizeof(Tag));
     tag.name = token.value.string;
     tag.expr = expr;
     ret tag;
@@ -2016,7 +2015,7 @@ parse_statement :: (parser: *Parser) -> *Stmt
 create_syntax_tree :: (info: *Syntax_Tree_Create_Info, out_tree: *Syntax_Tree) -> Result
 {
     parser: Parser = Parser.{
-        arena = Arena_Allocator.{base = info.allocator}
+        arena = info.arena
     };
     parser.tokenizer.source = info.source.contents;
     parser.tokenizer.line_number = 1;
@@ -2034,7 +2033,6 @@ create_syntax_tree :: (info: *Syntax_Tree_Create_Info, out_tree: *Syntax_Tree) -
     out_tree.root.id = KAI_STMT_COMPOUND;
     out_tree.root.head = statements.head;
     out_tree.source = info.source;
-    out_tree.allocator = parser.arena;
 
     if parser.error.result != KAI_SUCCESS
         parser.error.location.source = info.source;

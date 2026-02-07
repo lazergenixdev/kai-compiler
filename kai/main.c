@@ -199,12 +199,13 @@ int parse(int argc, char** argv)
         }
     }
     if (source_start < 0) return error_no_source_provided();
+    Kai_Arena_Allocator arena = { .base = allocator };
     Kai_Error error = {0};
 	Kai_Syntax_Tree tree = {0};
 	Kai_Syntax_Tree_Create_Info info = {
-		.allocator = allocator,
-		.error = &error,
 		.source = load_source_file(argv[source_start]),
+		.arena = &arena,
+		.error = &error,
 	};
 	kai_create_syntax_tree(&info, &tree);
     if (!(parse_options & PARSE_NO_PRINT))
