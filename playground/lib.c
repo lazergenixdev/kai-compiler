@@ -87,10 +87,11 @@ WASM_EXPORT void set_file_name(Kai_string name)
 
 WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)
 {
+	Kai_Arena_Allocator arena = { .base = allocator };
 	Kai_Error error = {0};
 	Kai_Syntax_Tree tree = {0};
 	Kai_Syntax_Tree_Create_Info info = {
-		.allocator = allocator,
+		.arena = &arena,
 		.error = &error,
 		.source = {
             .name = file_name,

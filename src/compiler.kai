@@ -929,7 +929,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 local_node: *Local_Node = *context.local_nodes.data[ref.index];
                 node_type = local_node.type;
                 if out_value == null {
-                    asm_insert_stack_load(*context.assembler, local_node.stack_index, 0);
+				asm_insert_stack_load(*context.assembler, local_node.stack_index, 0);
                 }
                 context.last_variable_index = local_node.stack_index;
             }
@@ -1246,7 +1246,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                         type: Type = pt->Type;
                         index: int = table_find(*context.type_cache, type);
                         if writer != null {
-                            printf("index: %li ???\n", index);
+                       //     printf("index: %li ???\n", index);
                         }
                         if index != -1 {
                             type = context.type_cache.keys[index];
@@ -2414,8 +2414,7 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
 
 create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
 {
-    // context := defer create_context(info);
-    context: Compiler_Context = Compiler_Context.{
+    compiler: Compiler_Context = Compiler_Context.{
         error = info.error,
         allocator = info.allocator,
         program = out_program,
@@ -2423,51 +2422,33 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         imports = info.imports,
         debug_writer = info.debug_writer,
     };
-    context.arena.base = info.allocator;
-    context.type_allocator.base = info.allocator;
-    context.temp_allocator.base = info.allocator;
-    context.error_arena.allocator = info.allocator;
-    context.assembler.allocator = *info.allocator;
+    compiler.arena.base = info.allocator;
+    compiler.type_allocator.base = info.allocator;
+    compiler.temp_allocator.base = info.allocator;
+    compiler.error_arena.allocator = info.allocator;
+    compiler.assembler.allocator = *info.allocator;
 
-    if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN)
-        context.assembler.backend = KAI_BACKEND_ARM64;
+	if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN)
+	{
+		ret _error_fatal(*compiler, STRING("Code generation is not supported yet!"));
+	}
 
-    while context.error.result == KAI_SUCCESS {
-        if _create_syntax_trees(*context, info.sources) break;
-        if _generate_nodes(*context) break;
-        if _compile_all_nodes_in_scope(*context) break;
-        if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN)
+    while compiler.error.result == KAI_SUCCESS {
+        if _create_syntax_trees(*compiler, info.sources) break;
+        if _generate_nodes(*compiler) break;
+        if _compile_all_nodes_in_scope(*compiler) break;
+        if compiler.debug_writer != null
         {
-            allocator: Allocator = info.allocator;
-            machine_code: *void = allocator.platform_allocate(
-                allocator.user, null, 0x10000, KAI_MEMORY_COMMAND_ALLOCATE_WRITE_ONLY);
-            _memory_copy(machine_code, context.assembler.code.data, context.assembler.code.count*4);
-            if context.debug_writer != null {
-                printf("---Machine-Code---\n");
-                for i: 0..<context.assembler.code.count {
-                    instr: u32 = context.assembler.code.data[i];
-                    printf("%02X%02X%02X%02X\n", (instr >> 0) & 0xFF, (instr >> 8) & 0xFF, (instr >> 16) & 0xFF, (instr >> 24) & 0xFF);
-                    // printf("%08X\n", instr);
-                }
-                printf("------------------\n");
-            }
-            allocator.platform_allocate(
-                allocator.user, machine_code, context.assembler.code.count*4, KAI_MEMORY_COMMAND_SET_EXECUTABLE);
-            context.program.code.data = machine_code;
-            context.program.code.count = context.assembler.code.count*4;
-        }
-        if context.debug_writer != null
-        {
-            for i: 0..<context.type_cache.capacity {
-                if (context.type_cache.occupied[i/64] & (1->u64 << (i%64)))
-                    _debug_show_type(*context, context.type_cache.keys[i]);
+            for i: 0..<compiler.type_cache.capacity {
+                if (compiler.type_cache.occupied[i/64] & (1->u64 << (i%64)))
+                    _debug_show_type(*compiler, compiler.type_cache.keys[i]);
             }
         }
         break;
     }
 
-    context.program.trees = context.trees;
-    ret context.error.result;
+    compiler.program.trees = compiler.trees;
+    ret compiler.error.result;
 }
 
 destroy_program :: (program: *Program)

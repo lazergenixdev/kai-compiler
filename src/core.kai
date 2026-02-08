@@ -1789,8 +1789,9 @@ write_value :: (writer: *Writer, data: *void, type: *Type_Info)
 
 _Tree_Traversal_Context :: struct {
     writer: *Writer;
-    stack: [256] u64; // 64 * 256 max depth
+    stack: [64] u64; // 64 * 64 = 4096 max depth
     stack_count: u32;
+	max_depth: u32;
     prefix: string;
 }
 
@@ -1905,6 +1906,8 @@ _write_tree_branches :: (context: *_Tree_Traversal_Context)
 
 _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
 {
+	if context.max_depth == context.stack_count then ret;
+
     writer: *Writer = context.writer;
 
     _write_tree_branches(context);
@@ -2230,17 +2233,31 @@ _write_tree :: (context: *_Tree_Traversal_Context, expr: *Expr)
 
 write_expression :: (writer: *Writer, expr: *Expr, depth: u32)
 {
-    context: _Tree_Traversal_Context;
-    context.writer = writer;
-    context.stack[0] = 1;
-    context.stack_count = depth;
-    _write_tree(*context, expr);
+    traversal: _Tree_Traversal_Context;
+    traversal.writer = writer;
+    traversal.stack[0] = 1;
+    traversal.stack_count = depth;
+	traversal.max_depth = 4096;
+    _write_tree(*traversal, expr);
 }
 
-write_syntax_tree :: (writer: *Writer, tree: *Syntax_Tree)
+write_syntax_tree :: (writer: *Writer, tree: *Syntax_Tree, max_depth: u32)
 {
-    writer->void;
-    tree->void;
+    traversal: _Tree_Traversal_Context;
+    traversal.writer = writer;
+    traversal.stack[0] = 1;
+    traversal.stack_count = 0;
+	traversal.max_depth = _min_u32(max_depth, 4096);
+	context: *_Tree_Traversal_Context = *traversal;
+
+    _set_color(KAI_WRITE_COLOR_PRIMARY);
+	_write("syntax tree\n");
+    _set_color(KAI_WRITE_COLOR_DEFAULT);
+	current: *Stmt = tree.root.head;
+	while current {
+		_explore(current, current.next == null);
+		current = current.next;
+	}
 }
 
 write_number :: (writer: *Writer, number: Number)

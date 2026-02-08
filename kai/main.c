@@ -186,12 +186,21 @@ int token(int argc, char** argv)
 
 int parse(int argc, char** argv)
 {
+	Kai_u32 max_depth = 1000000;
     Kai_u32 parse_options = 0;
     int source_start = -1;
     for (int i = 0; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // -> Possible Flag
             if (strcmp(argv[i]+1, "p") == 0) parse_options |= PARSE_NO_PRINT;
+            if (strcmp(argv[i]+1, "m") == 0) {
+				if (!(i + 1 < argc)) {
+					nob_log(ERROR, "Must provide integer value after -m flag!");
+					return 1;
+				}
+				// !! Assume an integer can be parsed
+				max_depth = strtoul(argv[i+=1], 0, 10);
+			}
         }
         else {
             source_start = i;
@@ -209,7 +218,7 @@ int parse(int argc, char** argv)
 	};
 	kai_create_syntax_tree(&info, &tree);
     if (!(parse_options & PARSE_NO_PRINT))
-	    kai_write_expression(writer, (Kai_Expr*)&tree.root, 0);
+		kai_write_syntax_tree(writer, &tree, max_depth+1);
 	if (error.result != KAI_SUCCESS) {
 		kai_write_error(writer, &error);
 	}
@@ -218,6 +227,7 @@ int parse(int argc, char** argv)
 
 int compile(int argc, char** argv)
 {
+	Kai_u32 max_depth = 1000000;
     Kai_u32 parse_options = 0;
     int source_start = -1;
     for (int i = 0; i < argc; ++i) {
@@ -226,6 +236,14 @@ int compile(int argc, char** argv)
             if (strcmp(argv[i]+1, "p") == 0) parse_options |= COMPILE_NO_PRINT;
             if (strcmp(argv[i]+1, "t") == 0) parse_options |= COMPILE_OUTPUT_TREE;
             if (strcmp(argv[i]+1, "d") == 0) parse_options |= COMPILE_DEBUG;
+            if (strcmp(argv[i]+1, "m") == 0) {
+				if (!(i + 1 < argc)) {
+					nob_log(ERROR, "Must provide integer value after -m flag!");
+					return 1;
+				}
+				// !! Assume an integer can be parsed
+				max_depth = strtoul(argv[i+=1], 0, 10);
+			}
         }
         else {
             source_start = i;
@@ -249,7 +267,7 @@ int compile(int argc, char** argv)
     {
         if (parse_options & COMPILE_OUTPUT_TREE)
         {
-            kai_write_expression(writer, (Kai_Expr*)&program.trees.data[0].root, 0);
+			kai_write_syntax_tree(writer, &program.trees.data[0], max_depth+1);
         }
         else
         {

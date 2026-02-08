@@ -1298,7 +1298,7 @@ parse_expression :: (parser: *Parser, flags: u32) -> *Expr
     case #char "*"; {
         op_token: Token = [current];
         _next_token(); // skip op token
-        left = parse_expression(parser, _PREC_UNARY); // TODO: should unary have all same precidence?
+        left = parse_expression(parser, _PREC_UNARY); // TODO: should unary have all same precedence?
         _expect(left, "in unary expression", "should be an expression here");
         left = _parser_create_unary(parser, op_token, left);
     }
