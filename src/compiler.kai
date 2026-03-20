@@ -133,7 +133,6 @@ _Builtin_Type_ID :: enum u8 {
 Compiler_Context :: struct {
     // Memory management
     allocator:              Allocator;
-    error_arena:            Growing_Arena;
     arena:                  Arena_Allocator; // general purpose arena
     type_allocator:         Arena_Allocator;
     temp_allocator:         Arena_Allocator;
@@ -239,38 +238,33 @@ _error_redefinition :: (context: *Compiler_Context, location: Location, original
         location = location,
     };
 
-    buffer: Buffer = Buffer.{allocator = context.allocator};
-
-    // First error message	
+    // First error message
     {
-        _buffer_append_string(*buffer, STRING("identifier \""));
-        _buffer_append_string(*buffer, location.string); // 24
-        _buffer_append_string(*buffer, STRING("\" has already been declared"));
-        range: Range = _buffer_end(*buffer);
-        context.error.memory = _buffer_done(*buffer);
-        context.error.message = _range_to_string(range, context.error.memory);
+        arena_writer: Writer = arena_begin_writer(*context.arena);
+        writer: *Writer = *arena_writer;
+
+        _write("identifier \"");
+        _write_string(location.string); // 24
+        _write("\" has already been declared");
+        context.error.message = arena_end_writer(writer);
     }
 
     // Extra info
     {
-        // Append to memory
-        info_range: Range = _buffer_push(*buffer, sizeof(Error));
-        _buffer_append_string(*buffer, STRING("see original definition of \""));
-        _buffer_append_string(*buffer, location.string); // 24
-        _buffer_append_string(*buffer, STRING("\""));
-        message_range: Range = _buffer_end(*buffer);
-        memory: Memory = _buffer_done(*buffer);
-
         existing: *Node = *context.nodes.data[original];
-
-        // Put everything together
-        info: *Error = (memory.data->*u8 + info_range.start) -> *Error;
+        info: *Error = cast arena_allocate(*context.arena, sizeof(Error));
         [info] = Error.{
             result = KAI_ERROR_INFO,
             location = existing.location,
-            message = _range_to_string(message_range, memory),
-            memory = memory,
         };
+
+        arena_writer: Writer = arena_begin_writer(*context.arena);
+        writer: *Writer = *arena_writer;
+        _write("see other definition of \"");
+        _write_string(location.string); // 24
+        _write("\"");
+        info.message = arena_end_writer(writer);
+
         context.error.next = info;
     }
 
@@ -283,16 +277,14 @@ _error_not_declared :: (context: *Compiler_Context, location: Location) -> bool
         result = KAI_ERROR_SEMANTIC,
         location = location,
     };
-    error_writer: Writer = writer_from_arena(*context.error_arena);
-    writer: *Writer = *error_writer;
 
-    message_offset: u32 = context.error_arena.buffer.count;
+    arena_writer: Writer = arena_begin_writer(*context.arena);
+    writer: *Writer = *arena_writer;
     _write("identifier \"");
     _write_string(location.string);
     _write("\" not declared");
-    message_count: u32 = context.error_arena.buffer.count - message_offset;
+    context.error.message = arena_end_writer(writer);
 
-    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
     //kai__debug_print_stacktrace();
     ret true;
 }
@@ -308,46 +300,41 @@ _error_circular_dependency :: (context: *Compiler_Context) -> bool
         result = KAI_ERROR_SEMANTIC,
         location = node.location,
     };
-    allocator: *Allocator = *context.allocator;
-    array_reserve(*context.error_arena.buffer, 2*1024); // TODO: fix
-    error_writer: Writer = writer_from_arena(*context.error_arena);
-    writer: *Writer = *error_writer;
-
-    message_offset: u32 = context.error_arena.buffer.count;
-    _write("detected circular dependency on \"");
-    _write_string(node.location.string);
-    _write("\"");
-    message_count: u32 = context.error_arena.buffer.count - message_offset;
-    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
+    {
+        error_writer: Writer = arena_begin_writer(*context.arena);
+        writer: *Writer = *error_writer;
+        _write("detected circular dependency on \"");
+        _write_string(node.location.string);
+        _write("\"");
+        context.error.message = arena_end_writer(writer);
+    }
 
     current_error: *Error = context.error;
     prev_ref: Node_Reference = context.current_node;
     prev_node: *Node = node;
-    error: Error = Error.{0}; // TODO: need way to just allocate space?
-    temp: *Writer = context.debug_writer;
-    context.debug_writer = writer;
     for i: 0..<context.current_dependencies.count {
+        next: *Error = cast arena_allocate(*context.arena, sizeof(Error));
+
         ref: Node_Reference = context.current_dependencies.data[i];
         node: *Node = *context.nodes.data[ref.index];
-        next: *Error = cast growing_arena_push(*context.error_arena, *error, sizeof(Error));
-
-        message_offset: u32 = context.error_arena.buffer.count;
-        _write_node(writer, prev_node, prev_ref.flags);
-        _write(" depends on ");
-        _write_node(writer, node, ref.flags);
-        message_count: u32 = context.error_arena.buffer.count - message_offset;
-        
         [next] = Error.{
             result = KAI_ERROR_INFO,
             location = node.location,
-            message = string_from_data(context.error_arena.buffer.data + message_offset, message_count),
         };
+        {
+            error_writer: Writer = arena_begin_writer(*context.arena);
+            writer: *Writer = *error_writer;
+            _write_node(writer, prev_node, prev_ref.flags);
+            _write(" depends on ");
+            _write_node(writer, node, ref.flags);
+            next.message = arena_end_writer(writer);
+        }
+    
         current_error.next = next;
         current_error = next;
         prev_ref = ref;
         prev_node = node;
     }
-    context.debug_writer = temp;
     ret true;
 }
 
@@ -363,47 +350,44 @@ _error_type_check :: (context: *Compiler_Context, expr: *Expr, expected: Type, g
         result = KAI_ERROR_TYPE,
         location = location,
     };
-    error_writer: Writer = writer_from_arena(*context.error_arena);
-    writer: *Writer = *error_writer;
 
-    message_offset: u32 = context.error_arena.buffer.count;
+    arena_writer: Writer = arena_begin_writer(*context.arena);
+    writer: *Writer = *arena_writer;
+
     _write("expected ");
     _write_expression_name(writer, expr);
     _write(" of type ");
     write_type(writer, got);
     _write(" to be of type ");
     write_type(writer, expected);
-    message_count: u32 = context.error_arena.buffer.count - message_offset;
+    context.error.message = arena_end_writer(writer);
 
-    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
     ret true;
 }
 
 _error_type_check_string :: (context: *Compiler_Context, expr: *Expr, expected: string, got: Type) -> bool
 {
-    location: Location = Location.{
-        source = context.current_source,
-        string = expr.source_code,
-        line = expr.line_number,
-    };
-
     [context.error] = Error.{
         result = KAI_ERROR_TYPE,
-        location = location,
+        location = Location.{
+            source = context.current_source,
+            string = expr.source_code,
+            line = expr.line_number,
+        },
     };
-    error_writer: Writer = writer_from_arena(*context.error_arena);
-    writer: *Writer = *error_writer;
 
-    message_offset: u32 = context.error_arena.buffer.count;
-    _write("expected ");
-    _write_expression_name(writer, expr);
-    _write(" of type ");
-    write_type(writer, got);
-    _write(" to be ");
-    _write_string(expected);
-    message_count: u32 = context.error_arena.buffer.count - message_offset;
+    {
+        arena_writer: Writer = arena_begin_writer(*context.arena);
+        writer: *Writer = *arena_writer;
+        _write("expected ");
+        _write_expression_name(writer, expr);
+        _write(" of type ");
+        write_type(writer, got);
+        _write(" to be ");
+        _write_string(expected);
+        context.error.message = arena_end_writer(writer);
+    }
 
-    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
     ret true;
 }
 
@@ -419,18 +403,18 @@ _error_no_member :: (context: *Compiler_Context, type: Type, identifier: *Expr) 
         result = KAI_ERROR_SEMANTIC,
         location = location,
     };
-    error_writer: Writer = writer_from_arena(*context.error_arena);
-    writer: *Writer = *error_writer;
 
-    message_offset: u32 = context.error_arena.buffer.count;
-    _write("type ");
-    write_type(writer, type);
-    _write(" has no member named \"");
-    _write_string(identifier.source_code);
-    _write("\"");
-    message_count: u32 = context.error_arena.buffer.count - message_offset;
+    {
+        error_writer: Writer = arena_begin_writer(*context.arena);
+        writer: *Writer = *error_writer;
+        _write("type ");
+        write_type(writer, type);
+        _write(" has no member named \"");
+        _write_string(identifier.source_code);
+        _write("\"");
+        context.error.message = arena_end_writer(writer);
+    }
 
-    context.error.message = string_from_data(context.error_arena.buffer.data + message_offset, message_count);
     //kai__debug_print_stacktrace();
     ret true;
 }
@@ -441,13 +425,14 @@ _error_host_import_not_found :: (context: *Compiler_Context, location: Location)
         result = KAI_ERROR_SEMANTIC,
         location = location,
     };
-    buffer: Buffer = Buffer.{allocator = context.allocator};
-    _buffer_append_string(*buffer, STRING("could not find host import \""));
-    _buffer_append_string(*buffer, location.string);
-    _buffer_append_string(*buffer, STRING("\""));
-    range: Range = _buffer_end(*buffer);
-    context.error.memory = _buffer_done(*buffer);
-    context.error.message = _range_to_string(range, context.error.memory);
+    {
+        error_writer: Writer = arena_begin_writer(*context.arena);
+        writer: *Writer = *error_writer;
+        _write("could not find host import \"");
+        _write_string(location.string);
+        _write("\"");
+        context.error.message = arena_end_writer(writer);
+    }
     ret true;
 }
 
@@ -861,6 +846,7 @@ _add_dependency :: (context: *Compiler_Context, ref: Node_Reference)
 
 _trim_expr :: (context: *Compiler_Context, expr: *Expr, type: *Type_Info) -> bool
 {
+    ret false;
     if type.id == {
         case KAI_TYPE_ID_TYPELESS_INTEGER; {
             if expr.this_type.id == {
@@ -2422,10 +2408,9 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
         imports = info.imports,
         debug_writer = info.debug_writer,
     };
-    compiler.arena.base = info.allocator;
-    compiler.type_allocator.base = info.allocator;
-    compiler.temp_allocator.base = info.allocator;
-    compiler.error_arena.allocator = info.allocator;
+    compiler.arena = arena_create(info.allocator);
+    compiler.type_allocator = arena_create(info.allocator);
+    compiler.temp_allocator = arena_create(info.allocator);
     compiler.assembler.allocator = *info.allocator;
 
 	if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN)

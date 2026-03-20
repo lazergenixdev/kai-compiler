@@ -1,6 +1,6 @@
 # TODO
 - [x] fix crash on circular dependencies on types
-- [ ] Arenas are zero-initialized by default
+- [x] ~~Arenas are zero-initialized by default~~ Allocators have create/destroy
 - [ ] Combine syntax tree arena and string arena into one
 - [ ] Finalize arena for error messages (how to handle linked error message linked list?)
 - [ ] Error message for very long strings

@@ -87,9 +87,9 @@ WASM_EXPORT void set_file_name(Kai_string name)
 
 WASM_EXPORT int create_syntax_tree(Kai_u8* data, Kai_u32 count)
 {
-	Kai_Arena_Allocator arena = { .base = allocator };
 	Kai_Error error = {0};
 	Kai_Syntax_Tree tree = {0};
+    Kai_Arena_Allocator arena = kai_arena_create(allocator);
 	Kai_Syntax_Tree_Create_Info info = {
 		.arena = &arena,
 		.error = &error,
@@ -115,8 +115,6 @@ static Kai_Import imports[] = {
 
 WASM_EXPORT int compile_show_typed_ast(Kai_u8* data, Kai_u32 count)
 {
-	Kai_Writer* writer = &div_writer;
-
 	error = (Kai_Error){0};
 	Kai_Program program = {0};
     Kai_Source source = { .name = file_name, .contents = (Kai_string){.count = count, .data = data} };
@@ -133,7 +131,7 @@ WASM_EXPORT int compile_show_typed_ast(Kai_u8* data, Kai_u32 count)
     {
         for (Kai_u32 i = 0; i < program.trees.count; ++i)
         {
-            kai_write_expression(writer, (Kai_Expr*)&program.trees.data[i].root, 0);
+            kai_write_expression(&div_writer, (Kai_Expr*)&program.trees.data[i].root, 0);
         }
     }
     else {
@@ -144,8 +142,6 @@ WASM_EXPORT int compile_show_typed_ast(Kai_u8* data, Kai_u32 count)
 
 WASM_EXPORT int compile_show_exports(Kai_u8* data, Kai_u32 count)
 {
-	Kai_Writer* writer = &div_writer;
-	
 	error = (Kai_Error){0};
 	Kai_Program program = {0};
     Kai_Source source = { .name = file_name, .contents = (Kai_string){.count = count, .data = data} };
@@ -158,6 +154,7 @@ WASM_EXPORT int compile_show_exports(Kai_u8* data, Kai_u32 count)
     };
     kai_create_program(&info, &program);
 
+	Kai_Writer* writer = &div_writer;
 	if (error.result == KAI_SUCCESS)
     {
         hash_table_iterate(program.variable_table, i)
@@ -178,7 +175,7 @@ WASM_EXPORT int compile_show_exports(Kai_u8* data, Kai_u32 count)
         }
     }
     else {
-		kai_write_error(&div_writer, &error);
+		kai_write_error(writer, &error);
 	}
 	return error.result != KAI_SUCCESS;
 }

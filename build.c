@@ -1708,7 +1708,6 @@ void run_tests(void)
 
 void compile_command_line_tool(void)
 {
-    set_current_dir("kai");
     SCOPED_TEMP()
     {
         Cmd cmd = {0};
@@ -1716,11 +1715,10 @@ void compile_command_line_tool(void)
         nob_cc(&cmd);
         nob_cc_flags(&cmd);
         if (compile_debug) nob_cc_debug(&cmd);
-        nob_cc_inputs(&cmd, "main.c");
-        nob_cc_output(&cmd, temp_sprintf("../bin/%s", output));
+        nob_cc_inputs(&cmd, "kai/main.c");
+        nob_cc_output(&cmd, temp_sprintf("bin/%s", output));
         exit_on_fail(cmd_run_sync_and_reset(&cmd));
     }
-    set_current_dir("..");
 }
 
 void compile_playground(void)
@@ -1972,7 +1970,7 @@ int main(int argc, char** argv)
         if (0);
         else if (strcmp(argv[i], "test" ) == 0) want_test = true;
         else if (strcmp(argv[i], "debug") == 0) compile_debug = true;
-        else if (strcmp(argv[i], "wasm" ) == 0) targets = Playground;
+        else if (strcmp(argv[i], "web"  ) == 0) targets = Playground;
         else if (strcmp(argv[i], "kai"  ) == 0) targets = Commandline;
         else if (strcmp(argv[i], "all"  ) == 0) targets = All;
     }

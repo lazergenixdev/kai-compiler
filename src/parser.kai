@@ -372,7 +372,7 @@ token_string :: (id: Token_Id, dst: string) -> string
     case;
         dst.data[0] = #char "'";
         i: u32 = 0;
-        while i <= 3 {
+        while i < 4 {
             ch: u8 = (id >> (i*8)) -> u8;
             if ch == 0 break;
             dst.data[i+1] = ch;
@@ -816,6 +816,7 @@ Parser :: struct {
     tokenizer : Tokenizer;
     arena     : *Arena_Allocator;
     error     : *Error;
+    source    : Source;
 }
 
 // TODO: When typechecking is done (for compiler source code),
@@ -829,26 +830,29 @@ _error_unexpected :: (parser: *Parser, token: *Token, where: string, wanted: str
     if parser.error.result != KAI_SUCCESS
         ret null;
 
-    buffer: Buffer = Buffer.{allocator = parser.arena.base};
-    temp: [32] u8;
-    temp_string: string = string.{count = sizeof(temp), data = temp};
+    message: string;
+    {
+        arena_writer: Writer = arena_begin_writer(parser.arena);
+        writer: *Writer = *arena_writer;
 
-    _buffer_append_string(*buffer, STRING("unexpected "));
-    _buffer_append_string(*buffer, token_string(token.id, temp_string));
-    _buffer_append_string(*buffer, STRING(" "));
-    _buffer_append_string(*buffer, where);
-    message: Range = _buffer_end(*buffer);
-    memory: Memory = _buffer_done(*buffer);
+        temp: [12] u8;
+        temp_string: string = string.{count = sizeof(temp), data = temp};
+        _write("unexpected ");
+        _write_string(token_string(token.id, temp_string));
+        _write(" ");
+        _write_string(where);
+        message = arena_end_writer(writer);
+    }
 
     [parser.error] = Error.{
         result = KAI_ERROR_SYNTAX,
         location = Location.{
+            source = parser.source,
             string = token.source,
             line = token.line_number,
         },
-        message = _range_to_string(message, memory),
+        message = message,
         context = wanted,
-        memory = memory,
     };
     ret null;
 }
@@ -858,6 +862,9 @@ PRECEDENCE_MASK :: 0x0FFFF;
 _PREC_CAST      :: 0x00900;
 _PREC_UNARY     :: 0x01000;
 
+// TODO: probably just combine into single integer?
+//       8 bit | 2 bit type (0-3) + 6 bit precedence (0-63)
+//       prec_unary = 48 , prec_cast = 47
 _Operator :: struct {
     prec : u32;
     type : u32;
@@ -1805,7 +1812,7 @@ parse_declaration :: (parser: *Parser) -> *Stmt
         _next_token();
         _expect(current.id == #char ";", "after declaration", "there should be a ';' before this");
     }
-    else {
+    else {  
         peeked: *Token = _peek_token();
         if peeked.id == #char ";" _next_token(); // go to semicolon
     }
@@ -2020,6 +2027,7 @@ create_syntax_tree :: (info: *Syntax_Tree_Create_Info, out_tree: *Syntax_Tree) -
     parser.tokenizer.source = info.source.contents;
     parser.tokenizer.line_number = 1;
     parser.error = info.error;
+    parser.source = info.source;
 
     statements: Stmt_List;
     token: *Token = tokenizer_next(*parser.tokenizer);
@@ -2033,9 +2041,6 @@ create_syntax_tree :: (info: *Syntax_Tree_Create_Info, out_tree: *Syntax_Tree) -
     out_tree.root.id = KAI_STMT_COMPOUND;
     out_tree.root.head = statements.head;
     out_tree.source = info.source;
-
-    if parser.error.result != KAI_SUCCESS
-        parser.error.location.source = info.source;
     ret parser.error.result;
 }
 

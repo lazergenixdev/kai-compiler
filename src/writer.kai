@@ -17,6 +17,7 @@ _file_writer_write :: (user: *void, command: Write_Command, value: Value, format
     if user == null ret;
     f: *FILE = cast user;
     if command & 0x80 {
+        // TODO: disable terminal colors if being piped
         fprintf(f, "%s", _term_debug_colors[command & 0x7F]);
         ret;
     }
