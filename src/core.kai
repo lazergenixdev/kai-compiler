@@ -888,36 +888,26 @@ number_add_same_exp :: (a: Number, b: Number) -> Number
 
 number_match_exponents :: (a: *Number, b: *Number)
 {
-    if a.e < b.e {
-        // reduce b.e or increase a.e
-        while a.e != b.e && (a.d >> 63) == 0 {
-            a.d = a.d << 1;
-            a.e += 1;
-        }
-        while a.e != b.e && (b.n >> 63) == 0 {
-            b.n = b.n << 1;
-            b.e -= 1;
-        }
-        // must lose some precision now :(
-        diff: s64 = b.e - a.e;
-        a.n = a.n >> diff->u32;
-        a.e = b.e;
+    // ensure a.e < b.e
+    if a.e > b.e {
+        tmp: *Number = a;
+        a = b;
+        b = tmp;
     }
-    else /* a.e > b.e */ {
-        // reduce a.e or increase b.e
-        while (a.e != b.e && (b.d >> 63) == 0) {
-            b.d = b.d << 1;
-            b.e += 1;
-        }
-        while (a.e != b.e && (a.n >> 63) == 0) {
-            a.n = a.n << 1;
-            a.e -= 1;
-        }
-        // must lose some precision now :(
-        diff: s64 = a.e - b.e;
-        b.n = b.n >> diff->u32;
-        b.e = a.e;
+
+    // reduce b.e or increase a.e
+    while a.e != b.e && (a.d >> 63) == 0 {
+        a.d = a.d << 1;
+        a.e += 1;
     }
+    while a.e != b.e && (b.n >> 63) == 0 {
+        b.n = b.n << 1;
+        b.e -= 1;
+    }
+    // must lose some precision now :(
+    diff: s64 = b.e - a.e;
+    a.n = a.n >> diff->u32;
+    a.e = b.e;
 }
 
 number_parse_whole :: (source: string, offset: *u32, base: u32) -> Number
