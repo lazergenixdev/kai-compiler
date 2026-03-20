@@ -2220,6 +2220,13 @@ write_expression :: (writer: *Writer, expr: *Expr, depth: u32)
 
 write_syntax_tree :: (writer: *Writer, tree: *Syntax_Tree, max_depth: u32)
 {
+    if tree == null {
+        _set_color(KAI_WRITE_COLOR_SPECIAL);
+        _write("null\n");
+        _set_color(KAI_WRITE_COLOR_DEFAULT);
+        ret;
+    }
+
     traversal: _Tree_Traversal_Context;
     traversal.writer = writer;
     traversal.stack[0] = 1;

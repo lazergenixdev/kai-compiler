@@ -1330,7 +1330,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
                 case #multi "<<"; #through;
                 case #multi ">>"; {
                     // Left type must be an integer
-                    if [expected_type] != null {
+                    if writer != null && [expected_type] != null {
                         printf("*** Got type: ");
                         write_type(writer, [expected_type]);
                         printf("\n");
@@ -1413,6 +1413,7 @@ _value_of_expr :: (context: *Compiler_Context, expr: *Expr, out_value: *Value, e
             if _create_nodes(context, p.body)
                 ret true;
 
+            // TODO: remove this
 			if prev_node_count != context.nodes.count then
 				ret _error_fatal(context, STRING("nested const is not yet ready, please make non-const, sorry :("));
 
@@ -2333,7 +2334,7 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
                 node.decl.this_type = node.type;
                 node.flags |= KAI_NODE_TYPE_EVALUATED;
             }
-            if writer != NULL {
+            if writer != null {
                 printf("=> ");
                 write_type(writer, node.type);
                 printf("\n");
@@ -2354,7 +2355,7 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
             else {
                 node.flags |= KAI_NODE_VALUE_EVALUATED;
             }
-            if writer != NULL {
+            if writer != null {
                 printf("=> ");
                 if node.type.id == {
                     case KAI_TYPE_ID_TYPE; {
@@ -2383,7 +2384,7 @@ _compile_all_nodes_in_scope :: (context: *Compiler_Context) -> bool
         }
 
         if (node.flags & (KAI_NODE_EXPORT|KAI_NODE_EVALUATED)) == (KAI_NODE_EXPORT|KAI_NODE_EVALUATED) {
-            if writer != NULL {
+            if writer != null {
                 _write("exporting ");
                 _write_string(node.location.string);
                 _write(" [");
@@ -2414,25 +2415,26 @@ create_program :: (info: *Program_Create_Info, out_program: *Program) -> Result
     compiler.assembler.allocator = *info.allocator;
 
 	if !(info.options.flags & KAI_COMPILE_NO_CODE_GEN)
-	{
 		ret _error_fatal(*compiler, STRING("Code generation is not supported yet!"));
-	}
 
-    while compiler.error.result == KAI_SUCCESS {
-        if _create_syntax_trees(*compiler, info.sources) break;
-        if _generate_nodes(*compiler) break;
-        if _compile_all_nodes_in_scope(*compiler) break;
-        if compiler.debug_writer != null
-        {
-            for i: 0..<compiler.type_cache.capacity {
-                if (compiler.type_cache.occupied[i/64] & (1->u64 << (i%64)))
-                    _debug_show_type(*compiler, compiler.type_cache.keys[i]);
-            }
-        }
-        break;
-    }
+    if _create_syntax_trees(*compiler, info.sources)
+        ret compiler.error.result;
 
     compiler.program.trees = compiler.trees;
+
+    if _generate_nodes(*compiler)
+        ret compiler.error.result;
+    
+    if _compile_all_nodes_in_scope(*compiler)
+        ret compiler.error.result;
+
+    if compiler.debug_writer != null
+    {
+        for i: 0..<compiler.type_cache.capacity {
+            if (compiler.type_cache.occupied[i/64] & (1->u64 << (i%64)))
+                _debug_show_type(*compiler, compiler.type_cache.keys[i]);
+        }
+    }
     ret compiler.error.result;
 }
 

@@ -1,9 +1,4 @@
 # TODO
-- [x] fix crash on circular dependencies on types
-- [x] ~~Arenas are zero-initialized by default~~ Allocators have create/destroy
-- [ ] Combine syntax tree arena and string arena into one
-- [ ] Finalize arena for error messages (how to handle linked error message linked list?)
-- [ ] Error message for very long strings
 - [ ] need `_value_of_expr` to always return the value of constant expressions (i.e. Numbers)
 - [ ] need constant folding in `_value_of_expr`
 - [ ] only use `u64` and `s64` for integer values

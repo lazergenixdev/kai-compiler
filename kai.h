@@ -22,7 +22,7 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define KAI_BUILD_DATE 20260320085554 // YMD HMS (UTC)
+#define KAI_BUILD_DATE 20260320094607 // YMD HMS (UTC)
 #define KAI_VERSION_MAJOR 0
 #define KAI_VERSION_MINOR 1
 #define KAI_VERSION_PATCH 0
@@ -3588,6 +3588,13 @@ KAI_API(void) kai_write_expression(Kai_Writer* writer, Kai_Expr* expr, Kai_u32 d
 
 KAI_API(void) kai_write_syntax_tree(Kai_Writer* writer, Kai_Syntax_Tree* tree, Kai_u32 max_depth)
 {
+    if (tree==NULL)
+    {
+        kai__set_color(KAI_WRITE_COLOR_SPECIAL);
+        kai__write("null\n");
+        kai__set_color(KAI_WRITE_COLOR_DEFAULT);
+        return;
+    }
     Kai__Tree_Traversal_Context traversal = {0};
     traversal.writer = writer;
     (traversal.stack)[0] = 1;
@@ -6744,7 +6751,7 @@ KAI_INTERNAL Kai_bool kai__value_of_expr(Kai_Compiler_Context* context, Kai_Expr
                 /* fall through */
                 case 15934:
                 {
-                    if (*expected_type!=NULL)
+                    if (writer!=NULL&&*expected_type!=NULL)
                     {
                         printf("*** Got type: ");
                         kai_write_type(writer, *expected_type);
@@ -7789,28 +7796,22 @@ KAI_API(Kai_Result) kai_create_program(Kai_Program_Create_Info* info, Kai_Progra
     compiler.temp_allocator = kai_arena_create(info->allocator);
     (compiler.assembler).allocator = &(info->allocator);
     if (!(((info->options).flags)&KAI_COMPILE_NO_CODE_GEN))
-    {
         return kai__error_fatal(&compiler, KAI_STRING("Code generation is not supported yet!"));
-    }
-    while ((compiler.error)->result==KAI_SUCCESS)
-    {
-        if (kai__create_syntax_trees(&compiler, info->sources))
-            break;
-        if (kai__generate_nodes(&compiler))
-            break;
-        if (kai__compile_all_nodes_in_scope(&compiler))
-            break;
-        if (compiler.debug_writer!=NULL)
-        {
-            for (Kai_u32 i = 0; i < (compiler.type_cache).capacity; ++i)
-            {
-                if (((compiler.type_cache).occupied)[i/64]&((Kai_u64)(1))<<(i%64))
-                    kai__debug_show_type(&compiler, ((compiler.type_cache).keys)[i]);
-            }
-        }
-        break;
-    }
+    if (kai__create_syntax_trees(&compiler, info->sources))
+        return (compiler.error)->result;
     (compiler.program)->trees = compiler.trees;
+    if (kai__generate_nodes(&compiler))
+        return (compiler.error)->result;
+    if (kai__compile_all_nodes_in_scope(&compiler))
+        return (compiler.error)->result;
+    if (compiler.debug_writer!=NULL)
+    {
+        for (Kai_u32 i = 0; i < (compiler.type_cache).capacity; ++i)
+        {
+            if (((compiler.type_cache).occupied)[i/64]&((Kai_u64)(1))<<(i%64))
+                kai__debug_show_type(&compiler, ((compiler.type_cache).keys)[i]);
+        }
+    }
     return (compiler.error)->result;
 }
 
